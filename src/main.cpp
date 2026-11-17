@@ -220,8 +220,11 @@ int runSelfTest(bool keepFiles) {
             ? ffmpegui::runProcess({service.ffprobePath(), "-v", "error", "-show_entries", "format=format_name",
                 "-of", "default=noprint_wrappers=1:nokey=1", pathToUtf8(sameContainerOutput)})
             : ffmpegui::ProcessResult{};
-        check("same-container video conversion", sameContainerResult.success &&
-            sameContainerOutput.extension() == ".mkv" && sameContainerProbe.output.find("matroska") != std::string::npos);
+        check(
+            "same-container video conversion",
+            sameContainerResult.success &&
+                sameContainerOutput.extension() == ".mkv" &&
+                sameContainerProbe.output.find("matroska") != std::string::npos);
 
         if (capabilities.libsvtav1 && capabilities.libopus) {
             const fs::path webmSource = work / "source.webm";
@@ -277,11 +280,18 @@ int runSelfTest(bool keepFiles) {
         }, nullptr);
         check(ffmpegui::codecName(codec) + " CPU conversion", result.success);
         if (result.success) {
-            check(ffmpegui::codecName(codec) + " structured progress", frame && time && duration && fps && speed && bitrate && size);
+            check(
+                ffmpegui::codecName(codec) + " structured progress",
+                frame && time && duration && fps && speed && bitrate && size);
             const auto audio = ffmpegui::runProcess({service.ffprobePath(), "-v", "error", "-select_streams", "a:0",
                 "-show_entries", "stream=codec_name", "-of", "default=noprint_wrappers=1:nokey=1", result.outputPath});
-            check(ffmpegui::codecName(codec) + " AAC audio", audio.exitCode == 0 && audio.output.find("aac") != std::string::npos);
-            check(ffmpegui::codecName(codec) + " embedded parameter marker", service.isAlreadyProcessed(result.outputPath, settings));
+            check(
+                ffmpegui::codecName(codec) + " AAC audio",
+                audio.exitCode == 0 &&
+                    audio.output.find("aac") != std::string::npos);
+            check(
+                ffmpegui::codecName(codec) + " embedded parameter marker",
+                service.isAlreadyProcessed(result.outputPath, settings));
             check(ffmpegui::codecName(codec) + " source-specific output marker",
                 service.isOutputForSourceAlreadyProcessed(result.outputPath, settings));
             auto repeated = settings;
@@ -587,7 +597,10 @@ int runSelfTest(bool keepFiles) {
             updatedRels->find("../media/clip.mp4") != std::string::npos &&
             updatedRels->find("../media/clip2.mp4") != std::string::npos);
         const auto updatedTypes = readZipEntry(pptxOutput, "[Content_Types].xml");
-        check("PPTX MP4 content type added", updatedTypes && updatedTypes->find("Extension=\"mp4\"") != std::string::npos);
+        check(
+            "PPTX MP4 content type added",
+            updatedTypes &&
+                updatedTypes->find("Extension=\"mp4\"") != std::string::npos);
     }
 
     const auto plan = ffmpegui::recommendResourcePlan(12, ffmpegui::EncoderBackend::CPU,
@@ -652,7 +665,9 @@ int runSelfTest(bool keepFiles) {
         while (repeatStarted && repeatBatch.snapshot().running && std::chrono::steady_clock::now() < repeatDeadline)
             std::this_thread::sleep_for(std::chrono::milliseconds(20));
         const auto repeatResult = repeatBatch.snapshot();
-        check("repeat folder batch skips existing outputs", repeatResult.skippedTasks == 3 && repeatResult.failedTasks == 0);
+        check(
+            "repeat folder batch skips existing outputs",
+            repeatResult.skippedTasks == 3 && repeatResult.failedTasks == 0);
         repeatBatch.shutdown();
 
         const fs::path sameNameA = work / "same-name-a" / "duplicate.mov";
@@ -685,7 +700,11 @@ int runSelfTest(bool keepFiles) {
         check("export batch task list", batch.exportQueue(pathToUtf8(queueFile), queueError));
         ffmpegui::AppController imported(service);
         const auto importedCount = imported.importQueue(pathToUtf8(queueFile), queueError);
-        check("import batch task list", queueError.empty() && importedCount == 3 && imported.snapshot().totalTasks == 3);
+        check(
+            "import batch task list",
+            queueError.empty() &&
+                importedCount == 3 &&
+                imported.snapshot().totalTasks == 3);
         auto savedSettings = batch.snapshot().settings;
         ffmpegui::AppController settingsReloaded(service);
         const auto reloaded = settingsReloaded.snapshot().settings;
