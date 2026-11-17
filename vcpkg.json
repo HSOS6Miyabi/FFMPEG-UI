@@ -1,5 +1,5 @@
 {
-  "name": "ffmpeg-studio",
+  "name": "video-compression-workbench",
   "version-string": "1.2.0",
   "dependencies": [
     "libarchive"
