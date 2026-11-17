@@ -151,7 +151,7 @@ cmake --build --preset windows-release --parallel
 ctest --preset windows-release
 ```
 
-生成的程序位于 `build\windows-release\Release\ffmpeg-ui.exe`。
+生成的程序位于 `build\windows-release\ffmpeg-ui.exe`。
 
 ## 任务清单
 
@@ -226,7 +226,7 @@ ffmpeg-ui --self-test
 ffmpeg-ui --demo
 ```
 
-`--self-test` 会在系统临时目录中创建测试文件，并在结束时清理。测试需要本机 FFmpeg 包含 CPU H.264、H.265 和 AV1 编码器。
+`--self-test` 会在系统临时目录中创建短视频和压缩包测试文件，并在结束时清理。测试会检查当前 FFmpeg 实际提供的 CPU 编码器；未安装的 H.264、H.265 或 AV1 编码器会跳过。ZIP、PPTX 和批量视频测试会在 H.264 CPU 编码器可用时运行。
 
 ## 自动构建和发布
 
