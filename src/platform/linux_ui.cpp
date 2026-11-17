@@ -57,7 +57,8 @@ Palette palette(bool dark) {
 struct Layout {
     Rect addFiles, addFolder, addArchive, importQueue, exportQueue, removeSelected, clearDone;
     Rect outputField, outputBrowse, container[2], codec[3], backend[4], crfTrack, crfValue;
-    Rect compression[8], audio[6], parallel, recursive, skip, preserve, overwrite;
+    Rect compression[8], audio[6], resolution[6], audioMode[3];
+    Rect parallel, recursive, skip, preserve, overwrite;
     Rect queue, overallCard, overallTrack, start, pause, cancel, ssh, theme;
 };
 std::vector<EncoderBackend> availableBackends(const EncoderCapabilities& capabilities, VideoCodec codec) {
@@ -84,29 +85,45 @@ Layout makeLayout(int width, int height, double scale, int backendCount = 4) {
     l.clearDone={secondaryStart+(secondaryBase+toolbarGap)*3,top,secondaryWidth-(secondaryBase+toolbarGap)*3,s(42)};
     const int sy=top+s(56);
     l.outputField={leftX+s(20),sy+s(50),leftW-s(144),s(38)}; l.outputBrowse={leftX+leftW-s(112),sy+s(50),s(92),s(38)};
-    const int containerW=(leftW-s(52)-s(6))/2;
-    for(int i=0;i<2;++i)l.container[i]={leftX+s(20)+i*(containerW+s(6)),sy+s(120),containerW,s(32)};
-    const int codecW=(leftW-s(52))/3;
-    for(int i=0;i<3;++i)l.codec[i]={leftX+s(20)+i*(codecW+s(6)),sy+s(168),codecW,s(38)};
-    backendCount=std::clamp(backendCount,1,4);const int backendW=(leftW-s(52)-s(6)*(backendCount-1))/backendCount;
-    for(int i=0;i<backendCount;++i)l.backend[i]={leftX+s(20)+i*(backendW+s(6)),sy+s(218),backendW,s(34)};
-    l.crfTrack={leftX+s(20),sy+s(284),leftW-s(144),s(10)};l.crfValue={leftX+leftW-s(112),sy+s(269),s(92),s(38)};
-    const int compW=(leftW-s(52)-s(18))/4;
-    for (int index = 0; index < 8; ++index) {
-        const int row = index / 4;
-        const int column = index % 4;
-        l.compression[index] = {
-            leftX + s(20) + column * (compW + s(6)),
-            sy + s(332) + row * s(39),
-            compW,
-            s(32)
+    const int controlX=leftX+s(152);
+    const int controlW=leftW-s(172);
+    const int containerW=(controlW-s(6))/2;
+    for(int index=0;index<2;++index) {
+        l.container[index]={controlX+index*(containerW+s(6)),sy+s(112),containerW,s(32)};
+    }
+    const int codecW=(controlW-s(12))/3;
+    for(int index=0;index<3;++index) {
+        l.codec[index]={controlX+index*(codecW+s(6)),sy+s(153),codecW,s(32)};
+    }
+    backendCount=std::clamp(backendCount,1,4);
+    const int backendW=(controlW-s(6)*(backendCount-1))/backendCount;
+    for(int index=0;index<backendCount;++index) {
+        l.backend[index]={controlX+index*(backendW+s(6)),sy+s(194),backendW,s(32)};
+    }
+    l.crfTrack={controlX,sy+s(245),controlW-s(92),s(8)};
+    l.crfValue={controlX+controlW-s(80),sy+s(229),s(80),s(32)};
+    const int compW=(controlW-s(18))/4;
+    for(int index=0;index<8;++index) {
+        const int row=index/4;
+        const int column=index%4;
+        l.compression[index]={
+            controlX+column*(compW+s(6)),
+            sy+s(280)+row*s(35),
+            compW,s(30)
         };
     }
-    const int audioW=(leftW-s(52)-s(30))/6;
-    for(int i=0;i<6;++i)l.audio[i]={leftX+s(20)+i*(audioW+s(6)),sy+s(432),audioW,s(32)};
+    const int audioW=(controlW-s(30))/6;
+    for(int index=0;index<6;++index) {
+        l.audio[index]={controlX+index*(audioW+s(6)),sy+s(351),audioW,s(30)};
+        l.resolution[index]={controlX+index*(audioW+s(6)),sy+s(389),audioW,s(30)};
+    }
+    const int audioModeW=(controlW-s(12))/3;
+    for(int index=0;index<3;++index) {
+        l.audioMode[index]={controlX+index*(audioModeW+s(6)),sy+s(427),audioModeW,s(30)};
+    }
     const int optionGap = s(6);
     const int optionWidth = (leftW - s(40) - optionGap * 4) / 5;
-    const int optionY = sy + s(490);
+    const int optionY = sy + s(468);
     l.parallel={leftX+s(20),optionY,optionWidth,s(32)};
     l.recursive={leftX+s(20)+optionWidth+optionGap,optionY,optionWidth,s(32)};
     l.skip={leftX+s(20)+(optionWidth+optionGap)*2,optionY,optionWidth,s(32)};
