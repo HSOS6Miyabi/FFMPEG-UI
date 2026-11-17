@@ -17,6 +17,8 @@ enum class VideoCodec { H264, H265, AV1 };
 enum class OutputContainer { MP4, SameAsSource };
 enum class EncoderBackend { CPU, NVENC, QSV, AMF };
 enum class CompressionLevel { Fastest, VeryFast, Fast, Balanced, Slow, Slower, VerySlow, Extreme };
+enum class AudioMode { Encode, Copy, Remove };
+enum class OutputResolution { Original, UHD4K, QHD1440, FullHD1080, HD720, SD480 };
 
 enum class TaskKind { Video, ZipArchive, PowerPoint };
 enum class TaskState { Pending, Running, Completed, Skipped, Failed, Cancelled };
@@ -34,6 +36,8 @@ struct ConversionSettings {
     CompressionLevel compression{CompressionLevel::Balanced};
     int crf{23};
     int audioBitrateKbps{192};
+    AudioMode audioMode{AudioMode::Encode};
+    OutputResolution outputResolution{OutputResolution::Original};
     int threadsPerJob{0};
     bool overwrite{false};
     bool skipAlreadyProcessed{true};
@@ -46,6 +50,8 @@ struct BatchSettings {
     CompressionLevel compression{CompressionLevel::Balanced};
     int crf{23};
     int audioBitrateKbps{192};
+    AudioMode audioMode{AudioMode::Encode};
+    OutputResolution outputResolution{OutputResolution::Original};
     int maxParallelJobs{0}; // 0 = automatic
     bool recursive{true};
     bool preserveDirectoryStructure{true};
@@ -130,6 +136,8 @@ std::string outputContainerName(OutputContainer container);
 std::string outputVideoExtension(OutputContainer container, const std::string& sourcePath);
 std::string backendName(EncoderBackend backend);
 std::string compressionName(CompressionLevel level);
+std::string audioModeName(AudioMode mode);
+std::string outputResolutionName(OutputResolution resolution);
 std::string taskKindName(TaskKind kind);
 std::string taskStateName(TaskState state);
 int compressionLevelCount();
