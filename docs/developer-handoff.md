@@ -65,7 +65,7 @@ ctest --preset linux-release
 cmake --preset windows-release `
   -DCMAKE_TOOLCHAIN_FILE="$env:VCPKG_INSTALLATION_ROOT/scripts/buildsystems/vcpkg.cmake" `
   -DVCPKG_TARGET_TRIPLET=x64-windows-static
-cmake --build --preset windows-release --config Release --parallel
+cmake --build --preset windows-release --parallel
 ctest --test-dir build/windows-release -C Release --output-on-failure
 .\build\windows-release\Release\ffmpeg-ui.exe --self-test
 ```
