@@ -549,7 +549,7 @@ bool SshService::saveServer(const SshServer& server, const std::string& password
     auto remainingLines = removeAliasFromConfig(originalLines, server.alias);
 
     std::vector<std::string> managedBlock{
-        "# FFmpeg Studio managed SSH host",
+        "# 视频压缩工作台管理的 SSH 主机",
         "Host " + server.alias
     };
     managedBlock.insert(managedBlock.end(), inheritedOptions.begin(), inheritedOptions.end());
