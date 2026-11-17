@@ -50,7 +50,7 @@ struct Layout {
     Rect outputField, outputBrowse;
     Rect container[2], codec[3], backend[4], crfTrack, crfValue, compression[8], audio[6];
     Rect parallel, recursive, skip, preserve, overwrite;
-    Rect queue, overallCard, overallTrack, start, pause, cancel, theme;
+    Rect queue, overallCard, overallTrack, start, pause, cancel, ssh, theme;
 };
 
 std::vector<EncoderBackend> availableBackends(const EncoderCapabilities& capabilities, VideoCodec codec) {
@@ -117,6 +117,7 @@ Layout makeLayout(int width, int height, double scale, int backendCount = 4) {
     l.pause = {rightX + s(22), top + s(206), actionWidth, s(44)};
     l.cancel = {rightX + s(22) + actionWidth + actionGap, top + s(206),
                 rightW - s(44) - actionWidth - actionGap, s(44)};
+    l.ssh = {width - s(224), s(28), s(100), s(36)};
     l.theme = {width - s(112), s(28), s(82), s(36)};
     return l;
 }
@@ -196,10 +197,149 @@ std::wstring formatProgressLine(const ConversionProgress& progress, const std::s
     return line;
 }
 
+class SshManagerDialog {
+public:
+    int run(HINSTANCE instance, HWND owner, AppController& controller) {
+        instance_=instance;owner_=owner;controller_=&controller;
+        WNDCLASSW wc{};wc.lpfnWndProc=&SshManagerDialog::windowProc;wc.hInstance=instance;
+        wc.lpszClassName=L"FFmpegStudioSshManager";wc.hCursor=LoadCursorW(nullptr,IDC_ARROW);
+        wc.hbrBackground=reinterpret_cast<HBRUSH>(COLOR_WINDOW+1);RegisterClassW(&wc);
+        const UINT dpi=GetDpiForWindow(owner);scale_=static_cast<double>(dpi?dpi:96)/96.0;
+        const int width=s(1000),height=s(740);RECT ownerRect{};GetWindowRect(owner,&ownerRect);
+        const int x=ownerRect.left+std::max(0,(ownerRect.right-ownerRect.left-width)/2);
+        const int y=ownerRect.top+std::max(0,(ownerRect.bottom-ownerRect.top-height)/2);
+        hwnd_=CreateWindowExW(WS_EX_DLGMODALFRAME,wc.lpszClassName,L"SSH 服务器管理",
+            WS_OVERLAPPED|WS_CAPTION|WS_SYSMENU|WS_CLIPCHILDREN,x,y,width,height,owner,nullptr,instance,this);
+        if(!hwnd_)return 1;
+        EnableWindow(owner,FALSE);ShowWindow(hwnd_,SW_SHOW);UpdateWindow(hwnd_);
+        MSG msg{};while(IsWindow(hwnd_)&&GetMessageW(&msg,nullptr,0,0)>0){
+            if(!IsDialogMessageW(hwnd_,&msg)){TranslateMessage(&msg);DispatchMessageW(&msg);}
+        }
+        EnableWindow(owner,TRUE);SetActiveWindow(owner);SetForegroundWindow(owner);return 0;
+    }
+private:
+    enum:int{ListId=1001,AliasId=1002,HostId=1003,UserId=1004,PortId=1005,IdentityId=1006,
+        ProxyId=1007,AuthId=1008,PasswordId=1009,StatusId=1010,AddId=1011,SaveId=1012,
+        TestId=1013,UseId=1014,RemoveId=1015,LocalId=1016,CloseId=1017};
+    static LRESULT CALLBACK windowProc(HWND hwnd,UINT message,WPARAM wParam,LPARAM lParam){
+        auto* self=reinterpret_cast<SshManagerDialog*>(GetWindowLongPtrW(hwnd,GWLP_USERDATA));
+        if(message==WM_NCCREATE){auto* create=reinterpret_cast<CREATESTRUCTW*>(lParam);
+            self=static_cast<SshManagerDialog*>(create->lpCreateParams);self->hwnd_=hwnd;
+            SetWindowLongPtrW(hwnd,GWLP_USERDATA,reinterpret_cast<LONG_PTR>(self));}
+        return self?self->handle(message,wParam,lParam):DefWindowProcW(hwnd,message,wParam,lParam);
+    }
+    int s(int value)const{return static_cast<int>(std::lround(value*scale_));}
+    std::string text(HWND control)const{
+        const int length=GetWindowTextLengthW(control);std::wstring value(static_cast<std::size_t>(std::max(0,length))+1,L'\0');
+        GetWindowTextW(control,value.data(),static_cast<int>(value.size()));value.resize(static_cast<std::size_t>(std::max(0,length)));
+        return utf8FromWide(value.c_str());
+    }
+    HWND control(const wchar_t* type,const wchar_t* label,DWORD style,int x,int y,int w,int h,int id,DWORD ex=0){
+        HWND result=CreateWindowExW(ex,type,label,WS_CHILD|WS_VISIBLE|style,s(x),s(y),s(w),s(h),hwnd_,
+            reinterpret_cast<HMENU>(static_cast<INT_PTR>(id)),instance_,nullptr);
+        if(result&&font_)SendMessageW(result,WM_SETFONT,reinterpret_cast<WPARAM>(font_),TRUE);return result;
+    }
+    void createControls(){
+        font_=CreateFontW(-s(14),0,0,0,FW_NORMAL,FALSE,FALSE,FALSE,DEFAULT_CHARSET,OUT_DEFAULT_PRECIS,
+            CLIP_DEFAULT_PRECIS,CLEARTYPE_QUALITY,DEFAULT_PITCH|FF_DONTCARE,L"Segoe UI");
+        control(L"STATIC",L"本机 SSH 配置",SS_LEFT,20,20,280,26,0);
+        list_=control(L"LISTBOX",L"",LBS_NOTIFY|LBS_NOINTEGRALHEIGHT|WS_VSCROLL|WS_BORDER,20,52,300,520,ListId,WS_EX_CLIENTEDGE);
+        const auto label=[&](const wchar_t* v,int x,int y,int w){control(L"STATIC",v,SS_LEFT,x,y,w,20,0);};
+        label(L"服务器别名",350,24,270);label(L"主机名或 IP 地址",660,24,300);
+        alias_=control(L"EDIT",L"",ES_AUTOHSCROLL,350,48,270,32,AliasId,WS_EX_CLIENTEDGE);
+        host_=control(L"EDIT",L"",ES_AUTOHSCROLL,660,48,300,32,HostId,WS_EX_CLIENTEDGE);
+        label(L"用户名",350,104,270);label(L"SSH 端口",660,104,130);
+        user_=control(L"EDIT",L"",ES_AUTOHSCROLL,350,128,270,32,UserId,WS_EX_CLIENTEDGE);
+        port_=control(L"EDIT",L"22",ES_AUTOHSCROLL|ES_NUMBER,660,128,130,32,PortId,WS_EX_CLIENTEDGE);
+        label(L"私钥文件（可留空以使用 SSH Agent）",350,184,610);
+        identity_=control(L"EDIT",L"",ES_AUTOHSCROLL,350,208,610,32,IdentityId,WS_EX_CLIENTEDGE);
+        label(L"跳转服务器（可选，填写 SSH config 中的 Host 别名）",350,264,610);
+        proxy_=control(L"EDIT",L"",ES_AUTOHSCROLL,350,288,610,32,ProxyId,WS_EX_CLIENTEDGE);
+        label(L"认证方式",350,344,250);label(L"密码（仅密码认证时填写）",660,344,300);
+        auth_=control(L"COMBOBOX",L"",CBS_DROPDOWNLIST|WS_VSCROLL,350,368,280,32,AuthId);
+        SendMessageW(auth_,CB_ADDSTRING,0,reinterpret_cast<LPARAM>(L"SSH 私钥 / Agent 认证"));
+        SendMessageW(auth_,CB_ADDSTRING,0,reinterpret_cast<LPARAM>(L"密码认证"));SendMessageW(auth_,CB_SETCURSEL,0,0);
+        password_=control(L"EDIT",L"",ES_AUTOHSCROLL|ES_PASSWORD,660,368,300,32,PasswordId,WS_EX_CLIENTEDGE);
+        status_=control(L"STATIC",L"服务器列表来自本机 SSH 配置文件。",SS_LEFT,20,592,940,32,StatusId);
+        const auto button=[&](const wchar_t* label,int id,int x,int w=112){return control(L"BUTTON",label,BS_PUSHBUTTON,x,642,w,42,id);};
+        button(L"新增",AddId,20);button(L"保存并同步",SaveId,140,132);button(L"测试连接",TestId,280);
+        button(L"使用此服务器",UseId,400,132);button(L"删除",RemoveId,540);button(L"本机编码",LocalId,660);button(L"关闭",CloseId,780);
+        refreshList();
+    }
+    void status(const std::string& value){SetWindowTextW(status_,wide(value).c_str());}
+    void refreshList(){
+        servers_=controller_->sshServers();SendMessageW(list_,LB_RESETCONTENT,0,0);
+        for(const auto& server:servers_){
+            const auto label=wide(server.alias+"  ·  "+server.user+"@"+server.hostName+":"+std::to_string(server.port));
+            SendMessageW(list_,LB_ADDSTRING,0,reinterpret_cast<LPARAM>(label.c_str()));
+        }
+    }
+    void clearFields(){
+        SetWindowTextW(alias_,L"");SetWindowTextW(host_,L"");SetWindowTextW(user_,L"");SetWindowTextW(port_,L"22");
+        SetWindowTextW(identity_,L"");SetWindowTextW(proxy_,L"");SetWindowTextW(password_,L"");
+        SendMessageW(auth_,CB_SETCURSEL,0,0);SendMessageW(list_,LB_SETCURSEL,static_cast<WPARAM>(-1),0);
+    }
+    void populate(int index){
+        if(index<0||index>=static_cast<int>(servers_.size()))return;
+        const auto& v=servers_[static_cast<std::size_t>(index)];
+        SetWindowTextW(alias_,wide(v.alias).c_str());SetWindowTextW(host_,wide(v.hostName).c_str());
+        SetWindowTextW(user_,wide(v.user).c_str());SetWindowTextW(port_,std::to_wstring(v.port).c_str());
+        SetWindowTextW(identity_,wide(v.identityFile).c_str());SetWindowTextW(proxy_,wide(v.proxyJump).c_str());
+        SetWindowTextW(password_,L"");SendMessageW(auth_,CB_SETCURSEL,v.authMethod==SshAuthMethod::Password?1:0,0);
+    }
+    bool saveFields(){
+        SshServer v;v.alias=text(alias_);v.hostName=text(host_);v.user=text(user_);
+        try{const auto p=std::stoul(text(port_));v.port=p<=65535?static_cast<unsigned int>(p):0;}catch(...){v.port=0;}
+        v.identityFile=text(identity_);v.proxyJump=text(proxy_);
+        v.authMethod=SendMessageW(auth_,CB_GETCURSEL,0,0)==1?SshAuthMethod::Password:SshAuthMethod::PublicKey;
+        std::string error;if(!controller_->saveSshServer(v,text(password_),error)){status(error);return false;}
+        SetWindowTextW(password_,L"");refreshList();
+        for(std::size_t i=0;i<servers_.size();++i)if(servers_[i].alias==v.alias){SendMessageW(list_,LB_SETCURSEL,static_cast<WPARAM>(i),0);break;}
+        status("SSH 配置已保存，原有的其他 SSH 选项已保留。");return true;
+    }
+    void useServer(){
+        if(!saveFields())return;std::string error;
+        if(!controller_->selectRemoteServer(text(alias_),error)){status(error);return;}DestroyWindow(hwnd_);
+    }
+    LRESULT handle(UINT message,WPARAM wParam,LPARAM lParam){
+        switch(message){
+        case WM_CREATE:createControls();return 0;
+        case WM_COMMAND:{
+            const int id=LOWORD(wParam),notify=HIWORD(wParam);
+            if(id==ListId&&notify==LBN_SELCHANGE){populate(static_cast<int>(SendMessageW(list_,LB_GETCURSEL,0,0)));return 0;}
+            if(id==AddId){clearFields();status("填写服务器信息，然后保存。");return 0;}
+            if(id==SaveId){saveFields();return 0;}
+            if(id==TestId){
+                if(saveFields()){std::string error;controller_->testSshServer(text(alias_),error);status(error);}return 0;
+            }
+            if(id==UseId){useServer();return 0;}
+            if(id==RemoveId){
+                const int index=static_cast<int>(SendMessageW(list_,LB_GETCURSEL,0,0));
+                if(index<0||index>=static_cast<int>(servers_.size())){status("请先选择要删除的服务器。");return 0;}
+                std::string error;if(controller_->removeSshServer(servers_[static_cast<std::size_t>(index)].alias,error)){
+                    refreshList();clearFields();status("服务器已删除，SSH 配置已同步更新。");
+                }else status(error);return 0;
+            }
+            if(id==LocalId){controller_->selectLocalEncoder();DestroyWindow(hwnd_);return 0;}
+            if(id==CloseId){DestroyWindow(hwnd_);return 0;}
+            break;
+        }
+        case WM_CLOSE:DestroyWindow(hwnd_);return 0;
+        case WM_DESTROY:if(font_){DeleteObject(font_);font_=nullptr;}hwnd_=nullptr;return 0;
+        default:break;
+        }
+        return DefWindowProcW(hwnd_,message,wParam,lParam);
+    }
+    HINSTANCE instance_{};HWND owner_{};HWND hwnd_{};AppController* controller_{};double scale_{1.0};
+    HFONT font_{};HWND list_{},alias_{},host_{},user_{},port_{},identity_{},proxy_{},auth_{},password_{},status_{};
+    std::vector<SshServer> servers_;
+};
+
 class WindowsWindow {
 public:
     explicit WindowsWindow(AppController& controller) : controller_(controller) {}
     int run(HINSTANCE instance) {
+        instance_ = instance;
         WNDCLASSW wc{}; wc.lpfnWndProc = &WindowsWindow::windowProc; wc.hInstance = instance;
         wc.lpszClassName = L"FFmpegStudioBatchWindow"; wc.hCursor = LoadCursorW(nullptr, IDC_ARROW);
         wc.hbrBackground = nullptr; RegisterClassW(&wc);
@@ -244,6 +384,13 @@ private:
         SetWindowTheme(window_, dark_ ? L"DarkMode_Explorer" : L"Explorer", nullptr);
     }
     void updateSettings() { controller_.updateSettings(settings_); }
+    void showSshManager() {
+        SshManagerDialog dialog;
+        dialog.run(instance_,window_,controller_);
+        settings_=controller_.snapshot().settings;
+        applyModernStyle();
+        InvalidateRect(window_,nullptr,FALSE);
+    }
     void addFiles(bool archiveOnly = false) {
         std::vector<wchar_t> buffer(65536);
         const wchar_t mediaFilter[] = L"支持的媒体文件\0*.mp4;*.m4v;*.mov;*.mkv;*.avi;*.webm;*.wmv;*.flv;*.mpg;*.mpeg;*.3gp;*.ts;*.m2ts;*.mts;*.zip;*.pptx\0所有文件\0*.*\0\0";
@@ -364,6 +511,7 @@ private:
         HFONT title = font(25, FW_BOLD), normal = font(14), smallFont = font(12), heading = font(16, FW_SEMIBOLD);
         drawText(dc, {s(30),s(22),s(420),s(38)}, L"FFmpeg Studio", c.text, title);
         drawText(dc, {s(31),s(60),s(700),s(24)}, L"批量视频压缩 · ZIP / PPTX 媒体处理 · CPU 与硬件编码", c.muted, smallFont);
+        drawButton(dc, l.ssh, L"SSH 服务器", c, smallFont, !settings_.remoteHost.empty());
         drawButton(dc, l.theme, dark_ ? L"浅色外观" : L"深色外观", c, smallFont);
 
         drawButton(dc,l.addFiles,L"添加文件",c,normal,true); drawButton(dc,l.addFolder,L"添加文件夹",c,normal);
@@ -483,6 +631,7 @@ private:
         const auto visibleBackends=availableBackends(snap.capabilities,settings_.codec);
         const auto l=makeLayout(client.right,client.bottom,scale(),static_cast<int>(visibleBackends.size()));
         if (editingCrf_ && !contains(l.crfValue,x,y)) commitCrfText();
+        if(contains(l.ssh,x,y)){if(!snap.running)showSshManager();return;}
         if(contains(l.theme,x,y)){dark_=!dark_;applyModernStyle();return;}
         if(contains(l.addFiles,x,y)){addFiles();return;}
         if(contains(l.addFolder,x,y)){addFolder();return;}
@@ -535,7 +684,7 @@ private:
         }
         return DefWindowProcW(window_,msg,wp,lp);
     }
-    AppController& controller_; HWND window_{}; BatchSettings settings_; bool dark_{false};
+    AppController& controller_; HWND window_{}; HINSTANCE instance_{}; BatchSettings settings_; bool dark_{false};
     bool draggingCrf_{false}; bool editingCrf_{false}; std::wstring crfEditText_; int scrollOffset_{0}; std::uint64_t selectedTask_{0};
 };
 
