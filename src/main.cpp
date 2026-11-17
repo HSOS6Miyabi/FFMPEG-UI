@@ -649,7 +649,9 @@ int runSelfTest(bool keepFiles) {
         const auto batchResult = batch.snapshot();
         check("parallel folder batch completion", batchResult.completedTasks == 3 && batchResult.failedTasks == 0);
         const auto expectedWorkers = std::min<std::size_t>(2, batch.snapshot().resourcePlan.parallelJobs);
-        std::cout << "Observed concurrent batch tasks: " << maxRunning << " / " << expectedWorkers << " expected workers\n";
+        std::cout << "Observed concurrent batch tasks: "
+                  << maxRunning << " / " << expectedWorkers
+                  << " expected workers\\n";
         check("parallel worker count follows resource plan", maxRunning >= expectedWorkers && maxRunning <= 2);
         check("custom output directory and folder structure",
             fs::is_regular_file(batchOutput / "one_H264_CPU_CR30_慢速_A128.mp4") &&
