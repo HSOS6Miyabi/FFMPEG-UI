@@ -165,7 +165,11 @@ bool extractArchive(const fs::path& source, const fs::path& destination, std::st
         std::uint64_t actualSize = 0;
         while ((bytes = archive_read_data(reader, buffer.data(), buffer.size())) > 0) {
             actualSize += static_cast<std::uint64_t>(bytes);
-            if (actualSize > maxEntryBytes || totalBytes - static_cast<std::uint64_t>(declaredSize) + actualSize > maxTotalBytes) {
+            const std::uint64_t declaredBytes =
+                static_cast<std::uint64_t>(declaredSize);
+            const std::uint64_t projectedTotal =
+                totalBytes - declaredBytes + actualSize;
+            if (actualSize > maxEntryBytes || projectedTotal > maxTotalBytes) {
                 error = "ZIP 文件实际展开的数据量超过安全限制。";
                 success = false;
                 break;
@@ -217,8 +221,11 @@ bool writeArchive(const fs::path& sourceDirectory, const fs::path& destination,
 
     std::error_code fsError;
     bool success = true;
-    for (fs::recursive_directory_iterator it(sourceDirectory,
-             fs::directory_options::skip_permission_denied, fsError), end; it != end && !fsError; it.increment(fsError)) {
+    for (fs::recursive_directory_iterator it(
+             sourceDirectory, fs::directory_options::skip_permission_denied, fsError),
+         end;
+         it != end && !fsError;
+         it.increment(fsError)) {
         if (it->is_symlink(fsError)) continue;
         const fs::path relative = fs::relative(it->path(), sourceDirectory, fsError);
         if (fsError) break;
@@ -408,7 +415,10 @@ void updateReferences(const fs::path& root,
                 if (extension.empty()) continue;
                 const std::string tokenDouble = "Extension=\"" + extension + "\"";
                 const std::string tokenSingle = "Extension='" + extension + "'";
-                if (text.find(tokenDouble) != std::string::npos || text.find(tokenSingle) != std::string::npos) continue;
+                if (text.find(tokenDouble) != std::string::npos ||
+                    text.find(tokenSingle) != std::string::npos) {
+                    continue;
+                }
                 std::string contentType = "video/mp4";
                 if (extension == "mov") contentType = "video/quicktime";
                 else if (extension == "wmv") contentType = "video/x-ms-wmv";
@@ -416,8 +426,12 @@ void updateReferences(const fs::path& root,
                 else if (extension == "avi") contentType = "video/x-msvideo";
                 else if (extension == "mkv") contentType = "video/x-matroska";
                 const auto closing = text.rfind("</Types>");
-                if (closing != std::string::npos)
-                    text.insert(closing, "<Default Extension=\"" + extension + "\" ContentType=\"" + contentType + "\"/>");
+                if (closing != std::string::npos) {
+                    const std::string defaultEntry =
+                        "<Default Extension=\"" + extension +
+                        "\" ContentType=\"" + contentType + "\"/>";
+                    text.insert(closing, defaultEntry);
+                }
             }
         }
         std::ofstream output(it->path(), std::ios::binary | std::ios::trunc);

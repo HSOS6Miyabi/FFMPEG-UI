@@ -92,7 +92,16 @@ Layout makeLayout(int width, int height, double scale, int backendCount = 4) {
     for(int i=0;i<backendCount;++i)l.backend[i]={leftX+s(20)+i*(backendW+s(6)),sy+s(210),backendW,s(34)};
     l.crfTrack={leftX+s(20),sy+s(276),leftW-s(144),s(10)};l.crfValue={leftX+leftW-s(112),sy+s(261),s(92),s(38)};
     const int compW=(leftW-s(52)-s(18))/4;
-    for(int i=0;i<8;++i){const int row=i/4,col=i%4;l.compression[i]={leftX+s(20)+col*(compW+s(6)),sy+s(324)+row*s(39),compW,s(32)};}
+    for (int index = 0; index < 8; ++index) {
+        const int row = index / 4;
+        const int column = index % 4;
+        l.compression[index] = {
+            leftX + s(20) + column * (compW + s(6)),
+            sy + s(324) + row * s(39),
+            compW,
+            s(32)
+        };
+    }
     const int audioW=(leftW-s(52)-s(30))/6;
     for(int i=0;i<6;++i)l.audio[i]={leftX+s(20)+i*(audioW+s(6)),sy+s(414),audioW,s(32)};
     const int optionGap = s(6);

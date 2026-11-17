@@ -544,7 +544,11 @@ ResourcePlan recommendResourcePlan(std::size_t taskCount, EncoderBackend backend
                                    std::uint64_t availableMemoryOverride,
                                    std::string_view resourceLabel) {
     ResourcePlan plan;
-    plan.logicalCores = std::max(1U, logicalCoresOverride == 0 ? std::thread::hardware_concurrency() : logicalCoresOverride);
+    const unsigned int detectedCores =
+        logicalCoresOverride == 0
+            ? std::thread::hardware_concurrency()
+            : logicalCoresOverride;
+    plan.logicalCores = std::max(1U, detectedCores);
     plan.availableMemoryBytes = availableMemoryOverride == 0 ? availableMemory() : availableMemoryOverride;
     if (taskCount == 0) {
         plan.parallelJobs = 0;
