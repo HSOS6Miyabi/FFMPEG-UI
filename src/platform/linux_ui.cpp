@@ -319,53 +319,768 @@ private:
         canvas.reset();XDestroyWindow(display_,dialog);XFlush(display_);
     }
 
-    void commitCrfText(){if(!editingCrf_)return;if(!crfEditText_.empty()){try{settings_.crf=std::clamp(std::stoi(crfEditText_),0,crfMaximum(settings_.codec));updateSettings();}catch(...){}}editingCrf_=false;crfEditText_.clear();}
-    void addFiles(bool archiveOnly=false){const auto files=chooseFiles(archiveOnly);if(!files.empty())controller_.addInputs(files);}
-    void startOrCancel(){const auto snap=controller_.snapshot();if(!snap.running)controller_.startBatch();else if(snap.paused)controller_.resumeBatch();else controller_.pauseBatch();}
-    std::vector<std::pair<BatchTaskSnapshot,BatchItemSnapshot>> rows(const AppSnapshot& snap)const{std::vector<std::pair<BatchTaskSnapshot,BatchItemSnapshot>> out;for(const auto& task:snap.tasks){if(task.kind==TaskKind::Video){BatchItemSnapshot item;if(!task.items.empty())item=task.items.front();else{item.name=basename(task.inputPath);item.state=task.state;item.progress=task.progress;item.detail=task.detail;}out.emplace_back(task,item);}else{BatchItemSnapshot parent;parent.name=basename(task.inputPath);parent.state=task.state;parent.progress=task.progress;parent.detail=task.detail;out.emplace_back(task,parent);for(const auto& item:task.items)out.emplace_back(task,item);}}return out;}
-    void draw(){const auto snap=controller_.snapshot();const auto backends=availableBackends(snap.capabilities,settings_.codec);const auto l=makeLayout(width_,height_,scale_,static_cast<int>(backends.size()));const auto c=palette(dark_);canvas_->fill({0,0,width_,height_},c.background);
-        canvas_->text(s(30),s(50),"FFmpeg Studio",c.text,2);canvas_->text(s(31),s(82),"批量视频压缩 · ZIP / PPTX 媒体处理 · CPU 与硬件编码",c.muted,0);canvas_->button(l.ssh,"SSH 服务器",c,!settings_.remoteHost.empty());canvas_->button(l.theme,dark_?"浅色外观":"深色外观",c);
-        canvas_->button(l.addFiles,"添加文件",c,true);canvas_->button(l.addFolder,"添加文件夹",c);canvas_->button(l.addArchive,"添加 ZIP / PPTX",c);canvas_->button(l.importQueue,"导入清单",c);canvas_->button(l.exportQueue,"导出清单",c);canvas_->button(l.removeSelected,"移除选中",c);canvas_->button(l.clearDone,"清除已完成",c);
-        const int leftX=s(28),top=s(168);canvas_->card({leftX,top,l.queue.width,s(520)},c);canvas_->text(leftX+s(20),top+s(32),"编码设置",c.text,1);canvas_->text(leftX+s(20),top+s(64),"输出文件夹",c.muted,0);
-        const std::string output=settings_.outputDirectory.empty()?"默认：与每个源文件保存在同一文件夹":settings_.outputDirectory;
-        canvas_->rounded(l.outputField,c.input,8);canvas_->text(l.outputField.x+s(12),l.outputField.y+l.outputField.height/2+s(5),output,c.text,0);canvas_->button(l.outputBrowse,"选择目录",c);
-        canvas_->text(leftX+s(20),top+s(98),"输出容器格式",c.muted,0);const std::array<std::string,2> containers{"MP4","与源文件相同"};for(int i=0;i<2;++i)canvas_->button(l.container[i],containers[i],c,static_cast<int>(settings_.outputContainer)==i);
-        canvas_->text(leftX+s(20),top+s(149),"视频编码格式",c.muted,0);const std::array<std::string,3> codecs{"H.264","H.265","AV1"};for(int i=0;i<3;++i)canvas_->button(l.codec[i],codecs[i],c,static_cast<int>(settings_.codec)==i);
-        canvas_->text(leftX+s(20),top+s(197),"编码设备",c.muted,0);const std::array<std::string,4> backendNames{"CPU","NVIDIA NVENC","Intel QSV","AMD AMF"};
-        for(std::size_t i=0;i<backends.size();++i){const int labelIndex=backends[i]==EncoderBackend::CPU?0:backends[i]==EncoderBackend::NVENC?1:backends[i]==EncoderBackend::QSV?2:3;canvas_->button(l.backend[i],backendNames[labelIndex],c,settings_.backend==backends[i]);}
-        if(backends.empty())canvas_->text(leftX+s(20),top+s(181),"当前 FFmpeg 环境没有可用的视频编码器",c.red,0);
-        canvas_->text(leftX+s(20),top+s(245),"CRF / 目标质量",c.muted,0);canvas_->progress(l.crfTrack,static_cast<double>(settings_.crf)/crfMaximum(settings_.codec),c);const int knob=l.crfTrack.x+static_cast<int>(std::lround(l.crfTrack.width*static_cast<double>(settings_.crf)/crfMaximum(settings_.codec)));canvas_->rounded({knob-s(7),l.crfTrack.y-s(5),s(14),s(20)},c.accent,7);canvas_->button(l.crfValue,editingCrf_?(crfEditText_.empty()?"输入":crfEditText_):std::to_string(settings_.crf),c,true);
-        canvas_->text(leftX+s(20),top+s(296),"压缩级别",c.muted,0);const std::array<std::string,8> levels{"极速","非常快","快速","均衡","慢速","较慢","很慢","极致压缩"};for(int i=0;i<8;++i)canvas_->button(l.compression[i],levels[i],c,static_cast<int>(settings_.compression)==i);
-        canvas_->text(leftX+s(20),top+s(383),"音频码率",c.muted,0);const std::array<int,6> rates{96,128,160,192,256,320};for(int i=0;i<6;++i)canvas_->button(l.audio[i],std::to_string(rates[i])+" kbps",c,settings_.audioBitrateKbps==rates[i]);
-        canvas_->button(l.parallel,settings_.maxParallelJobs==0?"并行：自动":"并行："+std::to_string(settings_.maxParallelJobs),c);canvas_->button(l.recursive,settings_.recursive?"递归扫描✓":"递归扫描",c,settings_.recursive);canvas_->button(l.skip,settings_.skipAlreadyProcessed?"跳过重复✓":"跳过重复",c,settings_.skipAlreadyProcessed);canvas_->button(l.preserve,settings_.preserveDirectoryStructure?"保留目录✓":"保留目录",c,settings_.preserveDirectoryStructure);canvas_->button(l.overwrite,settings_.overwrite?"覆盖文件✓":"保留文件",c,settings_.overwrite);
-        canvas_->card(l.queue,c);canvas_->text(l.queue.x+s(20),l.queue.y+s(34),"处理队列",c.text,1);canvas_->text(l.queue.x+l.queue.width-s(330),l.queue.y+s(34),"总计 "+std::to_string(snap.totalTasks)+" · 运行 "+std::to_string(snap.runningTasks)+" · 完成 "+std::to_string(snap.completedTasks)+" · 失败 "+std::to_string(snap.failedTasks),c.muted,0);
-        const auto taskRows=rows(snap);const int rowH=s(68),listTop=l.queue.y+s(54),visible=std::max(1,(l.queue.height-s(68))/rowH);const int maxScroll=std::max(0,static_cast<int>(taskRows.size())-visible);scrollOffset_=std::clamp(scrollOffset_,0,maxScroll);
-        if(taskRows.empty())canvas_->text(l.queue.x+s(30),listTop+s(55),"将视频、ZIP 或 PPTX 文件拖到窗口中，或使用上方按钮添加文件和文件夹。",c.muted,1);
-        else for(int i=0;i<visible&&i+scrollOffset_<static_cast<int>(taskRows.size());++i){const auto& [task,item]=taskRows[static_cast<std::size_t>(i+scrollOffset_)];const int y=listTop+i*rowH;const bool child=task.kind!=TaskKind::Video&&item.name!=basename(task.inputPath);if(selectedTask_==task.id)canvas_->rounded({l.queue.x+s(10),y+s(2),l.queue.width-s(20),rowH-s(4)},c.accentSoft,7);const std::string title=child?"↳ "+item.name:item.name+"  ·  "+taskKindName(task.kind);canvas_->text(l.queue.x+(child?s(38):s(20)),y+s(20),title,c.text,child?0:1);const auto state=child?item.state:task.state;const double progress=child?item.progress:task.progress;canvas_->text(l.queue.x+l.queue.width-s(150),y+s(20),taskStateName(state),state==TaskState::Failed?c.red:(state==TaskState::Completed||state==TaskState::Skipped)?c.green:c.muted,0);canvas_->progress({l.queue.x+s(20),y+s(36),l.queue.width-s(180),s(7)},progress,c);std::string detail=child?formatProgressLine(item.progressInfo,item.detail):(task.kind==TaskKind::Video&&!task.items.empty()?formatProgressLine(task.items[0].progressInfo,task.detail):task.detail);const std::string sizeLine=child?formatTaskSize(item.inputSizeBytes,item.outputSizeBytes):formatTaskSize(task.inputSizeBytes,task.outputSizeBytes);if(!sizeLine.empty()&&(state==TaskState::Completed||state==TaskState::Skipped))detail=sizeLine;canvas_->text(l.queue.x+l.queue.width-s(148),y+s(56),detail,c.muted,0);canvas_->line(l.queue.x+s(18),y+rowH-s(2),l.queue.x+l.queue.width-s(18),y+rowH-s(2),c.border);}
-        canvas_->card(l.overallCard,c);canvas_->text(l.overallCard.x+s(22),l.overallCard.y+s(36),"批量处理进度",c.text,1);canvas_->text(l.overallCard.x+s(22),l.overallCard.y+s(76),snap.status,c.text,0);canvas_->text(l.overallCard.x+s(22),l.overallCard.y+s(102),snap.detail,c.muted,0);canvas_->progress(l.overallTrack,snap.overallProgress,c);std::ostringstream percent;percent.setf(std::ios::fixed);percent.precision(1);percent<<snap.overallProgress*100.0<<"%";canvas_->text(l.overallCard.x+s(22),l.overallCard.y+s(178),percent.str(),c.accent,1);canvas_->text(l.overallCard.x+s(130),l.overallCard.y+s(178),"完成 "+std::to_string(snap.completedTasks+snap.skippedTasks)+" / "+std::to_string(snap.totalTasks),c.muted,0);if(!snap.running)canvas_->button(l.start,"开始批量处理",c,true,snap.tasks.empty()||!snap.capabilities.supports(settings_.codec,settings_.backend));else{canvas_->button(l.pause,snap.paused?"继续处理":"暂停处理",c,true);canvas_->button(l.cancel,"取消任务",c);}
-        const int infoY=l.overallCard.y+l.overallCard.height+s(18);const Rect info{l.overallCard.x,infoY,l.overallCard.width,height_-infoY-s(28)};canvas_->card(info,c);canvas_->text(info.x+s(22),info.y+s(38),"设备与编码摘要",c.text,1);canvas_->text(info.x+s(22),info.y+s(78),"格式  "+codecName(settings_.codec)+" · "+outputContainerName(settings_.outputContainer),c.text,0);canvas_->text(info.x+s(22),info.y+s(108),"编码器  "+backendName(settings_.backend),c.text,0);canvas_->text(info.x+s(22),info.y+s(138),"CRF  "+std::to_string(settings_.crf)+" · "+compressionName(settings_.compression),c.text,0);canvas_->text(info.x+s(22),info.y+s(168),"音频码率  "+std::to_string(settings_.audioBitrateKbps)+" kbps（按容器选择编码）",c.text,0);
-        canvas_->text(info.x+s(22),info.y+s(198),settings_.remoteHost.empty()?"计算设备  本机":"计算设备  远程 · "+settings_.remoteHost,c.text,0);
-        canvas_->text(info.x+s(22),info.y+s(228),snap.resourcePlan.explanation,c.muted,0);canvas_->text(info.x+s(22),info.y+s(270),"支持 H.264、H.265、AV1。ZIP 与 PPTX 会保留其他文件并更新视频引用。",c.muted,0);if(!snap.error.empty())canvas_->text(info.x+s(22),info.y+info.height-s(45),snap.error,c.red,0);canvas_->flush();}
-    void commitCrf(int x,const Layout& l){editingCrf_=false;crfEditText_.clear();const double f=std::clamp(static_cast<double>(x-l.crfTrack.x)/std::max(1,l.crfTrack.width),0.0,1.0);settings_.crf=static_cast<int>(std::lround(f*crfMaximum(settings_.codec)));updateSettings();}
-    void click(int x,int y){const auto snap=controller_.snapshot();const auto visibleBackends=availableBackends(snap.capabilities,settings_.codec);const auto l=makeLayout(width_,height_,scale_,static_cast<int>(visibleBackends.size()));if(editingCrf_&&!contains(l.crfValue,x,y))commitCrfText();if(contains(l.ssh,x,y)){if(!snap.running)manageSshServers();return;}if(contains(l.theme,x,y)){dark_=!dark_;return;}if(contains(l.addFiles,x,y)){addFiles();return;}if(contains(l.addFolder,x,y)){chooseFolder();return;}if(contains(l.addArchive,x,y)){addFiles(true);return;}if(contains(l.importQueue,x,y)){importQueueDialog();return;}if(contains(l.exportQueue,x,y)){exportQueueDialog();return;}if(contains(l.removeSelected,x,y)){if(selectedTask_)controller_.removeTask(selectedTask_);return;}if(contains(l.clearDone,x,y)){controller_.clearCompleted();return;}if(contains(l.outputBrowse,x,y)){chooseOutput();return;}if(!snap.running&&contains(l.start,x,y)){startOrCancel();return;}if(snap.running&&contains(l.pause,x,y)){if(snap.paused)controller_.resumeBatch();else controller_.pauseBatch();return;}if(snap.running&&contains(l.cancel,x,y)){controller_.cancelBatch();return;}if(contains(l.crfValue,x,y)){editingCrf_=true;crfEditText_.clear();XSetInputFocus(display_,window_,RevertToParent,CurrentTime);return;}
-        for(int i=0;i<2;++i)if(contains(l.container[i],x,y)){settings_.outputContainer=static_cast<OutputContainer>(i);updateSettings();return;}
-        for(int i=0;i<3;++i)if(contains(l.codec[i],x,y)){settings_.codec=static_cast<VideoCodec>(i);settings_.crf=defaultCrf(settings_.codec);const auto caps=controller_.snapshot().capabilities;if(!caps.supports(settings_.codec,settings_.backend)){for(const auto candidate:{EncoderBackend::CPU,EncoderBackend::NVENC,EncoderBackend::QSV,EncoderBackend::AMF})if(caps.supports(settings_.codec,candidate)){settings_.backend=candidate;break;}}updateSettings();return;}
-        for(std::size_t i=0;i<visibleBackends.size();++i)if(contains(l.backend[i],x,y)){settings_.backend=visibleBackends[i];updateSettings();return;}
-        for(int i=0;i<8;++i)if(contains(l.compression[i],x,y)){settings_.compression=static_cast<CompressionLevel>(i);updateSettings();return;}
-        const std::array<int,6> rates{96,128,160,192,256,320};for(int i=0;i<6;++i)if(contains(l.audio[i],x,y)){settings_.audioBitrateKbps=rates[i];updateSettings();return;}
-        if(contains(l.parallel,x,y)){const std::array<int,5> choices{0,1,2,4,8};auto it=std::find(choices.begin(),choices.end(),settings_.maxParallelJobs);settings_.maxParallelJobs=choices[(static_cast<std::size_t>(std::distance(choices.begin(),it))+1)%choices.size()];updateSettings();return;}
-        if(contains(l.recursive,x,y)){settings_.recursive=!settings_.recursive;updateSettings();return;}if(contains(l.skip,x,y)){settings_.skipAlreadyProcessed=!settings_.skipAlreadyProcessed;updateSettings();return;}if(contains(l.preserve,x,y)){settings_.preserveDirectoryStructure=!settings_.preserveDirectoryStructure;updateSettings();return;}if(contains(l.overwrite,x,y)){settings_.overwrite=!settings_.overwrite;updateSettings();return;}
-        if(y>=l.crfTrack.y-s(10)&&y<=l.crfTrack.y+s(18)&&x>=l.crfTrack.x&&x<=l.crfTrack.x+l.crfTrack.width){draggingCrf_=true;commitCrf(x,l);return;}
-        if(y>=l.queue.y+s(54)&&x>=l.queue.x&&x<=l.queue.x+l.queue.width){const int row=(y-(l.queue.y+s(54)))/s(68)+scrollOffset_;const auto list=rows(controller_.snapshot());if(row>=0&&row<static_cast<int>(list.size()))selectedTask_=list[static_cast<std::size_t>(row)].first.id;}
+    void commitCrfText() {
+        if (!editingCrf_) {
+            return;
+        }
+
+        if (!crfEditText_.empty()) {
+            try {
+                settings_.crf = std::clamp(
+                    std::stoi(crfEditText_), 0, crfMaximum(settings_.codec));
+                updateSettings();
+            } catch (const std::exception&) {
+                // Invalid text is discarded; the last valid CRF value remains active.
+            }
+        }
+
+        editingCrf_ = false;
+        crfEditText_.clear();
     }
-    std::vector<std::string> readDropSelection(){Atom actual{};int format=0;unsigned long count=0,after=0;unsigned char* data=nullptr;std::vector<std::string> paths;if(XGetWindowProperty(display_,window_,XInternAtom(display_,"XdndSelection",False),0,65536,True,uriList_,&actual,&format,&count,&after,&data)==Success&&data){std::string content(reinterpret_cast<char*>(data),count);XFree(data);std::istringstream lines(content);std::string line;while(std::getline(lines,line)){line=trim(line);if(line.empty()||line[0]=='#')continue;if(line.rfind("file://",0)==0)line=percentDecode(line.substr(7));if(!line.empty())paths.push_back(line);}}return paths;}
-    bool handle(XEvent& e){if(e.type==Expose){draw();return false;}if(e.type==ConfigureNotify){width_=e.xconfigure.width;height_=e.xconfigure.height;return false;}if(e.type==ClientMessage){if(static_cast<Atom>(e.xclient.data.l[0])==wmDelete_)return true;const Atom type=static_cast<Atom>(e.xclient.message_type);if(type==xdndEnter_){dragSource_=static_cast<Window>(e.xclient.data.l[0]);return false;}if(type==xdndPosition_){XEvent reply{};reply.xclient.type=ClientMessage;reply.xclient.display=display_;reply.xclient.window=dragSource_;reply.xclient.message_type=xdndStatus_;reply.xclient.format=32;reply.xclient.data.l[0]=window_;reply.xclient.data.l[1]=1;reply.xclient.data.l[4]=static_cast<long>(XInternAtom(display_,"XdndActionCopy",False));XSendEvent(display_,dragSource_,False,NoEventMask,&reply);XFlush(display_);return false;}if(type==xdndDrop_){XConvertSelection(display_,xdndSelection_,uriList_,XInternAtom(display_,"XdndSelection",False),window_,static_cast<Time>(e.xclient.data.l[2]));return false;}}
-        if(e.type==SelectionNotify){auto paths=readDropSelection();if(!paths.empty())controller_.addInputs(paths);XEvent reply{};reply.xclient.type=ClientMessage;reply.xclient.display=display_;reply.xclient.window=dragSource_;reply.xclient.message_type=xdndFinished_;reply.xclient.format=32;reply.xclient.data.l[0]=window_;reply.xclient.data.l[1]=paths.empty()?0:1;reply.xclient.data.l[2]=static_cast<long>(XInternAtom(display_,"XdndActionCopy",False));XSendEvent(display_,dragSource_,False,NoEventMask,&reply);XFlush(display_);return false;}
-        if(e.type==ButtonPress){if(e.xbutton.button==Button4||e.xbutton.button==Button5){scrollOffset_=std::max(0,scrollOffset_+(e.xbutton.button==Button4?-3:3));return false;}click(e.xbutton.x,e.xbutton.y);return false;}
-        if(e.type==MotionNotify&&draggingCrf_){commitCrf(e.xmotion.x,makeLayout(width_,height_,scale_));return false;}
-        if(e.type==ButtonRelease){draggingCrf_=false;return false;}
-        if(e.type==KeyPress){KeySym key=XLookupKeysym(&e.xkey,0);const bool ctrl=(e.xkey.state&ControlMask)!=0;if(editingCrf_){if(key==XK_Return||key==XK_KP_Enter)commitCrfText();else if(key==XK_BackSpace&&!crfEditText_.empty())crfEditText_.pop_back();else if(key==XK_Escape){editingCrf_=false;crfEditText_.clear();}else{char text[8]{};KeySym symbol{};const int length=XLookupString(&e.xkey,text,sizeof(text),&symbol,nullptr);for(int i=0;i<length&&crfEditText_.size()<3;++i)if(text[i]>='0'&&text[i]<='9')crfEditText_.push_back(text[i]);}return false;}if(ctrl&&key==XK_o){addFiles();return false;}if(ctrl&&key==XK_d){controller_.clearCompleted();return false;}if(ctrl&&key==XK_Return){startOrCancel();return false;}if(key==XK_Delete&&selectedTask_){controller_.removeTask(selectedTask_);return false;}if(key==XK_Escape)return true;}
-        return false;}
+
+    void addFiles(bool archiveOnly = false) {
+        const auto files = chooseFiles(archiveOnly);
+        if (!files.empty()) {
+            controller_.addInputs(files);
+        }
+    }
+
+    void startOrCancel() {
+        const auto snapshot = controller_.snapshot();
+        if (!snapshot.running) {
+            controller_.startBatch();
+        } else if (snapshot.paused) {
+            controller_.resumeBatch();
+        } else {
+            controller_.pauseBatch();
+        }
+    }
+
+    std::vector<std::pair<BatchTaskSnapshot, BatchItemSnapshot>> rows(
+        const AppSnapshot& snapshot) const {
+        std::vector<std::pair<BatchTaskSnapshot, BatchItemSnapshot>> result;
+
+        for (const auto& task : snapshot.tasks) {
+            if (task.kind == TaskKind::Video) {
+                BatchItemSnapshot item;
+                if (!task.items.empty()) {
+                    item = task.items.front();
+                } else {
+                    item.name = basename(task.inputPath);
+                    item.state = task.state;
+                    item.progress = task.progress;
+                    item.detail = task.detail;
+                }
+                result.emplace_back(task, std::move(item));
+                continue;
+            }
+
+            BatchItemSnapshot parent;
+            parent.name = basename(task.inputPath);
+            parent.state = task.state;
+            parent.progress = task.progress;
+            parent.detail = task.detail;
+            result.emplace_back(task, std::move(parent));
+
+            for (const auto& item : task.items) {
+                result.emplace_back(task, item);
+            }
+        }
+
+        return result;
+    }
+
+    void draw() {
+        const auto snapshot = controller_.snapshot();
+        const auto backends = availableBackends(snapshot.capabilities, settings_.codec);
+        const auto layout = makeLayout(
+            width_, height_, scale_, static_cast<int>(backends.size()));
+        const auto colors = palette(dark_);
+
+        canvas_->fill({0, 0, width_, height_}, colors.background);
+        canvas_->text(s(30), s(50), "FFmpeg Studio", colors.text, 2);
+        canvas_->text(
+            s(31), s(82),
+            "批量视频压缩 · ZIP / PPTX 媒体处理 · CPU 与硬件编码",
+            colors.muted, 0);
+        canvas_->button(
+            layout.ssh, "SSH 服务器", colors, !settings_.remoteHost.empty());
+        canvas_->button(
+            layout.theme, dark_ ? "浅色外观" : "深色外观", colors);
+
+        canvas_->button(layout.addFiles, "添加文件", colors, true);
+        canvas_->button(layout.addFolder, "添加文件夹", colors);
+        canvas_->button(layout.addArchive, "添加 ZIP / PPTX", colors);
+        canvas_->button(layout.importQueue, "导入清单", colors);
+        canvas_->button(layout.exportQueue, "导出清单", colors);
+        canvas_->button(layout.removeSelected, "移除选中", colors);
+        canvas_->button(layout.clearDone, "清除已完成", colors);
+
+        const int left = s(28);
+        const int top = s(168);
+        canvas_->card({left, top, layout.queue.width, s(520)}, colors);
+        canvas_->text(left + s(20), top + s(32), "编码设置", colors.text, 1);
+        canvas_->text(left + s(20), top + s(64), "输出文件夹", colors.muted, 0);
+
+        const std::string outputDirectory = settings_.outputDirectory.empty()
+            ? "默认：与每个源文件保存在同一文件夹"
+            : settings_.outputDirectory;
+        canvas_->rounded(layout.outputField, colors.input, 8);
+        canvas_->text(
+            layout.outputField.x + s(12),
+            layout.outputField.y + layout.outputField.height / 2 + s(5),
+            outputDirectory, colors.text, 0);
+        canvas_->button(layout.outputBrowse, "选择目录", colors);
+
+        canvas_->text(left + s(20), top + s(98), "输出容器格式", colors.muted, 0);
+        const std::array<std::string, 2> containers{"MP4", "与源文件相同"};
+        for (std::size_t index = 0; index < containers.size(); ++index) {
+            canvas_->button(
+                layout.container[index], containers[index], colors,
+                static_cast<int>(settings_.outputContainer) == static_cast<int>(index));
+        }
+
+        canvas_->text(left + s(20), top + s(149), "视频编码格式", colors.muted, 0);
+        const std::array<std::string, 3> codecs{"H.264", "H.265", "AV1"};
+        for (std::size_t index = 0; index < codecs.size(); ++index) {
+            canvas_->button(
+                layout.codec[index], codecs[index], colors,
+                static_cast<int>(settings_.codec) == static_cast<int>(index));
+        }
+
+        canvas_->text(left + s(20), top + s(197), "编码设备", colors.muted, 0);
+        const std::array<std::string, 4> backendNames{
+            "CPU", "NVIDIA NVENC", "Intel QSV", "AMD AMF"
+        };
+        for (std::size_t index = 0; index < backends.size(); ++index) {
+            std::size_t labelIndex = 0;
+            switch (backends[index]) {
+            case EncoderBackend::CPU: labelIndex = 0; break;
+            case EncoderBackend::NVENC: labelIndex = 1; break;
+            case EncoderBackend::QSV: labelIndex = 2; break;
+            case EncoderBackend::AMF: labelIndex = 3; break;
+            }
+            canvas_->button(
+                layout.backend[index], backendNames[labelIndex], colors,
+                settings_.backend == backends[index]);
+        }
+        if (backends.empty()) {
+            canvas_->text(
+                left + s(20), top + s(181),
+                "当前 FFmpeg 环境没有可用的视频编码器", colors.red, 0);
+        }
+
+        canvas_->text(left + s(20), top + s(245), "CRF / 目标质量", colors.muted, 0);
+        const int maximumCrf = crfMaximum(settings_.codec);
+        const double crfFraction =
+            static_cast<double>(settings_.crf) / static_cast<double>(maximumCrf);
+        canvas_->progress(layout.crfTrack, crfFraction, colors);
+        const int knobPosition = layout.crfTrack.x +
+            static_cast<int>(std::lround(layout.crfTrack.width * crfFraction));
+        canvas_->rounded(
+            {knobPosition - s(7), layout.crfTrack.y - s(5), s(14), s(20)},
+            colors.accent, 7);
+        const std::string crfLabel = editingCrf_
+            ? (crfEditText_.empty() ? "输入" : crfEditText_)
+            : std::to_string(settings_.crf);
+        canvas_->button(layout.crfValue, crfLabel, colors, true);
+
+        canvas_->text(left + s(20), top + s(296), "压缩级别", colors.muted, 0);
+        const std::array<std::string, 8> compressionLevels{
+            "极速", "非常快", "快速", "均衡", "慢速", "较慢", "很慢", "极致压缩"
+        };
+        for (std::size_t index = 0; index < compressionLevels.size(); ++index) {
+            canvas_->button(
+                layout.compression[index], compressionLevels[index], colors,
+                static_cast<int>(settings_.compression) == static_cast<int>(index));
+        }
+
+        canvas_->text(left + s(20), top + s(383), "音频码率", colors.muted, 0);
+        const std::array<int, 6> audioRates{96, 128, 160, 192, 256, 320};
+        for (std::size_t index = 0; index < audioRates.size(); ++index) {
+            canvas_->button(
+                layout.audio[index], std::to_string(audioRates[index]) + " kbps",
+                colors, settings_.audioBitrateKbps == audioRates[index]);
+        }
+
+        canvas_->button(
+            layout.parallel,
+            settings_.maxParallelJobs == 0
+                ? "并行：自动"
+                : "并行：" + std::to_string(settings_.maxParallelJobs),
+            colors);
+        canvas_->button(
+            layout.recursive, settings_.recursive ? "递归扫描✓" : "递归扫描",
+            colors, settings_.recursive);
+        canvas_->button(
+            layout.skip, settings_.skipAlreadyProcessed ? "跳过重复✓" : "跳过重复",
+            colors, settings_.skipAlreadyProcessed);
+        canvas_->button(
+            layout.preserve,
+            settings_.preserveDirectoryStructure ? "保留目录✓" : "保留目录",
+            colors, settings_.preserveDirectoryStructure);
+        canvas_->button(
+            layout.overwrite, settings_.overwrite ? "覆盖文件✓" : "保留文件",
+            colors, settings_.overwrite);
+
+        canvas_->card(layout.queue, colors);
+        canvas_->text(
+            layout.queue.x + s(20), layout.queue.y + s(34),
+            "处理队列", colors.text, 1);
+        const std::string queueSummary =
+            "总计 " + std::to_string(snapshot.totalTasks) +
+            " · 运行 " + std::to_string(snapshot.runningTasks) +
+            " · 完成 " + std::to_string(snapshot.completedTasks) +
+            " · 失败 " + std::to_string(snapshot.failedTasks);
+        canvas_->text(
+            layout.queue.x + layout.queue.width - s(330),
+            layout.queue.y + s(34), queueSummary, colors.muted, 0);
+
+        const auto taskRows = rows(snapshot);
+        const int rowHeight = s(68);
+        const int listTop = layout.queue.y + s(54);
+        const int visibleRows = std::max(
+            1, (layout.queue.height - s(68)) / rowHeight);
+        const int maximumScroll = std::max(
+            0, static_cast<int>(taskRows.size()) - visibleRows);
+        scrollOffset_ = std::clamp(scrollOffset_, 0, maximumScroll);
+
+        if (taskRows.empty()) {
+            canvas_->text(
+                layout.queue.x + s(30), listTop + s(55),
+                "将视频、ZIP 或 PPTX 文件拖到窗口中，或使用上方按钮添加文件和文件夹。",
+                colors.muted, 1);
+        } else {
+            const int rowCount = std::min(
+                visibleRows,
+                static_cast<int>(taskRows.size()) - scrollOffset_);
+            for (int index = 0; index < rowCount; ++index) {
+                const auto& [task, item] =
+                    taskRows[static_cast<std::size_t>(index + scrollOffset_)];
+                const int rowY = listTop + index * rowHeight;
+                const bool childRow =
+                    task.kind != TaskKind::Video && item.name != basename(task.inputPath);
+
+                if (selectedTask_ == task.id) {
+                    canvas_->rounded(
+                        {layout.queue.x + s(10), rowY + s(2),
+                         layout.queue.width - s(20), rowHeight - s(4)},
+                        colors.accentSoft, 7);
+                }
+
+                const std::string title = childRow
+                    ? "↳ " + item.name
+                    : item.name + "  ·  " + taskKindName(task.kind);
+                const int titleIndent = childRow ? s(38) : s(20);
+                canvas_->text(
+                    layout.queue.x + titleIndent, rowY + s(20),
+                    title, colors.text, childRow ? 0 : 1);
+
+                const TaskState state = childRow ? item.state : task.state;
+                const double progress = childRow ? item.progress : task.progress;
+                const char* stateColor =
+                    state == TaskState::Failed ? colors.red :
+                    (state == TaskState::Completed || state == TaskState::Skipped)
+                        ? colors.green : colors.muted;
+                canvas_->text(
+                    layout.queue.x + layout.queue.width - s(150),
+                    rowY + s(20), taskStateName(state), stateColor, 0);
+                canvas_->progress(
+                    {layout.queue.x + s(20), rowY + s(36),
+                     layout.queue.width - s(180), s(7)},
+                    progress, colors);
+
+                std::string detail;
+                if (childRow) {
+                    detail = formatProgressLine(item.progressInfo, item.detail);
+                } else if (task.kind == TaskKind::Video && !task.items.empty()) {
+                    detail = formatProgressLine(task.items.front().progressInfo, task.detail);
+                } else {
+                    detail = task.detail;
+                }
+
+                const std::string sizeSummary = childRow
+                    ? formatTaskSize(item.inputSizeBytes, item.outputSizeBytes)
+                    : formatTaskSize(task.inputSizeBytes, task.outputSizeBytes);
+                if (!sizeSummary.empty() &&
+                    (state == TaskState::Completed || state == TaskState::Skipped)) {
+                    detail = sizeSummary;
+                }
+
+                canvas_->text(
+                    layout.queue.x + layout.queue.width - s(148),
+                    rowY + s(56), detail, colors.muted, 0);
+                canvas_->line(
+                    layout.queue.x + s(18), rowY + rowHeight - s(2),
+                    layout.queue.x + layout.queue.width - s(18),
+                    rowY + rowHeight - s(2), colors.border);
+            }
+        }
+
+        canvas_->card(layout.overallCard, colors);
+        canvas_->text(
+            layout.overallCard.x + s(22), layout.overallCard.y + s(36),
+            "批量处理进度", colors.text, 1);
+        canvas_->text(
+            layout.overallCard.x + s(22), layout.overallCard.y + s(76),
+            snapshot.status, colors.text, 0);
+        canvas_->text(
+            layout.overallCard.x + s(22), layout.overallCard.y + s(102),
+            snapshot.detail, colors.muted, 0);
+        canvas_->progress(layout.overallTrack, snapshot.overallProgress, colors);
+
+        std::ostringstream percentage;
+        percentage.setf(std::ios::fixed);
+        percentage.precision(1);
+        percentage << snapshot.overallProgress * 100.0 << "%";
+        canvas_->text(
+            layout.overallCard.x + s(22), layout.overallCard.y + s(178),
+            percentage.str(), colors.accent, 1);
+        canvas_->text(
+            layout.overallCard.x + s(130), layout.overallCard.y + s(178),
+            "完成 " + std::to_string(snapshot.completedTasks + snapshot.skippedTasks) +
+                " / " + std::to_string(snapshot.totalTasks),
+            colors.muted, 0);
+
+        if (!snapshot.running) {
+            const bool canStart = !snapshot.tasks.empty() &&
+                snapshot.capabilities.supports(settings_.codec, settings_.backend);
+            canvas_->button(layout.start, "开始批量处理", colors, true, !canStart);
+        } else {
+            canvas_->button(
+                layout.pause, snapshot.paused ? "继续处理" : "暂停处理",
+                colors, true);
+            canvas_->button(layout.cancel, "取消任务", colors);
+        }
+
+        const int infoY = layout.overallCard.y + layout.overallCard.height + s(18);
+        const Rect information{
+            layout.overallCard.x,
+            infoY,
+            layout.overallCard.width,
+            height_ - infoY - s(28)
+        };
+        canvas_->card(information, colors);
+        canvas_->text(
+            information.x + s(22), information.y + s(38),
+            "设备与编码摘要", colors.text, 1);
+        canvas_->text(
+            information.x + s(22), information.y + s(78),
+            "格式  " + codecName(settings_.codec) + " · " +
+                outputContainerName(settings_.outputContainer),
+            colors.text, 0);
+        canvas_->text(
+            information.x + s(22), information.y + s(108),
+            "编码器  " + backendName(settings_.backend), colors.text, 0);
+        canvas_->text(
+            information.x + s(22), information.y + s(138),
+            "CRF  " + std::to_string(settings_.crf) + " · " +
+                compressionName(settings_.compression),
+            colors.text, 0);
+        canvas_->text(
+            information.x + s(22), information.y + s(168),
+            "音频码率  " + std::to_string(settings_.audioBitrateKbps) +
+                " kbps（按容器选择编码）",
+            colors.text, 0);
+        canvas_->text(
+            information.x + s(22), information.y + s(198),
+            settings_.remoteHost.empty()
+                ? "计算设备  本机"
+                : "计算设备  远程 · " + settings_.remoteHost,
+            colors.text, 0);
+        canvas_->text(
+            information.x + s(22), information.y + s(228),
+            snapshot.resourcePlan.explanation, colors.muted, 0);
+        canvas_->text(
+            information.x + s(22), information.y + s(270),
+            "支持 H.264、H.265、AV1。ZIP 与 PPTX 会保留其他文件并更新视频引用。",
+            colors.muted, 0);
+
+        if (!snapshot.error.empty()) {
+            canvas_->text(
+                information.x + s(22),
+                information.y + information.height - s(45),
+                snapshot.error, colors.red, 0);
+        }
+
+        canvas_->flush();
+    }
+
+    void commitCrf(int x, const Layout& layout) {
+        editingCrf_ = false;
+        crfEditText_.clear();
+
+        const double fraction = std::clamp(
+            static_cast<double>(x - layout.crfTrack.x) /
+                static_cast<double>(std::max(1, layout.crfTrack.width)),
+            0.0, 1.0);
+        settings_.crf = static_cast<int>(
+            std::lround(fraction * crfMaximum(settings_.codec)));
+        updateSettings();
+    }
+
+    void click(int x, int y) {
+        const auto snapshot = controller_.snapshot();
+        const auto visibleBackends =
+            availableBackends(snapshot.capabilities, settings_.codec);
+        const auto layout = makeLayout(
+            width_, height_, scale_, static_cast<int>(visibleBackends.size()));
+
+        if (editingCrf_ && !contains(layout.crfValue, x, y)) {
+            commitCrfText();
+        }
+
+        if (contains(layout.ssh, x, y)) {
+            if (!snapshot.running) {
+                manageSshServers();
+            }
+            return;
+        }
+        if (contains(layout.theme, x, y)) {
+            dark_ = !dark_;
+            return;
+        }
+        if (contains(layout.addFiles, x, y)) {
+            addFiles();
+            return;
+        }
+        if (contains(layout.addFolder, x, y)) {
+            chooseFolder();
+            return;
+        }
+        if (contains(layout.addArchive, x, y)) {
+            addFiles(true);
+            return;
+        }
+        if (contains(layout.importQueue, x, y)) {
+            importQueueDialog();
+            return;
+        }
+        if (contains(layout.exportQueue, x, y)) {
+            exportQueueDialog();
+            return;
+        }
+        if (contains(layout.removeSelected, x, y)) {
+            if (selectedTask_ != 0) {
+                controller_.removeTask(selectedTask_);
+            }
+            return;
+        }
+        if (contains(layout.clearDone, x, y)) {
+            controller_.clearCompleted();
+            return;
+        }
+        if (contains(layout.outputBrowse, x, y)) {
+            chooseOutput();
+            return;
+        }
+        if (!snapshot.running && contains(layout.start, x, y)) {
+            controller_.startBatch();
+            return;
+        }
+        if (snapshot.running && contains(layout.pause, x, y)) {
+            if (snapshot.paused) {
+                controller_.resumeBatch();
+            } else {
+                controller_.pauseBatch();
+            }
+            return;
+        }
+        if (snapshot.running && contains(layout.cancel, x, y)) {
+            controller_.cancelBatch();
+            return;
+        }
+        if (contains(layout.crfValue, x, y)) {
+            editingCrf_ = true;
+            crfEditText_.clear();
+            XSetInputFocus(display_, window_, RevertToParent, CurrentTime);
+            return;
+        }
+
+        for (std::size_t index = 0; index < 2; ++index) {
+            if (contains(layout.container[index], x, y)) {
+                settings_.outputContainer = static_cast<OutputContainer>(index);
+                updateSettings();
+                return;
+            }
+        }
+
+        for (std::size_t index = 0; index < 3; ++index) {
+            if (!contains(layout.codec[index], x, y)) {
+                continue;
+            }
+
+            settings_.codec = static_cast<VideoCodec>(index);
+            settings_.crf = defaultCrf(settings_.codec);
+            const auto capabilities = controller_.snapshot().capabilities;
+            if (!capabilities.supports(settings_.codec, settings_.backend)) {
+                for (const auto candidate : {
+                         EncoderBackend::CPU,
+                         EncoderBackend::NVENC,
+                         EncoderBackend::QSV,
+                         EncoderBackend::AMF
+                     }) {
+                    if (capabilities.supports(settings_.codec, candidate)) {
+                        settings_.backend = candidate;
+                        break;
+                    }
+                }
+            }
+            updateSettings();
+            return;
+        }
+
+        for (std::size_t index = 0; index < visibleBackends.size(); ++index) {
+            if (contains(layout.backend[index], x, y)) {
+                settings_.backend = visibleBackends[index];
+                updateSettings();
+                return;
+            }
+        }
+
+        for (std::size_t index = 0; index < 8; ++index) {
+            if (contains(layout.compression[index], x, y)) {
+                settings_.compression = static_cast<CompressionLevel>(index);
+                updateSettings();
+                return;
+            }
+        }
+
+        const std::array<int, 6> audioRates{96, 128, 160, 192, 256, 320};
+        for (std::size_t index = 0; index < audioRates.size(); ++index) {
+            if (contains(layout.audio[index], x, y)) {
+                settings_.audioBitrateKbps = audioRates[index];
+                updateSettings();
+                return;
+            }
+        }
+
+        if (contains(layout.parallel, x, y)) {
+            const std::array<int, 5> choices{0, 1, 2, 4, 8};
+            const auto current = std::find(
+                choices.begin(), choices.end(), settings_.maxParallelJobs);
+            const auto currentIndex = static_cast<std::size_t>(
+                std::distance(choices.begin(), current));
+            settings_.maxParallelJobs = choices[(currentIndex + 1) % choices.size()];
+            updateSettings();
+            return;
+        }
+        if (contains(layout.recursive, x, y)) {
+            settings_.recursive = !settings_.recursive;
+            updateSettings();
+            return;
+        }
+        if (contains(layout.skip, x, y)) {
+            settings_.skipAlreadyProcessed = !settings_.skipAlreadyProcessed;
+            updateSettings();
+            return;
+        }
+        if (contains(layout.preserve, x, y)) {
+            settings_.preserveDirectoryStructure = !settings_.preserveDirectoryStructure;
+            updateSettings();
+            return;
+        }
+        if (contains(layout.overwrite, x, y)) {
+            settings_.overwrite = !settings_.overwrite;
+            updateSettings();
+            return;
+        }
+
+        const int crfTop = layout.crfTrack.y - s(10);
+        const int crfBottom = layout.crfTrack.y + s(18);
+        const int crfRight = layout.crfTrack.x + layout.crfTrack.width;
+        if (y >= crfTop && y <= crfBottom &&
+            x >= layout.crfTrack.x && x <= crfRight) {
+            draggingCrf_ = true;
+            commitCrf(x, layout);
+            return;
+        }
+
+        if (y >= layout.queue.y + s(54) &&
+            x >= layout.queue.x &&
+            x <= layout.queue.x + layout.queue.width) {
+            const int row = (y - (layout.queue.y + s(54))) / s(68) + scrollOffset_;
+            const auto taskRows = rows(controller_.snapshot());
+            if (row >= 0 && row < static_cast<int>(taskRows.size())) {
+                selectedTask_ = taskRows[static_cast<std::size_t>(row)].first.id;
+            }
+        }
+    }
+
+    std::vector<std::string> readDropSelection() {
+        Atom actualType{};
+        int actualFormat = 0;
+        unsigned long itemCount = 0;
+        unsigned long bytesAfter = 0;
+        unsigned char* data = nullptr;
+        std::vector<std::string> paths;
+
+        const Atom property = XInternAtom(display_, "XdndSelection", False);
+        const int status = XGetWindowProperty(
+            display_, window_, property, 0, 65536, True, uriList_,
+            &actualType, &actualFormat, &itemCount, &bytesAfter, &data);
+        if (status != Success || data == nullptr) {
+            return paths;
+        }
+
+        const std::string content(reinterpret_cast<const char*>(data), itemCount);
+        XFree(data);
+
+        std::istringstream input(content);
+        std::string line;
+        while (std::getline(input, line)) {
+            line = trim(std::move(line));
+            if (line.empty() || line.front() == '#') {
+                continue;
+            }
+            if (line.starts_with("file://")) {
+                line = percentDecode(line.substr(7));
+            }
+            if (!line.empty()) {
+                paths.push_back(std::move(line));
+            }
+        }
+
+        return paths;
+    }
+
+    bool handle(XEvent& event) {
+        if (event.type == Expose) {
+            draw();
+            return false;
+        }
+        if (event.type == ConfigureNotify) {
+            width_ = event.xconfigure.width;
+            height_ = event.xconfigure.height;
+            return false;
+        }
+
+        if (event.type == ClientMessage) {
+            if (static_cast<Atom>(event.xclient.data.l[0]) == wmDelete_) {
+                return true;
+            }
+
+            const Atom messageType = static_cast<Atom>(event.xclient.message_type);
+            if (messageType == xdndEnter_) {
+                dragSource_ = static_cast<Window>(event.xclient.data.l[0]);
+                return false;
+            }
+            if (messageType == xdndPosition_) {
+                XEvent reply{};
+                reply.xclient.type = ClientMessage;
+                reply.xclient.display = display_;
+                reply.xclient.window = dragSource_;
+                reply.xclient.message_type = xdndStatus_;
+                reply.xclient.format = 32;
+                reply.xclient.data.l[0] = window_;
+                reply.xclient.data.l[1] = 1;
+                reply.xclient.data.l[4] = static_cast<long>(
+                    XInternAtom(display_, "XdndActionCopy", False));
+                XSendEvent(display_, dragSource_, False, NoEventMask, &reply);
+                XFlush(display_);
+                return false;
+            }
+            if (messageType == xdndDrop_) {
+                const Atom property = XInternAtom(display_, "XdndSelection", False);
+                XConvertSelection(
+                    display_, xdndSelection_, uriList_, property,
+                    window_, static_cast<Time>(event.xclient.data.l[2]));
+                return false;
+            }
+        }
+
+        if (event.type == SelectionNotify) {
+            const auto paths = readDropSelection();
+            if (!paths.empty()) {
+                controller_.addInputs(paths);
+            }
+
+            XEvent reply{};
+            reply.xclient.type = ClientMessage;
+            reply.xclient.display = display_;
+            reply.xclient.window = dragSource_;
+            reply.xclient.message_type = xdndFinished_;
+            reply.xclient.format = 32;
+            reply.xclient.data.l[0] = window_;
+            reply.xclient.data.l[1] = paths.empty() ? 0 : 1;
+            reply.xclient.data.l[2] = static_cast<long>(
+                XInternAtom(display_, "XdndActionCopy", False));
+            XSendEvent(display_, dragSource_, False, NoEventMask, &reply);
+            XFlush(display_);
+            return false;
+        }
+
+        if (event.type == ButtonPress) {
+            if (event.xbutton.button == Button4 || event.xbutton.button == Button5) {
+                const int offset = event.xbutton.button == Button4 ? -3 : 3;
+                scrollOffset_ = std::max(0, scrollOffset_ + offset);
+                return false;
+            }
+
+            click(event.xbutton.x, event.xbutton.y);
+            return false;
+        }
+
+        if (event.type == MotionNotify && draggingCrf_) {
+            commitCrf(event.xmotion.x, makeLayout(width_, height_, scale_));
+            return false;
+        }
+        if (event.type == ButtonRelease) {
+            draggingCrf_ = false;
+            return false;
+        }
+
+        if (event.type == KeyPress) {
+            const KeySym key = XLookupKeysym(&event.xkey, 0);
+            const bool controlPressed = (event.xkey.state & ControlMask) != 0;
+
+            if (editingCrf_) {
+                if (key == XK_Return || key == XK_KP_Enter) {
+                    commitCrfText();
+                } else if (key == XK_BackSpace && !crfEditText_.empty()) {
+                    crfEditText_.pop_back();
+                } else if (key == XK_Escape) {
+                    editingCrf_ = false;
+                    crfEditText_.clear();
+                } else {
+                    char text[8]{};
+                    KeySym symbol{};
+                    const int length = XLookupString(
+                        &event.xkey, text, sizeof(text), &symbol, nullptr);
+                    for (int index = 0;
+                         index < length && crfEditText_.size() < 3;
+                         ++index) {
+                        if (text[index] >= '0' && text[index] <= '9') {
+                            crfEditText_.push_back(text[index]);
+                        }
+                    }
+                }
+                return false;
+            }
+
+            if (controlPressed && key == XK_o) {
+                addFiles();
+                return false;
+            }
+            if (controlPressed && key == XK_d) {
+                controller_.clearCompleted();
+                return false;
+            }
+            if (controlPressed && key == XK_Return) {
+                startOrCancel();
+                return false;
+            }
+            if (key == XK_Delete && selectedTask_ != 0) {
+                controller_.removeTask(selectedTask_);
+                return false;
+            }
+            if (key == XK_Escape) {
+                return true;
+            }
+        }
+
+        return false;
+    }
     AppController& controller_;Display* display_{};int screen_{};Window window_{};double scale_{1.0};int width_{1500},height_{1020};std::unique_ptr<XftCanvas> canvas_;BatchSettings settings_;bool dark_{false},draggingCrf_{false},editingCrf_{false};std::string crfEditText_;int scrollOffset_{0};std::uint64_t selectedTask_{0};Atom wmDelete_{},xdndEnter_{},xdndPosition_{},xdndStatus_{},xdndDrop_{},xdndFinished_{},xdndSelection_{},uriList_{};Window dragSource_{};
 };
 
