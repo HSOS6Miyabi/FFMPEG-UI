@@ -1022,7 +1022,7 @@ bool FfmpegService::verifyOutput(const std::string& path, VideoCodec codec,
                                  const std::string& expectedAudioCodec,
                                  OutputResolution resolution) const {
     const ProcessResult result = runProcess({ffprobePath_, "-v", "error", "-show_entries",
-        "format=format_name:format_tags=comment:stream=codec_type,codec_name",
+        "format=format_name:format_tags=comment:stream=codec_type,codec_name,width,height",
         "-of", "default=noprint_wrappers=1", path});
     if (result.exitCode != 0) return false;
     const std::string extension = lower(pathToUtf8(pathFromUtf8(path).extension()));
@@ -1403,12 +1403,13 @@ ConversionResult FfmpegService::convertRemote(
 
     const std::string probeCommand =
         "ffprobe -v error -show_entries "
-        "format=format_name:format_tags=comment:stream=codec_type,codec_name "
+        "format=format_name:format_tags=comment:stream=codec_type,codec_name,width,height "
         "-of default=noprint_wrappers=1 " + quote(remoteOutput);
     const auto probe = runRemote(probeCommand);
     if (probe.exitCode != 0 ||
         !outputDescriptionMatches(probe.output, remoteOutput, settings.codec, marker,
-                                  expectedAudioCodecForSettings(settings.audioMode, audioEncoder))) {
+                                  expectedAudioCodecForSettings(settings.audioMode, audioEncoder),
+                                  settings.outputResolution)) {
         result.message = "远程输出未通过容器格式、视频编码、音频编码或处理标记检查。";
         return result;
     }
@@ -1669,7 +1670,8 @@ ConversionResult FfmpegService::convert(const ConversionSettings& settings,
         return result;
     }
     if (!verifyOutput(pathToUtf8(temporaryPath), settings.codec, marker,
-                      expectedAudioCodecForSettings(settings.audioMode, expectedAudioCodec))) {
+                      expectedAudioCodecForSettings(settings.audioMode, expectedAudioCodec),
+                      settings.outputResolution)) {
         fs::remove(temporaryPath, filesystemError);
         result.message = "FFmpeg 已结束，但输出文件未通过容器格式、视频编码、音频编码或处理标记检查。";
         return result;
