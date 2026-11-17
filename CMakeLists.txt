@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.25)
-project(FFmpegStudio VERSION 1.2.0 LANGUAGES CXX)
+project(VideoCompressionWorkbench VERSION 1.2.0 LANGUAGES CXX)
 
 if(WIN32)
     enable_language(RC)
@@ -68,5 +68,7 @@ if(BUILD_TESTING)
     target_include_directories(ffmpegui-core-tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
     add_test(NAME core-tests COMMAND ffmpegui-core-tests)
 endif()
+
+set_target_properties(ffmpeg-ui PROPERTIES OUTPUT_NAME "video-compression-workbench")
 
 install(TARGETS ffmpeg-ui RUNTIME DESTINATION bin)
