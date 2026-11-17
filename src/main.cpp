@@ -576,7 +576,7 @@ int runSelfTest(bool keepFiles) {
         }
         check("create PPTX test fixture", createZip(pptxInput, {
             {"[Content_Types].xml", types}, {"ppt/presentation.xml", presentation},
-            {"ppt/slides/_rels/slide1.xml.rels", rels}, {"ppt/media/clip.mov", pptxVideo},
+            {"ppt/slides/_rels/slide1.xml.rels", relationships}, {"ppt/media/clip.mov", pptxVideo},
             {"ppt/media/clip2.mov", movedVideo2}}));
         const auto pptxResult = archives.process(pathToUtf8(pptxInput), pathToUtf8(pptxOutput), true,
             settings, capabilities, 2, 2, {}, nullptr);
