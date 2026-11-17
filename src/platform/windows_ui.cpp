@@ -984,7 +984,7 @@ private:
             drawButton(
                 dc, l.compression[index], levels[index], c, smallFont, selected);
         }
-        drawText(dc,{leftX+s(20),top+s(460),s(200),s(20)},L"音频码率",c.muted,smallFont);
+        drawText(dc,{leftX+s(20),top+s(419),s(200),s(20)},L"音频码率",c.muted,smallFont);
         const std::array<int,6> rates{96,128,160,192,256,320};
         for (int index = 0; index < 6; ++index) {
             const bool selected = settings_.audioBitrateKbps == rates[index];
