@@ -14,6 +14,7 @@ endif()
 
 add_library(ffmpegui_core
     src/core/process.cpp
+    src/core/ssh.cpp
     src/core/conversion.cpp
     src/core/archive.cpp
     src/core/app_controller.cpp
@@ -39,7 +40,7 @@ if(WIN32)
         src/platform/windows_app.rc
     )
     target_include_directories(ffmpeg-ui PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src/platform)
-    target_link_libraries(ffmpeg-ui PRIVATE ffmpegui_core user32 gdi32 comdlg32 shell32 ole32 dwmapi uxtheme comctl32)
+    target_link_libraries(ffmpeg-ui PRIVATE ffmpegui_core user32 gdi32 comdlg32 shell32 ole32 dwmapi uxtheme comctl32 advapi32)
     target_compile_definitions(ffmpeg-ui PRIVATE UNICODE _UNICODE NOMINMAX WIN32_LEAN_AND_MEAN)
     if(MSVC)
         target_link_options(ffmpeg-ui PRIVATE /MANIFEST:NO)

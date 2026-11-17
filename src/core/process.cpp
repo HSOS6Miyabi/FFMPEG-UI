@@ -5,6 +5,7 @@
 #include <cwchar>
 #include <codecvt>
 #include <locale>
+#include <map>
 #include <sstream>
 
 #ifdef _WIN32
@@ -169,7 +170,8 @@ std::string utf8FromWide(const wchar_t* value) {
 ProcessResult runProcess(const std::vector<std::string>& arguments,
                          const std::atomic_bool* cancelRequested,
                          ProcessLineCallback onLine,
-                         const std::atomic_bool* pauseRequested) {
+                         const std::atomic_bool* pauseRequested,
+                         const ProcessEnvironment* environment) {
     ProcessResult result;
     if (arguments.empty()) {
         result.output = "No process arguments were supplied.";
@@ -212,8 +214,32 @@ ProcessResult runProcess(const std::vector<std::string>& arguments,
     }
 
     PROCESS_INFORMATION processInfo{};
+    std::vector<wchar_t> environmentBlock;
+    if (environment != nullptr && !environment->empty()) {
+        std::map<std::wstring, std::wstring> values;
+        LPWCH current = GetEnvironmentStringsW();
+        if (current != nullptr) {
+            for (LPWCH item = current; *item != L'\0'; item += wcslen(item) + 1) {
+                std::wstring entry(item);
+                const auto split = entry.find(L'=');
+                if (split != std::wstring::npos && split > 0)
+                    values[entry.substr(0, split)] = entry.substr(split + 1);
+            }
+            FreeEnvironmentStringsW(current);
+        }
+        for (const auto& [key, value] : *environment)
+            values[wideFromUtf8(key)] = wideFromUtf8(value);
+        for (const auto& [key, value] : values) {
+            environmentBlock.insert(environmentBlock.end(), key.begin(), key.end());
+            environmentBlock.push_back(L'=');
+            environmentBlock.insert(environmentBlock.end(), value.begin(), value.end());
+            environmentBlock.push_back(L'\0');
+        }
+        environmentBlock.push_back(L'\0');
+    }
     const BOOL created = CreateProcessW(nullptr, commandLine.data(), nullptr, nullptr, TRUE,
-                                        CREATE_NO_WINDOW, nullptr, nullptr,
+                                        CREATE_NO_WINDOW | (environmentBlock.empty() ? 0 : CREATE_UNICODE_ENVIRONMENT),
+                                        environmentBlock.empty() ? nullptr : environmentBlock.data(), nullptr,
                                         &startupInfo, &processInfo);
     CloseHandle(writeHandle);
     if (!created) {
@@ -330,10 +356,28 @@ ProcessResult runProcess(const std::vector<std::string>& arguments,
         spawnError = posix_spawnattr_setflags(&attributes, POSIX_SPAWN_SETPGROUP);
     }
 
+    std::vector<std::string> environmentStorage;
+    std::vector<char*> rawEnvironment;
+    char** childEnvironment = ::environ;
+    if (environment != nullptr && !environment->empty()) {
+        std::map<std::string, std::string> values;
+        for (char** item = ::environ; item != nullptr && *item != nullptr; ++item) {
+            const std::string entry(*item);
+            const auto split = entry.find('=');
+            if (split != std::string::npos) values[entry.substr(0, split)] = entry.substr(split + 1);
+        }
+        for (const auto& [key, value] : *environment) values[key] = value;
+        environmentStorage.reserve(values.size());
+        rawEnvironment.reserve(values.size() + 1);
+        for (const auto& [key, value] : values) environmentStorage.push_back(key + "=" + value);
+        for (auto& entry : environmentStorage) rawEnvironment.push_back(entry.data());
+        rawEnvironment.push_back(nullptr);
+        childEnvironment = rawEnvironment.data();
+    }
     pid_t child = -1;
     if (spawnError == 0) {
         spawnError = posix_spawnp(&child, rawArguments[0], &fileActions, &attributes,
-                                  rawArguments.data(), ::environ);
+                                  rawArguments.data(), childEnvironment);
     }
     if (attributesInitialized) {
         posix_spawnattr_destroy(&attributes);
