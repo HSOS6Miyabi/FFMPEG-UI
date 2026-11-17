@@ -164,8 +164,8 @@ ctest --test-dir build --output-on-failure
 - 远程服务器是视频编码的计算节点。文件选择、输出路径、ZIP/PPTX 展开与重新打包均由本机程序负责。
 - 远程服务器当前要求 Linux 或兼容 POSIX shell 的系统，并提供 FFmpeg、ffprobe 和 OpenSSH 服务端。远程 Windows 主机尚未纳入支持范围。
 - 本机使用 OpenSSH 客户端的 ssh 和 scp，不部署常驻远程服务，也不要求远程服务器安装本项目。
-- SSH 服务器列表来自当前用户的 ~/.ssh/config。管理器修改某个别名时，必须保留共享 Host 块中的其他别名和未管理指令。
-- 私钥通过 IdentityFile 或 SSH Agent 使用。密码认证通过 askpass 辅助程序获取密码；Windows 密码保存在 Windows Credential Manager，不写入 SSH 配置或命令行参数。
+- SSH 服务器列表来自当前用户的 ~/.ssh/config。解析时必须区分 Host 和 Match 配置段；管理器修改某个别名时，必须保留共享 Host 块中的其他别名、未管理指令和后续 Match 配置段。当前实现尚未展开 Include 指令中的其他配置文件。
+- 私钥通过 IdentityFile 或 SSH Agent 使用。密码认证通过 askpass 辅助程序获取密码；Windows 密码保存在 Windows Credential Manager，不写入 SSH 配置或命令行参数。密码在子进程结束后从临时环境变量和环境缓冲区中清除。
 - 远程任务为每个转换创建独立权限受限的临时目录。远程输入保留源文件扩展名，远程输出使用所选输出容器扩展名。
 - 远程 FFmpeg 的进度通过 SSH 标准输出回传。暂停、继续和取消通过独立 SSH 命令控制远程 FFmpeg 进程。
 - 远程输出先由 ffprobe 检查容器、视频编码、音频编码和处理标记，再下载到本机临时文件。只有下载大小检查通过后，才保存到最终输出位置。

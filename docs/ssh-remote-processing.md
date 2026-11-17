@@ -23,9 +23,9 @@ SSH 远程编码让本机 FFmpeg Studio 借用远程 Linux 服务器的 CPU 或�
 - Windows：`%USERPROFILE%\.ssh\config`
 - Linux：`$HOME/.ssh/config`
 
-每个具体的 `Host` 别名会显示为一台服务器。通配符条目（例如 `Host *`）不会单独显示。
+每个具体的 `Host` 别名会显示为一台服务器。通配符条目（例如 `Host *`）不会单独显示。解析器会将 `Match` 识别为独立配置段，避免把其后的选项误认为前一个 `Host` 的设置。当前服务器列表读取主配置文件中的 `Host` 段；通过 `Include` 引入的其他配置文件尚不会显示在管理列表中。
 
-服务器管理器可以新增、修改和删除服务器配置。保存修改时，程序会保留同一 `Host` 块中其他别名以及未管理的 SSH 选项。程序只管理连接地址、用户名、端口、私钥路径、跳转服务器和认证方式。
+服务器管理器可以新增、修改和删除服务器配置。保存修改时，程序会保留同一 `Host` 块中其他别名以及未管理的 SSH 选项，并保留后续的 `Match` 配置段。程序只管理连接地址、用户名、端口、私钥路径、跳转服务器和认证方式。
 
 私钥认证使用 `IdentityFile` 或 SSH Agent。密码认证使用 OpenSSH askpass 辅助程序；Windows 密码保存在 Windows Credential Manager 中，不写入 SSH 配置文件或命令行参数。
 
