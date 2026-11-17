@@ -16,7 +16,7 @@
 - ZIP/PPTX：通过 libarchive 读取和生成。
 - 项目不使用 Qt、GTK、MFC 或 Electron 等桌面界面框架。
 
-当前版本包含独立视频、文件夹、ZIP 和 PPTX 批量处理；MP4 和源文件容器两种输出模式；H.264、H.265、AV1；CPU、NVIDIA NVENC、Intel Quick Sync 和 AMD AMF 编码器探测；八档压缩级别；容器兼容的音频编码；SSH 远程编码；任务进度、暂停、继续和取消；自适应并行调度；重复处理检查；任务清单导入导出；Windows 命令行文件参数和文件拖放。
+当前版本包含独立视频、文件夹、ZIP 和 PPTX 批量处理；MP4 和源文件容器两种输出模式；H.264、H.265、AV1；CPU、NVIDIA NVENC、Intel Quick Sync 和 AMD AMF 编码器探测；八档压缩级别；六档输出分辨率；自动编码、保留原音频和移除音频三种音频处理方式；SSH 远程编码；任务进度、暂停、继续和取消；自适应并行调度；重复处理检查；任务列表自动恢复和手动导入导出；Windows 命令行文件参数和文件拖放。
 
 ## 目录说明
 
@@ -26,7 +26,7 @@
 | `src/core/process.*` | Windows/Linux 子进程启动、输出读取、环境变量和暂停、继续、取消 |
 | `src/core/ssh.*` | SSH 配置读取与同步、认证凭据、远程命令和文件传输 |
 | `src/core/archive.*` | ZIP/PPTX 解包、视频替换、引用更新、重新打包和完整性检查 |
-| `src/core/app_controller.*` | 输入扫描、任务队列、并行调度、设置保存和任务状态 |
+| `src/core/app_controller.*` | 输入扫描、任务队列自动恢复、并行调度、设置保存和任务状态 |
 | `src/platform/windows_ui.cpp` | Windows 原生界面 |
 | `src/platform/linux_ui.cpp` | Linux X11/Xft 界面 |
 | `src/main.cpp` | 应用入口、命令行参数、自检和演示模式 |
@@ -34,7 +34,7 @@
 | `.github/workflows/build.yml` | Windows/Linux CI、打包和标签发布 |
 | `docs/architecture.md` | 组件结构和处理流程 |
 | `docs/decision-log.md` | 重要设计决策和维护约束 |
-| `docs/encoding.md` | 编码质量、预设、音频和进度参数 |
+| `docs/encoding.md` | 编码质量、预设、音频处理、分辨率和进度参数 |
 | `docs/ssh-remote-processing.md` | SSH 远程处理、认证、安全和测试要求 |
 | `.clang-format`、`.clang-tidy`、`scripts/` | C++ 格式规范、静态检查规则和本地检查脚本 |
 
@@ -106,12 +106,12 @@ Windows 文件关联或“发送到”菜单可以直接把一个或多个路径
 提交前执行：
 
 ```bash
-cmake --build build --parallel
-ctest --test-dir build --output-on-failure
-./build/video-compression-workbench --self-test
+cmake --build --preset linux-release --parallel
+ctest --preset linux-release
+./build/linux-release/video-compression-workbench --self-test
 ```
 
-`ctest` 运行核心单元测试，覆盖 SSH 配置解析、凭据保存与删除、编码参数映射、归档路径安全和任务调度等逻辑。`--self-test` 使用本机 FFmpeg 创建测试媒体，检查可用的 CPU 编码器、AAC 音频、进度解析、重复处理标记、ZIP/PPTX 替换、并行处理和 Linux 下的模拟 SSH 远程处理。缺少的可选编码器会跳过。真实 SSH 服务器的认证、文件传输、断线恢复和远程清理仍应在独立测试服务器上验证。硬件编码器需要真实设备和驱动；没有设备时，验证对应选项不会出现在界面中。
+`ctest` 运行核心单元测试，覆盖 SSH 配置解析、凭据保存与删除、编码参数映射、音频处理方式、分辨率滤镜、任务列表恢复、归档路径安全和任务调度。`--self-test` 使用本机 FFmpeg 创建测试媒体，检查 CPU 编码器、音频复制与移除、分辨率缩小、进度解析、重复处理标记、ZIP/PPTX 替换、并行处理和远程处理。Linux CI 还会启动临时 OpenSSH 服务器，验证密钥认证、密码认证、SCP 文件传输、远程编码和临时目录清理。缺少的可选编码器会跳过。硬件编码器需要真实设备和驱动；没有设备时，验证对应选项不会出现在界面中。
 
 Windows 与 Linux 的完整构建和测试由 GitHub Actions 执行。开发机器缺少某类硬件时，不要把硬件编码器测试描述为已通过。
 
@@ -136,4 +136,4 @@ scripts/lint-cpp.sh build/linux-release
 
 ## 界面检查
 
-当前批量任务界面已在 Linux 桌面环境中启动并进行截图检查。调整界面后，应重新运行应用、截取实际窗口，并检查常用分辨率、窗口缩放、深浅色主题和长文件名显示。Windows 界面还应检查 Per-Monitor V2 DPI、系统主题和 DWM 效果。
+编码设置面板采用左侧参数名称、右侧控件的布局。调整界面后，应在 Linux 和 Windows 上重新启动应用并检查实际窗口截图，重点检查输出目录输入框、编码设备选项、CRF、压缩级别、音频码率、输出分辨率、音频处理方式和底部任务队列是否发生重叠。还应检查常用分辨率、窗口缩放、深浅色主题和长文件名显示。Windows 界面需要检查 Per-Monitor V2 DPI、系统主题和 DWM 效果。
