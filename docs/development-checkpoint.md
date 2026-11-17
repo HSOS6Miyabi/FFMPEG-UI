@@ -1,54 +1,96 @@
-# Development checkpoint
+# 开发状态记录
 
-This document records the current implementation state for maintainers taking over the project.
+本文记录当前主线的实现情况、构建方式和后续维护要求。开始修改前，还应阅读程序结构、项目决策记录、编码参数说明、SSH 远程处理说明和产品功能评估。
 
-## Implemented work
+## 当前产品
 
-- Native C++20 desktop interfaces for Windows and Linux.
-- Video conversion using FFmpeg with H.264, H.265 and AV1.
-- CPU, NVIDIA NVENC, Intel QSV and AMD AMF capability detection.
-- CRF input, eight compression presets and configurable audio bitrate.
-- MP4 output and source-container output modes.
-- Batch input from individual files, directories, ZIP archives and PPTX presentations.
-- Per-file and overall progress, queue controls, automatic output naming and repeat-processing markers.
-- Resource-aware parallel scheduling.
-- SSH configuration discovery and editing, including preservation of unrelated directives and aliases that share a Host block.
-- Windows Credential Manager integration for saved SSH passwords.
-- SSH key and agent authentication.
-- Remote FFmpeg capability probing, upload, conversion, progress forwarding, download and temporary-directory cleanup.
-- Native SSH server management windows on Windows and Linux.
-- Developer-facing unit tests for SSH configuration parsing and credential storage behavior.
+- 产品名称：视频压缩工作台
+- 支持平台：Windows x64、Linux x86_64
+- 主要实现语言：C++20
+- 视频处理依赖：FFmpeg、ffprobe
+- 压缩包处理依赖：libarchive
+- 主线分支：main
+- CMake 可执行文件输出名：video-compression-workbench
 
-## Current verification
+## 已实现功能
 
-- Linux CI has successfully configured and built the application, run unit tests and run the FFmpeg/ZIP/PPTX self-test.
-- The latest Windows CI run reached compilation and reported two type-deduction errors in the SSH manager window's centering calculation. The operands are Windows `LONG` values and C++ `int` values; convert the rectangle coordinates to a consistent integer type before calling `std::max`.
-- The same Windows build reports several MSVC secure-CRT warnings for direct `getenv` use. Replace environment access with a small platform abstraction using `_dupenv_s` on Windows and `std::getenv` on POSIX, and ensure allocated buffers are released.
-- Remote conversion has not yet been verified against a live SSH server. Use a disposable test server with FFmpeg installed and exercise key authentication, password authentication, upload, conversion, progress, cancellation, download integrity and cleanup.
-- NVIDIA, Intel and AMD hardware encoding require physical devices and suitable drivers for final validation.
+- 单个视频、多个视频、文件夹、ZIP 和 PPTX 批量处理。
+- H.264、H.265 和 AV1 视频编码。
+- CPU、NVIDIA NVENC、Intel Quick Sync 和 AMD AMF 编码器探测。
+- CRF 数值、八档压缩级别和 MP4 / 源文件容器输出。
+- 原始尺寸、2160p、1440p、1080p、720p 和 480p 六档输出分辨率。
+- 自动编码、保留原音频和移除音频三种音频处理方式。
+- 批量任务队列、并行调度、暂停、继续、取消和重复处理检查。
+- 自动保存未完成任务，重新启动后恢复任务列表。
+- 手动导入和导出 .ffq 任务清单。
+- SSH 密钥、SSH Agent 和密码认证。
+- SSH 远程 Linux 编码、SCP 上传下载、进度读取和临时目录清理。
+- Windows 和 Linux 原生桌面界面，支持深浅色外观。
+- 任务进度、输出文件大小和压缩结果统计。
 
-## Visual review notes
+## 构建方式
 
-The captured Linux desktop screenshot confirms that the output-container selector and SSH server entry point are visible. The current settings card has a layout defect: the lower row of batch options overlaps the audio bitrate controls. Increase the settings-card height and reposition the batch options and queue using a single vertical layout calculation.
+Linux：
 
-The SSH manager screenshot shows the expected server fields and actions. Its dialog should be centered over the main window, use a clearer visual separation between server list and editor, and show or hide the password field according to the selected authentication method. Passwords must remain masked while editing.
+```bash
+cmake --preset linux-release
+cmake --build --preset linux-release --parallel
+ctest --preset linux-release
+./build/linux-release/video-compression-workbench --self-test
+```
 
-## Code quality requirements
+Windows：
 
-- Apply the repository's formatter consistently. Use a checked-in `.clang-format` file based on LLVM, four-space indentation, a 100-column limit, attached braces, and no single-line control-flow bodies.
-- Run clang-format locally on all C++ headers and source files before committing.
-- Run clang-tidy locally with the repository compile database. Prioritize readability, lifetime safety, error handling, portability and concurrency correctness. Do not move development lint checks into GitHub Actions.
-- Enable and resolve compiler warnings locally for both GCC/Clang and MSVC. Do not silence warnings globally.
-- Add concise comments where behavior or invariants are non-obvious, especially SSH config rewriting, credential handling, remote process cancellation and archive replacement.
-- Keep platform-specific behavior behind small interfaces. Avoid duplicating business logic between the Windows and Linux UI layers.
-- Every functional change must include tests and a local build. Update the developer handoff and decision log when architecture or persistent behavior changes.
+```powershell
+cmake --preset windows-release
+cmake --build --preset windows-release --parallel
+ctest --preset windows-release
+.\build\windows-release\video-compression-workbench.exe --self-test
+```
 
-## Remote-processing invariants
+系统需要安装 FFmpeg 和 ffprobe，并确保程序可以从 PATH 中找到它们。Windows 构建还需要通过 vcpkg 安装 libarchive。
 
-- The remote host is a compute target only. Users continue to select local input and output paths.
-- Never pass passwords in command-line arguments, SSH URLs, logs or the SSH config file.
-- Quote every remote shell argument. Never concatenate user-controlled paths into unquoted shell commands.
-- Use a unique private temporary directory for each task and remove it on success, failure and cancellation.
-- Download into a local temporary file, verify its size and media streams, then atomically replace the final destination.
-- A lost SSH connection must leave the local source intact and must not report a successful conversion.
-- Preserve source-container selection across direct video, ZIP and PPTX tasks.
+## 自动化测试
+
+GitHub Actions 在 Linux 和 Windows 上分别执行 CMake 配置、编译、核心单元测试、FFmpeg 媒体测试和发布包生成。
+
+Linux CI 会启动临时 OpenSSH 服务器，验证密钥认证、密码认证、SCP 文件传输、远程 FFmpeg 能力探测、远程编码、进度读取和临时目录清理。
+
+核心测试覆盖 SSH 配置读写、凭据保存、音频处理方式、输出分辨率、任务列表恢复、参数指纹、归档路径安全和任务调度。
+
+硬件编码需要真实 NVIDIA、Intel 或 AMD 设备和对应驱动。CI 的 CPU 编码测试不能替代硬件设备验证。
+
+## 界面检查
+
+编码设置区域使用左侧参数名称、右侧控件的布局。检查界面时，重点确认以下控件没有发生重叠：
+
+- 输出文件夹和输出容器
+- 视频编码格式和编码设备
+- CRF 数值与滑块
+- 两行压缩级别
+- 音频码率
+- 输出分辨率
+- 音频处理方式
+- 并行任务和文件处理选项
+- 底部任务列表
+
+Linux CI 会使用 Xvfb 启动桌面程序，选择 1080p 和保留原音频选项，并保存实际窗口截图供检查。Windows 界面还需要在真实桌面环境中检查 DPI 缩放、系统主题和窗口尺寸。
+
+## 已知范围
+
+- 当前程序要求用户自行安装 FFmpeg 和 ffprobe，发布包不包含这两个依赖。
+- 字幕流和数据流默认不复制。
+- 当前提供固定的八档压缩级别，尚未提供用户自定义编码预设。
+- 当前没有内置视频播放器、目标文件大小模式和逐任务独立编码设置。
+- 产品功能评估文档记录了后续建议和优先级。
+
+## 持续维护要求
+
+- 修改前重新读取主线中的文件，保留用户已经做出的修改。
+- 共享编码参数必须放在 core 层，Windows 和 Linux 界面只负责显示和收集用户选择。
+- 新增参数必须参与设置保存、输出文件命名、处理参数指纹、直接视频测试和 ZIP/PPTX 测试。
+- 远程处理必须引用并安全转义所有用户输入，密码不得写入命令行参数、日志或 SSH 配置文件。
+- 每个远程任务必须使用独立临时目录，并在成功、失败和取消时清理。
+- 输出文件先写入临时文件，验证容器、视频编码、音频处理和分辨率后再替换最终文件。
+- 修改界面后重新构建并检查 Windows 和 Linux 的实际窗口截图。
+- 架构、持久化行为或用户可见参数发生变化时，同步更新 README、编码说明、决策记录和产品功能评估。
