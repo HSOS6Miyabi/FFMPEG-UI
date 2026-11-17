@@ -1,12 +1,14 @@
 #pragma once
 
+#include "ssh.hpp"
+
 #include <atomic>
 #include <cstdint>
 #include <functional>
-#include <optional>
 #include <memory>
-#include "ssh.hpp"
+#include <optional>
 #include <string>
+#include <string_view>
 #include <vector>
 
 namespace ffmpegui {
@@ -22,7 +24,9 @@ enum class TaskState { Pending, Running, Completed, Skipped, Failed, Cancelled }
 struct ConversionSettings {
     std::string inputPath;
     std::string outputPath;
+    // Empty selects local execution. Otherwise this is an SSH Host alias.
     std::string remoteHost;
+    // Keeps the original local source identity when the input is staged remotely.
     std::string markerSourcePath;
     OutputContainer outputContainer{OutputContainer::MP4};
     VideoCodec codec{VideoCodec::H264};
@@ -74,8 +78,18 @@ struct EncoderCapabilities {
     std::string cpuAv1Encoder() const;
 };
 
-struct RemoteResources { unsigned int logicalCores{0}; std::uint64_t availableMemoryBytes{0}; std::string operatingSystem; };
-struct RemoteProbeResult { bool success{false}; EncoderCapabilities capabilities; RemoteResources resources; std::string error; };
+struct RemoteResources {
+    unsigned int logicalCores{0};
+    std::uint64_t availableMemoryBytes{0};
+    std::string operatingSystem;
+};
+
+struct RemoteProbeResult {
+    bool success{false};
+    EncoderCapabilities capabilities;
+    RemoteResources resources;
+    std::string error;
+};
 
 struct ConversionProgress {
     double fraction{0.0};
