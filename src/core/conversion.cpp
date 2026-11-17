@@ -776,6 +776,230 @@ bool FfmpegService::verifyOutput(const std::string& path, VideoCodec codec,
     return hasVideo && expectedContainer && audioMatches && hasMarker;
 }
 
+ConversionResult FfmpegService::convertRemote(const ConversionSettings& settings,
+                                               const EncoderCapabilities& capabilities,
+                                               const ProgressCallback& onProgress,
+                                               const std::atomic_bool* cancelRequested,
+                                               const std::atomic_bool* pauseRequested) const {
+    namespace fs = std::filesystem;
+    ConversionResult result;
+    result.outputPath = settings.outputPath;
+    std::error_code ec;
+    const fs::path input = pathFromUtf8(settings.inputPath);
+    const fs::path output = pathFromUtf8(settings.outputPath);
+    const std::string extension = outputVideoExtension(settings.outputContainer, settings.inputPath);
+    if (!fs::is_regular_file(input, ec) || settings.remoteHost.empty()) {
+        result.message = "请选择有效的视频文件和远程服务器。";
+        return result;
+    }
+    if (extension.empty() || lower(pathToUtf8(output.extension())) != extension) {
+        result.message = "输出文件扩展名与所选容器格式不一致。";
+        return result;
+    }
+    if (!capabilities.supports(settings.codec, settings.backend) || !capabilities.ffprobeAvailable) {
+        result.message = "远程服务器不支持当前选择的视频编码器，或没有安装 ffprobe。";
+        return result;
+    }
+    if (!containerSupportsVideoCodec(extension, settings.codec)) {
+        result.message = "所选视频编码格式与目标容器不兼容。";
+        return result;
+    }
+    const std::string audioEncoder = audioEncoderForExtension(extension, capabilities);
+    if (audioEncoder.empty()) {
+        result.message = "远程 FFmpeg 缺少该容器所需的音频编码器。";
+        return result;
+    }
+    result.inputSizeBytes = fs::file_size(input, ec);
+    if (ec || result.inputSizeBytes == 0) {
+        result.message = "无法读取源文件大小，或源文件为空。";
+        return result;
+    }
+    const fs::path outputDirectory = output.parent_path().empty() ? fs::current_path() : output.parent_path();
+    fs::create_directories(outputDirectory, ec);
+    if (ec) { result.message = "无法创建输出目录：" + ec.message(); return result; }
+    if (fs::is_regular_file(output, ec)) {
+        if (settings.skipAlreadyProcessed && isOutputForSourceAlreadyProcessed(settings.outputPath, settings)) {
+            result.success = true; result.skipped = true; result.message = "目标文件已经使用相同参数处理，已自动跳过。";
+            result.outputSizeBytes = fs::file_size(output, ec);
+            if (onProgress) { ConversionProgress p; p.fraction=1.0; p.status="已跳过"; p.detail=result.message; onProgress(p); }
+            return result;
+        }
+        if (!settings.overwrite) { result.message = "输出文件已经存在。请修改输出位置或确认覆盖操作。"; return result; }
+    }
+
+    const auto& ssh = *sshService_;
+    const auto quote = [](const std::string& value) { return SshService::shellQuote(value); };
+    const auto remoteRun = [&](const std::string& command) { return ssh.runRemote(settings.remoteHost, command); };
+    ConversionProgress progress;
+    progress.status = "正在连接远程服务器";
+    progress.detail = "正在通过 SSH 建立安全连接";
+    if (onProgress) onProgress(progress);
+    const auto directoryResult = remoteRun("umask 077 && mktemp -d /tmp/ffmpeg-studio-XXXXXX");
+    if (directoryResult.exitCode != 0) {
+        result.message = trim(directoryResult.output);
+        if (result.message.empty()) result.message = "无法在远程服务器创建临时工作目录。";
+        return result;
+    }
+    const std::string remoteDirectory = trim(directoryResult.output);
+    if (remoteDirectory.empty() || remoteDirectory.front() != '/') {
+        result.message = "远程服务器返回了无效的临时目录。";
+        return result;
+    }
+    const std::string remoteInput = remoteDirectory + "/input" + extension;
+    const std::string remoteOutput = remoteDirectory + "/output" + extension;
+    const std::string pidFile = remoteDirectory + "/ffmpeg.pid";
+    struct Cleanup {
+        const SshService& ssh;
+        const std::string& alias;
+        const std::string& directory;
+        const std::string& pidFile;
+        ~Cleanup() {
+            const auto q=[](const std::string& v){return SshService::shellQuote(v);};
+            (void)ssh.runRemote(alias,
+                "if [ -r "+q(pidFile)+" ]; then pid=$(cat "+q(pidFile)+"); "
+                "[ -n \"$pid\" ] && kill -TERM \"$pid\" 2>/dev/null || true; sleep 1; "
+                "[ -n \"$pid\" ] && kill -KILL \"$pid\" 2>/dev/null || true; fi; rm -rf -- "+q(directory));
+        }
+    } cleanup{ssh,settings.remoteHost,remoteDirectory,pidFile};
+
+    progress.status = "正在上传源文件";
+    progress.detail = "正在将视频安全传输到远程服务器";
+    if (onProgress) onProgress(progress);
+    const auto upload = ssh.upload(settings.remoteHost,settings.inputPath,remoteInput,cancelRequested);
+    if (upload.cancelled || (cancelRequested && cancelRequested->load())) {
+        result.cancelled=true; result.message="上传已取消。"; return result;
+    }
+    if (upload.exitCode != 0) {
+        result.message=processErrorSummary(upload.output);
+        if(result.message.empty())result.message="无法将源文件上传到远程服务器。";
+        return result;
+    }
+
+    const std::string marker = processingMarker(settings);
+    if (settings.skipAlreadyProcessed) {
+        const auto existingMarker=remoteRun("ffprobe -v error -show_entries format_tags=comment -of default=noprint_wrappers=1 "+quote(remoteInput));
+        if(existingMarker.exitCode==0 && existingMarker.output.find(marker)!=std::string::npos) {
+            progress.status="正在下载已处理文件";
+            progress.detail="源视频已包含相同参数的处理标记，正在回传文件";
+            if(onProgress)onProgress(progress);
+            const fs::path temporary=makeTemporaryPath(output);
+            const auto download=ssh.download(settings.remoteHost,remoteInput,pathToUtf8(temporary),cancelRequested);
+            if(download.exitCode!=0||!fs::is_regular_file(temporary,ec)) {
+                fs::remove(temporary,ec);result.cancelled=download.cancelled;
+                result.message=download.cancelled?"下载已取消。":"无法下载远程已处理文件。";return result;
+            }
+            const auto probe=remoteRun("ffprobe -v error -show_entries format=format_name:format_tags=comment:stream=codec_type,codec_name -of default=noprint_wrappers=1 "+quote(remoteInput));
+            if(probe.exitCode!=0||!outputDescriptionMatches(probe.output,remoteInput,settings.codec,marker,expectedAudioCodecName(audioEncoder))) {
+                fs::remove(temporary,ec);result.message="远程文件未通过容器、编码和处理标记检查。";return result;
+            }
+            std::string error;
+            if(!replaceFile(temporary,output,settings.overwrite,error)){fs::remove(temporary,ec);result.message=error;return result;}
+            result.success=true;result.skipped=true;result.message="源视频已经使用相同参数处理，已直接复用。";
+            result.outputSizeBytes=fs::file_size(output,ec);
+            if(onProgress){progress.fraction=1.0;progress.status="已跳过";progress.detail=result.message;onProgress(progress);}
+            return result;
+        }
+    }
+
+    const auto durationResult=remoteRun("ffprobe -v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 "+quote(remoteInput));
+    std::optional<double> duration;
+    if(durationResult.exitCode==0){try{const double value=std::stod(trim(durationResult.output));if(std::isfinite(value)&&value>0.0)duration=value;}catch(...){}}
+    progress.status="正在远程编码";
+    progress.detail="正在读取远程 FFmpeg 编码进度";
+    progress.durationSeconds=duration;
+    if(onProgress)onProgress(progress);
+
+    ConversionSettings remoteSettings=settings;
+    remoteSettings.inputPath=remoteInput;
+    remoteSettings.markerSourcePath=settings.inputPath;
+    remoteSettings.remoteHost.clear();
+    std::vector<std::string> args;
+    try{args=buildFfmpegCommand(remoteSettings,capabilities,"ffmpeg",remoteOutput);}
+    catch(const std::exception& e){result.message=e.what();return result;}
+    const std::string remoteCommand=joinRemoteArguments(args);
+    const std::string script=remoteCommand+" & ffmpeg_pid=$!; printf '%s\\n' \"$ffmpeg_pid\" > "+quote(pidFile)+
+        "; wait \"$ffmpeg_pid\"; code=$?; rm -f -- "+quote(pidFile)+"; exit \"$code\"";
+
+    std::atomic_bool monitorFinished{false};
+    std::thread monitor;
+    if(pauseRequested){
+        monitor=std::thread([&](){
+            bool paused=false;
+            while(!monitorFinished.load()){
+                if(cancelRequested&&cancelRequested->load()){
+                    (void)remoteRun("if [ -r "+quote(pidFile)+" ]; then pid=$(cat "+quote(pidFile)+
+                        "); [ -n \"$pid\" ] && kill -TERM \"$pid\" 2>/dev/null || true; sleep 1; "
+                        "[ -n \"$pid\" ] && kill -KILL \"$pid\" 2>/dev/null || true; fi");
+                    break;
+                }
+                const bool requested=pauseRequested->load();
+                if(requested!=paused){
+                    const std::string signal=requested?"-STOP":"-CONT";
+                    const auto response=remoteRun("if [ -r "+quote(pidFile)+" ]; then pid=$(cat "+quote(pidFile)+
+                        "); [ -n \"$pid\" ] && kill "+signal+" \"$pid\"; else exit 1; fi");
+                    if(response.exitCode==0)paused=requested;
+                }
+                std::this_thread::sleep_for(std::chrono::milliseconds(120));
+            }
+            if(paused)(void)remoteRun("if [ -r "+quote(pidFile)+" ]; then pid=$(cat "+quote(pidFile)+
+                "); [ -n \"$pid\" ] && kill -CONT \"$pid\" 2>/dev/null || true; fi");
+        });
+    }
+    const auto process=ssh.runRemote(settings.remoteHost,script,cancelRequested,[&](std::string_view line){
+        if(!onProgress)return;
+        const auto split=line.find('=');if(split==std::string_view::npos)return;
+        const auto key=line.substr(0,split),value=line.substr(split+1);
+        if(key=="frame")progress.frame=parseUnsigned(value);
+        else if(key=="fps")progress.fps=parseNumber(value);
+        else if(key=="out_time_us"||key=="out_time_ms"){if(auto n=parseNumber(value))progress.currentTimeSeconds=*n/1000000.0;}
+        else if(key=="out_time"&&!progress.currentTimeSeconds)progress.currentTimeSeconds=parseTimestamp(value);
+        else if(key=="speed"){std::string v(value);if(!v.empty()&&v.back()=='x')v.pop_back();progress.speed=parseNumber(v);}
+        else if(key=="bitrate"){if(value!="N/A")progress.bitrate=std::string(value);}
+        else if(key=="total_size")progress.totalSizeBytes=parseUnsigned(value);
+        else if(key=="progress"){
+            if(value=="end"){progress.fraction=0.995;progress.status="正在检查远程输出";progress.detail="正在检查容器和编码信息";onProgress(progress);}
+            else if(value=="continue"){
+                if(duration&&progress.currentTimeSeconds){
+                    progress.durationSeconds=duration;
+                    progress.fraction=std::clamp(*progress.currentTimeSeconds/ *duration,0.0,0.995);
+                    if(progress.speed&&*progress.speed>0.0)progress.etaSeconds=std::max(0.0,(*duration-*progress.currentTimeSeconds)/ *progress.speed);
+                }
+                progress.status="正在远程编码";progress.detail=formatProgressDetail(progress);onProgress(progress);
+            }
+        }
+    });
+    monitorFinished.store(true);
+    if(monitor.joinable())monitor.join();
+    if(process.cancelled||(cancelRequested&&cancelRequested->load())){result.cancelled=true;result.message="远程转换已取消。";return result;}
+    if(process.exitCode!=0){result.message=processErrorSummary(process.output);if(result.message.empty())result.message="远程 FFmpeg 转换失败。";return result;}
+
+    progress.status="正在验证远程输出";
+    progress.detail="正在检查容器、视频编码、音频编码和处理标记";
+    if(onProgress)onProgress(progress);
+    const auto probe=remoteRun("ffprobe -v error -show_entries format=format_name:format_tags=comment:stream=codec_type,codec_name -of default=noprint_wrappers=1 "+quote(remoteOutput));
+    if(probe.exitCode!=0||!outputDescriptionMatches(probe.output,remoteOutput,settings.codec,marker,expectedAudioCodecName(audioEncoder))){
+        result.message="远程输出未通过容器格式、视频编码、音频编码或处理标记检查。";return result;
+    }
+    const auto sizeResult=remoteRun("wc -c < "+quote(remoteOutput));
+    const auto remoteSize=sizeResult.exitCode==0?parseRemoteSize(sizeResult.output):0;
+    if(remoteSize==0){result.message="远程输出文件为空或无法读取大小。";return result;}
+    progress.status="正在下载转换结果";
+    progress.detail="远程编码完成，正在将文件传回本机";
+    if(onProgress)onProgress(progress);
+    const fs::path temporary=makeTemporaryPath(output);
+    const auto download=ssh.download(settings.remoteHost,remoteOutput,pathToUtf8(temporary),cancelRequested);
+    if(download.cancelled||(cancelRequested&&cancelRequested->load())){fs::remove(temporary,ec);result.cancelled=true;result.message="下载已取消。";return result;}
+    if(download.exitCode!=0||!fs::is_regular_file(temporary,ec)){fs::remove(temporary,ec);result.message=processErrorSummary(download.output);if(result.message.empty())result.message="无法下载远程转换结果。";return result;}
+    result.outputSizeBytes=fs::file_size(temporary,ec);
+    if(ec||result.outputSizeBytes!=remoteSize){fs::remove(temporary,ec);result.message="下载文件大小与远程输出不一致，已放弃保存。";return result;}
+    std::string error;
+    if(!replaceFile(temporary,output,settings.overwrite,error)){fs::remove(temporary,ec);result.message=error;return result;}
+    result.success=true;
+    result.message="远程转换完成，文件已自动下载到本机。";
+    if(onProgress){progress.fraction=1.0;progress.status="转换完成";progress.detail=result.message;onProgress(progress);}
+    return result;
+}
+
 ConversionResult FfmpegService::convert(const ConversionSettings& settings,
                                         const EncoderCapabilities& capabilities,
                                         const ProgressCallback& onProgress,
@@ -799,6 +1023,8 @@ ConversionResult FfmpegService::convert(const ConversionSettings& settings,
             : "输出文件扩展名必须与源文件的容器格式一致。";
         return result;
     }
+    if (!settings.remoteHost.empty())
+        return convertRemote(settings, capabilities, onProgress, cancelRequested, pauseRequested);
     if (!capabilities.supports(settings.codec, settings.backend)) {
         result.message = "当前 FFmpeg 环境或硬件设备不支持所选编码器。";
         return result;
