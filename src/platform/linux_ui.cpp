@@ -1304,7 +1304,7 @@ private:
                 static_cast<int>(settings_.compression) == static_cast<int>(index));
         }
 
-        canvas_->text(left + s(20), top + s(383), "音频码率", colors.muted, 0);
+        canvas_->text(left + s(20), top + s(431), "音频码率", colors.muted, 0);
         const std::array<int, 6> audioRates{96, 128, 160, 192, 256, 320};
         for (std::size_t index = 0; index < audioRates.size(); ++index) {
             canvas_->button(
