@@ -583,7 +583,7 @@ private:
         setStatus("服务器已删除，SSH 配置已同步更新。");
     }
 
-    LRESULT handle(WPARAM wParam, LPARAM lParam, UINT message) {
+    LRESULT handle(UINT message, WPARAM wParam, LPARAM lParam) {
         switch (message) {
         case WM_CREATE:
             createControls();
