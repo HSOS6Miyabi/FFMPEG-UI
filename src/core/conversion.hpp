@@ -189,7 +189,8 @@ private:
     bool probeHardwareEncoder(const std::string& encoder) const;
     bool verifyOutput(const std::string& path, VideoCodec codec,
                       const std::string& expectedMarker,
-                      const std::string& expectedAudioCodec) const;
+                      const std::string& expectedAudioCodec,
+                      OutputResolution resolution) const;
 
     std::string ffmpegPath_;
     std::string ffprobePath_;
