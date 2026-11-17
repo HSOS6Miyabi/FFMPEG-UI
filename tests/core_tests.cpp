@@ -6,6 +6,8 @@
 #include <chrono>
 #include <cstdlib>
 #include <iostream>
+#include <filesystem>
+#include <fstream>
 #include <stdexcept>
 #include <string>
 #include <thread>
@@ -254,6 +256,100 @@ int main() {
         require(crfMaximum(VideoCodec::H264) == 51, "H.264 CRF range must end at 51.");
         require(crfMaximum(VideoCodec::H265) == 51, "H.265 CRF range must end at 51.");
         require(crfMaximum(VideoCodec::AV1) == 63, "AV1 CRF range must end at 63.");
+
+        {
+            namespace fs = std::filesystem;
+            const fs::path testDirectory = fs::temp_directory_path() / "ffmpeg-studio-ssh-test";
+            std::error_code cleanupError;
+            fs::remove_all(testDirectory, cleanupError);
+            fs::create_directories(testDirectory);
+            const fs::path configPath = testDirectory / "config";
+#ifdef _WIN32
+            const char* oldConfig = std::getenv("FFMPEG_STUDIO_SSH_CONFIG");
+            const std::string oldConfigValue = oldConfig == nullptr ? std::string{} : oldConfig;
+            _putenv_s("FFMPEG_STUDIO_SSH_CONFIG", configPath.string().c_str());
+#else
+            const char* oldConfig = std::getenv("FFMPEG_STUDIO_SSH_CONFIG");
+            const std::string oldConfigValue = oldConfig == nullptr ? std::string{} : oldConfig;
+            setenv("FFMPEG_STUDIO_SSH_CONFIG", configPath.c_str(), 1);
+#endif
+            {
+                std::ofstream config(configPath, std::ios::binary);
+                config << "Host *\n  ServerAliveInterval 30\n\n"
+                       << "Host shared-node backup-node\n  HostName 10.0.0.5\n  User admin\n"
+                       << "  Port 2222\n  Compression yes\n  IdentityFile ~/.ssh/id_ed25519\n\n"
+                       << "Host other-node\n  HostName example.invalid\n";
+            }
+            SshService ssh;
+            auto servers = ssh.listServers();
+            require(servers.size() == 3, "SSH config discovery must list concrete aliases and ignore wildcard patterns.");
+            require(SshService::validAlias("media-node_1.example") && !SshService::validAlias("-invalid"),
+                    "SSH aliases must reject option-like names.");
+            require(SshService::shellQuote("a'b") == "'a'\\''b'",
+                    "Remote shell arguments must be quoted safely.");
+
+            SshServer keyServer;
+            keyServer.alias = "shared-node";
+            keyServer.hostName = "media.internal";
+            keyServer.user = "worker";
+            keyServer.port = 2200;
+            keyServer.identityFile = "C:/Keys/worker key_ed25519";
+            keyServer.authMethod = SshAuthMethod::PublicKey;
+            std::string sshError;
+            require(ssh.saveServer(keyServer, {}, sshError), "Saving an SSH server must update the local SSH config.");
+            servers = ssh.listServers();
+            const auto keyEntry = std::find_if(servers.begin(), servers.end(), [](const auto& item) { return item.alias == "shared-node"; });
+            require(keyEntry != servers.end() && keyEntry->hostName == "media.internal" &&
+                    keyEntry->user == "worker" && keyEntry->port == 2200 &&
+                    keyEntry->identityFile == "C:/Keys/worker key_ed25519",
+                    "The SSH manager must write and read server connection settings.");
+            const auto backupEntry = std::find_if(servers.begin(), servers.end(), [](const auto& item) { return item.alias == "backup-node"; });
+            require(backupEntry != servers.end() && backupEntry->hostName == "10.0.0.5" &&
+                    backupEntry->user == "admin",
+                    "Editing one alias from a shared Host block must preserve the other aliases.");
+            std::ifstream updatedConfig(configPath, std::ios::binary);
+            const std::string updatedText((std::istreambuf_iterator<char>(updatedConfig)), {});
+            require(updatedText.find("Compression yes") != std::string::npos &&
+                    updatedText.find("ServerAliveInterval 30") != std::string::npos,
+                    "Updating a server must preserve unrelated SSH options.");
+
+            SshServer passwordServer;
+            passwordServer.alias = "password-node";
+            passwordServer.hostName = "password.internal";
+            passwordServer.user = "encoder";
+            passwordServer.authMethod = SshAuthMethod::Password;
+            require(ssh.saveServer(passwordServer, "test-password", sshError),
+                    "Password authentication must save the secret through the platform credential store.");
+            require(ssh.hasPassword("password-node"),
+                    "A saved SSH password must be available to the askpass helper.");
+#ifdef _WIN32
+            const auto askpassSecret = ssh.passwordForAskpass("password-node");
+#else
+            setenv("FFMPEG_STUDIO_SSH_PASSWORD", "askpass-secret", 1);
+            const auto askpassSecret = ssh.passwordForAskpass("password-node");
+            unsetenv("FFMPEG_STUDIO_SSH_PASSWORD");
+#endif
+            require(askpassSecret.has_value() && !askpassSecret->empty(),
+                    "The askpass helper must retrieve a password without placing it in process arguments.");
+            require(updatedText.find("test-password") == std::string::npos,
+                    "SSH passwords must never be written to the SSH configuration file.");
+            require(ssh.removeServer("password-node", sshError),
+                    "Removing a managed SSH server must update the config.");
+            require(!ssh.hasPassword("password-node"),
+                    "Removing a server must remove its saved password.");
+            require(ssh.removeServer("shared-node", sshError), "Removing one SSH alias must succeed.");
+            servers = ssh.listServers();
+            require(std::none_of(servers.begin(), servers.end(), [](const auto& item) { return item.alias == "shared-node"; }) &&
+                    std::any_of(servers.begin(), servers.end(), [](const auto& item) { return item.alias == "backup-node"; }),
+                    "Removing one SSH alias must leave unrelated aliases intact.");
+#ifdef _WIN32
+            _putenv_s("FFMPEG_STUDIO_SSH_CONFIG", oldConfigValue.c_str());
+#else
+            if (oldConfigValue.empty()) unsetenv("FFMPEG_STUDIO_SSH_CONFIG");
+            else setenv("FFMPEG_STUDIO_SSH_CONFIG", oldConfigValue.c_str(), 1);
+#endif
+            fs::remove_all(testDirectory, cleanupError);
+        }
 
 #ifndef _WIN32
         std::atomic_bool cancelProcess{false};
