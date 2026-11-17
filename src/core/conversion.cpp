@@ -877,7 +877,12 @@ ConversionResult FfmpegService::convertRemote(const ConversionSettings& settings
         result.message = "远程服务器返回了无效的临时目录。";
         return result;
     }
-    const std::string remoteInput = remoteDirectory + "/input" + extension;
+    // Preserve the source suffix so remote probing and demuxer selection match the local input.
+    std::string sourceExtension = lower(pathToUtf8(input.extension()));
+    if (sourceExtension.empty()) {
+        sourceExtension = ".bin";
+    }
+    const std::string remoteInput = remoteDirectory + "/input" + sourceExtension;
     const std::string remoteOutput = remoteDirectory + "/output" + extension;
     const std::string pidFile = remoteDirectory + "/ffmpeg.pid";
     struct Cleanup {
@@ -907,31 +912,8 @@ ConversionResult FfmpegService::convertRemote(const ConversionSettings& settings
         return result;
     }
 
+    // The local output marker was checked before uploading. The remote input is always a fresh copy.
     const std::string marker = processingMarker(settings);
-    if (settings.skipAlreadyProcessed) {
-        const auto existingMarker=remoteRun("ffprobe -v error -show_entries format_tags=comment -of default=noprint_wrappers=1 "+quote(remoteInput));
-        if(existingMarker.exitCode==0 && existingMarker.output.find(marker)!=std::string::npos) {
-            progress.status="正在下载已处理文件";
-            progress.detail="源视频已包含相同参数的处理标记，正在回传文件";
-            if(onProgress)onProgress(progress);
-            const fs::path temporary=makeTemporaryPath(output);
-            const auto download=ssh.download(settings.remoteHost,remoteInput,pathToUtf8(temporary),cancelRequested);
-            if(download.exitCode!=0||!fs::is_regular_file(temporary,ec)) {
-                fs::remove(temporary,ec);result.cancelled=download.cancelled;
-                result.message=download.cancelled?"下载已取消。":"无法下载远程已处理文件。";return result;
-            }
-            const auto probe=remoteRun("ffprobe -v error -show_entries format=format_name:format_tags=comment:stream=codec_type,codec_name -of default=noprint_wrappers=1 "+quote(remoteInput));
-            if(probe.exitCode!=0||!outputDescriptionMatches(probe.output,remoteInput,settings.codec,marker,expectedAudioCodecName(audioEncoder))) {
-                fs::remove(temporary,ec);result.message="远程文件未通过容器、编码和处理标记检查。";return result;
-            }
-            std::string error;
-            if(!replaceFile(temporary,output,settings.overwrite,error)){fs::remove(temporary,ec);result.message=error;return result;}
-            result.success=true;result.skipped=true;result.message="源视频已经使用相同参数处理，已直接复用。";
-            result.outputSizeBytes=fs::file_size(output,ec);
-            if(onProgress){progress.fraction=1.0;progress.status="已跳过";progress.detail=result.message;onProgress(progress);}
-            return result;
-        }
-    }
 
     const auto durationResult=remoteRun("ffprobe -v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 "+quote(remoteInput));
     std::optional<double> duration;

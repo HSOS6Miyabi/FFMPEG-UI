@@ -151,7 +151,15 @@ std::vector<SshServer> SshService::listServers() const{
             else if(key=="port"&&server.port==22){try{auto p=std::stoul(value);if(p>0&&p<=65535)server.port=static_cast<unsigned int>(p);}catch(...){}}
             else if(key=="identityfile"&&server.identityFile.empty())server.identityFile=value;
             else if(key=="proxyjump"&&server.proxyJump.empty())server.proxyJump=value;
-            else if(key=="preferredauthentications"&&value.find("password")!=std::string::npos&&value.find("publickey")==std::string::npos)server.authMethod=SshAuthMethod::Password;
+            else if (key == "preferredauthentications" &&
+                     value.find("password") != std::string::npos &&
+                     value.find("publickey") == std::string::npos) {
+                server.authMethod = SshAuthMethod::Password;
+            } else if ((key == "passwordauthentication" ||
+                        key == "kbdinteractiveauthentication") &&
+                       lower(value) == "yes") {
+                server.authMethod = SshAuthMethod::Password;
+            }
         }
     }
     std::vector<SshServer> result;for(auto& [key,value]:servers){(void)key;result.push_back(std::move(value));}return result;
@@ -200,8 +208,17 @@ bool SshService::removeServer(const std::string& alias,std::string& error){
 }
 bool SshService::hasPassword(const std::string& alias) const{return readPassword(alias).has_value();}
 bool SshService::setPassword(const std::string& alias,const std::string& password,std::string& error){
-    if(!validAlias(alias)||password.empty()||password.find_first_of("\r\n")!=std::string::npos){error="服务器别名或密码无效。";return false;}
+    if (!validAlias(alias) || password.empty() ||
+        password.find_first_of("\r\n") != std::string::npos) {
+        error = "服务器别名或密码无效。";
+        return false;
+    }
 #ifdef _WIN32
+    if (password.size() > CRED_MAX_CREDENTIAL_BLOB_SIZE) {
+        error = "SSH 密码长度超过 Windows 凭据管理器允许的范围。";
+        return false;
+    }
+
     const auto target=wideFromUtf8(credentialTarget(alias));CREDENTIALW c{};c.Type=CRED_TYPE_GENERIC;c.TargetName=const_cast<LPWSTR>(target.c_str());
     c.CredentialBlob=reinterpret_cast<LPBYTE>(const_cast<char*>(password.data()));c.CredentialBlobSize=static_cast<DWORD>(password.size());
     c.Persist=CRED_PERSIST_LOCAL_MACHINE;c.UserName=const_cast<LPWSTR>(L"FFmpeg Studio SSH");
