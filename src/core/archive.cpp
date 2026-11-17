@@ -401,12 +401,24 @@ void updateReferences(const fs::path& root,
                 text = replaceAll(std::move(text), "/" + oldPath, "/" + newPath);
             }
         }
-        if (powerPoint && relativeFile == "[Content_Types].xml" &&
-            text.find("Extension=\"mp4\"") == std::string::npos &&
-            text.find("Extension='mp4'") == std::string::npos) {
-            const auto closing = text.rfind("</Types>");
-            if (closing != std::string::npos)
-                text.insert(closing, "<Default Extension=\"mp4\" ContentType=\"video/mp4\"/>");
+        if (powerPoint && relativeFile == "[Content_Types].xml") {
+            for (const auto& [oldPath, newPath] : replacements) {
+                (void)oldPath;
+                const std::string extension = lower(pathToUtf8(pathFromUtf8(newPath).extension()).substr(1));
+                if (extension.empty()) continue;
+                const std::string tokenDouble = "Extension=\"" + extension + "\"";
+                const std::string tokenSingle = "Extension='" + extension + "'";
+                if (text.find(tokenDouble) != std::string::npos || text.find(tokenSingle) != std::string::npos) continue;
+                std::string contentType = "video/mp4";
+                if (extension == "mov") contentType = "video/quicktime";
+                else if (extension == "wmv") contentType = "video/x-ms-wmv";
+                else if (extension == "webm") contentType = "video/webm";
+                else if (extension == "avi") contentType = "video/x-msvideo";
+                else if (extension == "mkv") contentType = "video/x-matroska";
+                const auto closing = text.rfind("</Types>");
+                if (closing != std::string::npos)
+                    text.insert(closing, "<Default Extension=\"" + extension + "\" ContentType=\"" + contentType + "\"/>");
+            }
         }
         std::ofstream output(it->path(), std::ios::binary | std::ios::trunc);
         output.write(text.data(), static_cast<std::streamsize>(text.size()));
@@ -542,7 +554,7 @@ ArchiveResult ArchiveService::process(const std::string& inputPath,
     for (std::size_t index = 0; index < videos.size(); ++index) {
         const std::string oldRelative = relativeName(videos[index], extracted);
         fs::path candidate = pathFromUtf8(oldRelative);
-        candidate.replace_extension(".mp4");
+        if (settings.outputContainer == OutputContainer::MP4) candidate.replace_extension(".mp4");
         auto targetKey = [](const fs::path& value) {
             return lower(pathToUtf8(value.lexically_normal().generic_string()));
         };
@@ -554,7 +566,7 @@ ArchiveResult ArchiveService::process(const std::string& inputPath,
             do {
                 ++duplicate;
                 const std::string suffix = duplicate == 1 ? "_compressed" : "_compressed_" + std::to_string(duplicate);
-                candidate = parent / pathFromUtf8(stem + suffix + ".mp4");
+                candidate = parent / pathFromUtf8(stem + suffix + pathToUtf8(candidate.extension()));
             } while (reservedTargets.contains(targetKey(candidate)) || fs::exists(extracted / candidate));
         }
         reservedTargets.insert(targetKey(candidate));
@@ -620,7 +632,8 @@ ArchiveResult ArchiveService::process(const std::string& inputPath,
             const fs::path source = videos[index];
             const std::string oldRelative = relativeName(source, extracted);
             const fs::path newRelative = targetRelativePaths[index];
-            const fs::path encodedPath = outputDirectory / (std::to_string(index) + ".mp4");
+            const std::string encodedExtension = outputVideoExtension(settings.outputContainer, oldRelative);
+            const fs::path encodedPath = outputDirectory / pathFromUtf8(std::to_string(index) + encodedExtension);
             ConversionSettings perVideo = settings;
             perVideo.inputPath = pathToUtf8(source);
             perVideo.outputPath = pathToUtf8(encodedPath);
