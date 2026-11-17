@@ -620,7 +620,12 @@ private:
                     formatTaskSize(task.inputSizeBytes,task.outputSizeBytes);
                 if (!sizeLine.empty() && (state==TaskState::Completed || state==TaskState::Skipped)) detail=sizeLine;
                 drawText(dc,{l.queue.x+l.queue.width-s(148),y+s(27),s(128),s(22)},detail,c.muted,smallFont,DT_RIGHT|DT_VCENTER|DT_SINGLELINE);
-                HPEN pen=CreatePen(PS_SOLID,1,c.border); auto old=SelectObject(dc,pen); MoveToEx(dc,l.queue.x+s(18),y+rowH-s(2),nullptr); LineTo(dc,l.queue.x+l.queue.width-s(18),y+rowH-s(2)); SelectObject(dc,old); DeleteObject(pen);
+                HPEN separatorPen = CreatePen(PS_SOLID, 1, c.border);
+                HGDIOBJ previousPen = SelectObject(dc, separatorPen);
+                MoveToEx(dc, l.queue.x + s(18), y + rowH - s(2), nullptr);
+                LineTo(dc, l.queue.x + l.queue.width - s(18), y + rowH - s(2));
+                SelectObject(dc, previousPen);
+                DeleteObject(separatorPen);
             }
         }
         if(rows.size()>static_cast<std::size_t>(visible)) drawText(dc,{l.queue.x+l.queue.width-s(130),l.queue.y+l.queue.height-s(24),s(110),s(18)},
@@ -660,63 +665,327 @@ private:
         DeleteObject(title); DeleteObject(normal); DeleteObject(smallFont); DeleteObject(heading);
         BitBlt(target,0,0,width,height,dc,0,0,SRCCOPY); SelectObject(dc,oldBitmap); DeleteObject(bitmap); DeleteDC(dc); ReleaseDC(window_,target);
     }
-    void handleClick(int x,int y) {
-        RECT client{}; GetClientRect(window_,&client); const auto snap=controller_.snapshot();
-        const auto visibleBackends=availableBackends(snap.capabilities,settings_.codec);
-        const auto l=makeLayout(client.right,client.bottom,scale(),static_cast<int>(visibleBackends.size()));
-        if (editingCrf_ && !contains(l.crfValue,x,y)) commitCrfText();
-        if(contains(l.ssh,x,y)){if(!snap.running)showSshManager();return;}
-        if(contains(l.theme,x,y)){dark_=!dark_;applyModernStyle();return;}
-        if(contains(l.addFiles,x,y)){addFiles();return;}
-        if(contains(l.addFolder,x,y)){addFolder();return;}
-        if(contains(l.addArchive,x,y)){addFiles(true);return;}
-        if(contains(l.importQueue,x,y)){importQueueDialog();return;}
-        if(contains(l.exportQueue,x,y)){exportQueueDialog();return;}
-        if(contains(l.removeSelected,x,y)){if(selectedTask_)controller_.removeTask(selectedTask_);return;}
-        if(contains(l.clearDone,x,y)){controller_.clearCompleted();return;}
-        if(contains(l.outputBrowse,x,y)){chooseOutput();return;}
-        if(!snap.running&&contains(l.start,x,y)){startOrCancel();return;}
-        if(snap.running&&contains(l.pause,x,y)){if(snap.paused)controller_.resumeBatch();else controller_.pauseBatch();return;}
-        if(snap.running&&contains(l.cancel,x,y)){controller_.cancelBatch();return;}
-        if(contains(l.crfValue,x,y)){editingCrf_=true;crfEditText_.clear();SetFocus(window_);return;}
-        for(int i=0;i<2;++i) if(contains(l.container[i],x,y)){settings_.outputContainer=static_cast<OutputContainer>(i);updateSettings();return;}
-        for(int i=0;i<3;++i) if(contains(l.codec[i],x,y)) { settings_.codec=static_cast<VideoCodec>(i);settings_.crf=defaultCrf(settings_.codec);const auto caps=controller_.snapshot().capabilities;if(!caps.supports(settings_.codec,settings_.backend)){for(const auto candidate:{EncoderBackend::CPU,EncoderBackend::NVENC,EncoderBackend::QSV,EncoderBackend::AMF})if(caps.supports(settings_.codec,candidate)){settings_.backend=candidate;break;}}updateSettings();return; }
-        for(std::size_t i=0;i<visibleBackends.size();++i) if(contains(l.backend[i],x,y)) {settings_.backend=visibleBackends[i];updateSettings();return;}
-        for(int i=0;i<8;++i) if(contains(l.compression[i],x,y)){settings_.compression=static_cast<CompressionLevel>(i);updateSettings();return;}
-        const std::array<int,6> rates{96,128,160,192,256,320};
-        for(int i=0;i<6;++i) if(contains(l.audio[i],x,y)){settings_.audioBitrateKbps=rates[i];updateSettings();return;}
-        if(contains(l.parallel,x,y)){const std::array<int,5> choices{0,1,2,4,8};auto it=std::find(choices.begin(),choices.end(),settings_.maxParallelJobs);settings_.maxParallelJobs=choices[(static_cast<std::size_t>(std::distance(choices.begin(),it))+1)%choices.size()];updateSettings();return;}
-        if(contains(l.recursive,x,y)){settings_.recursive=!settings_.recursive;updateSettings();return;}
-        if(contains(l.skip,x,y)){settings_.skipAlreadyProcessed=!settings_.skipAlreadyProcessed;updateSettings();return;}
-        if(contains(l.preserve,x,y)){settings_.preserveDirectoryStructure=!settings_.preserveDirectoryStructure;updateSettings();return;}
-        if(contains(l.overwrite,x,y)){settings_.overwrite=!settings_.overwrite;updateSettings();return;}
-        if(y>=l.crfTrack.y-s(10)&&y<=l.crfTrack.y+s(18)&&x>=l.crfTrack.x&&x<=l.crfTrack.x+l.crfTrack.width){draggingCrf_=true;SetCapture(window_);commitCrf(x,l);return;}
-        if(y>=l.queue.y+s(54)&&x>=l.queue.x&&x<=l.queue.x+l.queue.width){
-            const int rowH=s(68), visibleIndex=(y-(l.queue.y+s(54)))/rowH+scrollOffset_;
-            const auto rows=visibleRows(controller_.snapshot());
-            if(visibleIndex>=0&&visibleIndex<static_cast<int>(rows.size())) selectedTask_=rows[static_cast<std::size_t>(visibleIndex)].first.id;
+    void handleClick(int x, int y) {
+        RECT clientRectangle{};
+        GetClientRect(window_, &clientRectangle);
+
+        const AppSnapshot snapshot = controller_.snapshot();
+        const auto backends = availableBackends(snapshot.capabilities, settings_.codec);
+        const Layout layout = makeLayout(
+            clientRectangle.right, clientRectangle.bottom,
+            scale(), static_cast<int>(backends.size()));
+
+        if (editingCrf_ && !contains(layout.crfValue, x, y)) {
+            commitCrfText();
+        }
+
+        if (contains(layout.ssh, x, y)) {
+            if (!snapshot.running) {
+                showSshManager();
+            }
+            return;
+        }
+        if (contains(layout.theme, x, y)) {
+            dark_ = !dark_;
+            applyModernStyle();
+            return;
+        }
+        if (contains(layout.addFiles, x, y)) {
+            addFiles();
+            return;
+        }
+        if (contains(layout.addFolder, x, y)) {
+            addFolder();
+            return;
+        }
+        if (contains(layout.addArchive, x, y)) {
+            addFiles(true);
+            return;
+        }
+        if (contains(layout.importQueue, x, y)) {
+            importQueueDialog();
+            return;
+        }
+        if (contains(layout.exportQueue, x, y)) {
+            exportQueueDialog();
+            return;
+        }
+        if (contains(layout.removeSelected, x, y)) {
+            if (selectedTask_ != 0) {
+                controller_.removeTask(selectedTask_);
+            }
+            return;
+        }
+        if (contains(layout.clearDone, x, y)) {
+            controller_.clearCompleted();
+            return;
+        }
+        if (contains(layout.outputBrowse, x, y)) {
+            chooseOutput();
+            return;
+        }
+        if (!snapshot.running && contains(layout.start, x, y)) {
+            startOrCancel();
+            return;
+        }
+        if (snapshot.running && contains(layout.pause, x, y)) {
+            if (snapshot.paused) {
+                controller_.resumeBatch();
+            } else {
+                controller_.pauseBatch();
+            }
+            return;
+        }
+        if (snapshot.running && contains(layout.cancel, x, y)) {
+            controller_.cancelBatch();
+            return;
+        }
+        if (contains(layout.crfValue, x, y)) {
+            editingCrf_ = true;
+            crfEditText_.clear();
+            SetFocus(window_);
+            return;
+        }
+
+        for (std::size_t index = 0; index < 2; ++index) {
+            if (contains(layout.container[index], x, y)) {
+                settings_.outputContainer = static_cast<OutputContainer>(index);
+                updateSettings();
+                return;
+            }
+        }
+
+        for (std::size_t index = 0; index < 3; ++index) {
+            if (!contains(layout.codec[index], x, y)) {
+                continue;
+            }
+
+            settings_.codec = static_cast<VideoCodec>(index);
+            settings_.crf = defaultCrf(settings_.codec);
+
+            const EncoderCapabilities capabilities = controller_.snapshot().capabilities;
+            if (!capabilities.supports(settings_.codec, settings_.backend)) {
+                for (const auto candidate : {
+                         EncoderBackend::CPU,
+                         EncoderBackend::NVENC,
+                         EncoderBackend::QSV,
+                         EncoderBackend::AMF
+                     }) {
+                    if (capabilities.supports(settings_.codec, candidate)) {
+                        settings_.backend = candidate;
+                        break;
+                    }
+                }
+            }
+
+            updateSettings();
+            return;
+        }
+
+        for (std::size_t index = 0; index < backends.size(); ++index) {
+            if (contains(layout.backend[index], x, y)) {
+                settings_.backend = backends[index];
+                updateSettings();
+                return;
+            }
+        }
+
+        for (std::size_t index = 0; index < 8; ++index) {
+            if (contains(layout.compression[index], x, y)) {
+                settings_.compression = static_cast<CompressionLevel>(index);
+                updateSettings();
+                return;
+            }
+        }
+
+        const std::array<int, 6> audioRates{96, 128, 160, 192, 256, 320};
+        for (std::size_t index = 0; index < audioRates.size(); ++index) {
+            if (contains(layout.audio[index], x, y)) {
+                settings_.audioBitrateKbps = audioRates[index];
+                updateSettings();
+                return;
+            }
+        }
+
+        if (contains(layout.parallel, x, y)) {
+            const std::array<int, 5> choices{0, 1, 2, 4, 8};
+            const auto current = std::find(
+                choices.begin(), choices.end(), settings_.maxParallelJobs);
+            const auto currentIndex = static_cast<std::size_t>(
+                std::distance(choices.begin(), current));
+            settings_.maxParallelJobs =
+                choices[(currentIndex + 1) % choices.size()];
+            updateSettings();
+            return;
+        }
+        if (contains(layout.recursive, x, y)) {
+            settings_.recursive = !settings_.recursive;
+            updateSettings();
+            return;
+        }
+        if (contains(layout.skip, x, y)) {
+            settings_.skipAlreadyProcessed = !settings_.skipAlreadyProcessed;
+            updateSettings();
+            return;
+        }
+        if (contains(layout.preserve, x, y)) {
+            settings_.preserveDirectoryStructure =
+                !settings_.preserveDirectoryStructure;
+            updateSettings();
+            return;
+        }
+        if (contains(layout.overwrite, x, y)) {
+            settings_.overwrite = !settings_.overwrite;
+            updateSettings();
+            return;
+        }
+
+        const int crfTop = layout.crfTrack.y - s(10);
+        const int crfBottom = layout.crfTrack.y + s(18);
+        const int crfRight = layout.crfTrack.x + layout.crfTrack.width;
+        if (y >= crfTop && y <= crfBottom &&
+            x >= layout.crfTrack.x && x <= crfRight) {
+            draggingCrf_ = true;
+            SetCapture(window_);
+            commitCrf(x, layout);
+            return;
+        }
+
+        const int queueTop = layout.queue.y + s(54);
+        if (y >= queueTop &&
+            x >= layout.queue.x &&
+            x <= layout.queue.x + layout.queue.width) {
+            const int rowHeight = s(68);
+            const int visibleIndex = (y - queueTop) / rowHeight + scrollOffset_;
+            const auto visibleItems = visibleRows(controller_.snapshot());
+
+            if (visibleIndex >= 0 &&
+                visibleIndex < static_cast<int>(visibleItems.size())) {
+                selectedTask_ =
+                    visibleItems[static_cast<std::size_t>(visibleIndex)].first.id;
+            }
         }
     }
-    LRESULT handle(UINT msg,WPARAM wp,LPARAM lp) {
-        switch(msg){
-        case WM_CREATE:{const auto snap=controller_.snapshot();settings_=snap.settings;return 0;}
-        case WM_SIZE:InvalidateRect(window_,nullptr,FALSE);return 0;
-        case WM_GETMINMAXINFO:{auto* info=reinterpret_cast<MINMAXINFO*>(lp);info->ptMinTrackSize.x=s(1180);info->ptMinTrackSize.y=s(820);return 0;}
-        case WM_DPICHANGED:{const RECT* r=reinterpret_cast<const RECT*>(lp);SetWindowPos(window_,nullptr,r->left,r->top,r->right-r->left,r->bottom-r->top,SWP_NOZORDER|SWP_NOACTIVATE);applyModernStyle();InvalidateRect(window_,nullptr,FALSE);return 0;}
-        case WM_LBUTTONDOWN:handleClick(GET_X_LPARAM(lp),GET_Y_LPARAM(lp));InvalidateRect(window_,nullptr,FALSE);return 0;
-        case WM_MOUSEMOVE:if(draggingCrf_&&(wp&MK_LBUTTON)){RECT c{};GetClientRect(window_,&c);commitCrf(GET_X_LPARAM(lp),makeLayout(c.right,c.bottom,scale()));InvalidateRect(window_,nullptr,FALSE);}return 0;
-        case WM_LBUTTONUP:if(draggingCrf_){draggingCrf_=false;ReleaseCapture();}return 0;
-        case WM_CHAR:if(editingCrf_){if(wp>=L'0'&&wp<=L'9'&&crfEditText_.size()<3)crfEditText_.push_back(static_cast<wchar_t>(wp));else if(wp==8&&!crfEditText_.empty())crfEditText_.pop_back();else if(wp==13)commitCrfText();else if(wp==27){editingCrf_=false;crfEditText_.clear();}InvalidateRect(window_,nullptr,FALSE);return 0;}break;
-        case WM_KEYDOWN:if(editingCrf_&&wp==VK_ESCAPE){editingCrf_=false;crfEditText_.clear();InvalidateRect(window_,nullptr,FALSE);return 0;}break;
-        case WM_MOUSEWHEEL:scrollOffset_=std::max(0,scrollOffset_+(GET_WHEEL_DELTA_WPARAM(wp)>0?-3:3));InvalidateRect(window_,nullptr,FALSE);return 0;
-        case WM_DROPFILES:{HDROP drop=reinterpret_cast<HDROP>(wp);const UINT count=DragQueryFileW(drop,0xFFFFFFFF,nullptr,0);std::vector<std::string> paths;for(UINT i=0;i<count;++i){const UINT length=DragQueryFileW(drop,i,nullptr,0);std::wstring value(length+1,L'\0');DragQueryFileW(drop,i,value.data(),length+1);paths.push_back(utf8FromWide(value.c_str()));}DragFinish(drop);controller_.addInputs(paths);InvalidateRect(window_,nullptr,FALSE);return 0;}
-        case WM_TIMER:InvalidateRect(window_,nullptr,FALSE);return 0;
-        case WM_ERASEBKGND:return 1;
-        case WM_PAINT:{PAINTSTRUCT ps{};BeginPaint(window_,&ps);draw();EndPaint(window_,&ps);return 0;}
-        case WM_DESTROY:KillTimer(window_,1);controller_.shutdown();PostQuitMessage(0);return 0;
-        default:return DefWindowProcW(window_,msg,wp,lp);
+
+    LRESULT handle(UINT message, WPARAM wParam, LPARAM lParam) {
+        switch (message) {
+        case WM_CREATE: {
+            const AppSnapshot snapshot = controller_.snapshot();
+            settings_ = snapshot.settings;
+            return 0;
         }
-        return DefWindowProcW(window_,msg,wp,lp);
+        case WM_SIZE:
+            InvalidateRect(window_, nullptr, FALSE);
+            return 0;
+        case WM_GETMINMAXINFO: {
+            auto* information = reinterpret_cast<MINMAXINFO*>(lParam);
+            information->ptMinTrackSize.x = s(1180);
+            information->ptMinTrackSize.y = s(820);
+            return 0;
+        }
+        case WM_DPICHANGED: {
+            const auto* suggestedRectangle = reinterpret_cast<const RECT*>(lParam);
+            SetWindowPos(
+                window_, nullptr,
+                suggestedRectangle->left,
+                suggestedRectangle->top,
+                suggestedRectangle->right - suggestedRectangle->left,
+                suggestedRectangle->bottom - suggestedRectangle->top,
+                SWP_NOZORDER | SWP_NOACTIVATE);
+            applyModernStyle();
+            InvalidateRect(window_, nullptr, FALSE);
+            return 0;
+        }
+        case WM_LBUTTONDOWN:
+            handleClick(GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam));
+            InvalidateRect(window_, nullptr, FALSE);
+            return 0;
+        case WM_MOUSEMOVE:
+            if (draggingCrf_ && (wParam & MK_LBUTTON) != 0) {
+                RECT clientRectangle{};
+                GetClientRect(window_, &clientRectangle);
+                const Layout layout = makeLayout(
+                    clientRectangle.right, clientRectangle.bottom, scale());
+                commitCrf(GET_X_LPARAM(lParam), layout);
+                InvalidateRect(window_, nullptr, FALSE);
+            }
+            return 0;
+        case WM_LBUTTONUP:
+            if (draggingCrf_) {
+                draggingCrf_ = false;
+                ReleaseCapture();
+            }
+            return 0;
+        case WM_CHAR:
+            if (editingCrf_) {
+                if (wParam >= L'0' && wParam <= L'9' && crfEditText_.size() < 3) {
+                    crfEditText_.push_back(static_cast<wchar_t>(wParam));
+                } else if (wParam == 8 && !crfEditText_.empty()) {
+                    crfEditText_.pop_back();
+                } else if (wParam == 13) {
+                    commitCrfText();
+                } else if (wParam == 27) {
+                    editingCrf_ = false;
+                    crfEditText_.clear();
+                }
+
+                InvalidateRect(window_, nullptr, FALSE);
+                return 0;
+            }
+            break;
+        case WM_KEYDOWN:
+            if (editingCrf_ && wParam == VK_ESCAPE) {
+                editingCrf_ = false;
+                crfEditText_.clear();
+                InvalidateRect(window_, nullptr, FALSE);
+                return 0;
+            }
+            break;
+        case WM_MOUSEWHEEL:
+            scrollOffset_ = std::max(
+                0, scrollOffset_ + (GET_WHEEL_DELTA_WPARAM(wParam) > 0 ? -3 : 3));
+            InvalidateRect(window_, nullptr, FALSE);
+            return 0;
+        case WM_DROPFILES: {
+            const HDROP drop = reinterpret_cast<HDROP>(wParam);
+            const UINT count = DragQueryFileW(drop, 0xFFFFFFFF, nullptr, 0);
+            std::vector<std::string> paths;
+            paths.reserve(count);
+
+            for (UINT index = 0; index < count; ++index) {
+                const UINT length = DragQueryFileW(drop, index, nullptr, 0);
+                std::wstring path(static_cast<std::size_t>(length) + 1, L'\0');
+                DragQueryFileW(drop, index, path.data(), length + 1);
+                paths.push_back(utf8FromWide(path.c_str()));
+            }
+
+            DragFinish(drop);
+            controller_.addInputs(paths);
+            InvalidateRect(window_, nullptr, FALSE);
+            return 0;
+        }
+        case WM_TIMER:
+            InvalidateRect(window_, nullptr, FALSE);
+            return 0;
+        case WM_ERASEBKGND:
+            return 1;
+        case WM_PAINT: {
+            PAINTSTRUCT paint{};
+            BeginPaint(window_, &paint);
+            draw();
+            EndPaint(window_, &paint);
+            return 0;
+        }
+        case WM_DESTROY:
+            KillTimer(window_, 1);
+            controller_.shutdown();
+            PostQuitMessage(0);
+            return 0;
+        default:
+            return DefWindowProcW(window_, message, wParam, lParam);
+        }
+
+        return DefWindowProcW(window_, message, wParam, lParam);
     }
     AppController& controller_; HWND window_{}; HINSTANCE instance_{}; BatchSettings settings_; bool dark_{false};
     bool draggingCrf_{false}; bool editingCrf_{false}; std::wstring crfEditText_; int scrollOffset_{0}; std::uint64_t selectedTask_{0};
