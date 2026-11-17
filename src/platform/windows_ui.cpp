@@ -1209,15 +1209,14 @@ private:
             computeTarget, c.text, normal);
         drawText(
             dc,
-            {info.x + s(22), info.y + s(212), info.width - s(44), s(44)},
+            {info.x + s(22), info.y + s(238), info.width - s(44), s(44)},
             wide(snap.resourcePlan.explanation), c.muted, smallFont,
             DT_LEFT | DT_TOP | DT_WORDBREAK);
         drawText(
             dc,
-            {info.x + s(22), info.y + s(270), info.width - s(44), s(70)},
-            L"支持的视频：H.264、H.265、AV1。\n"
-            L"ZIP 与 PPTX 会保留其他文件并更新视频引用。\n"
-            L"音频码率可独立设置，并按输出容器选择兼容的音频编码。",
+            {info.x + s(22), info.y + s(300), info.width - s(44), s(70)},
+            L"支持 H.264、H.265 和 AV1。ZIP 与 PPTX 会保留其他文件并更新视频引用。\n"
+            L"音频可自动编码、保留原音频或移除；输出分辨率可限制最大尺寸。",
             c.muted, smallFont, DT_LEFT | DT_TOP | DT_WORDBREAK);
         if (!snap.error.empty()) {
             drawText(
