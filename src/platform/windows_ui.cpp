@@ -87,37 +87,37 @@ Layout makeLayout(int width, int height, double scale, int backendCount = 4) {
     l.outputBrowse = {leftX + leftW - s(112), settingsY + s(50), s(92), s(38)};
     const int containerW = (leftW - s(52) - s(6)) / 2;
     for (int i = 0; i < 2; ++i)
-        l.container[i] = {leftX + s(20) + i * (containerW + s(6)), settingsY + s(112), containerW, s(32)};
+        l.container[i] = {leftX + s(20) + i * (containerW + s(6)), settingsY + s(120), containerW, s(32)};
     const int codecW = (leftW - s(52)) / 3;
-    for (int i = 0; i < 3; ++i) l.codec[i] = {leftX + s(20) + i * (codecW + s(6)), settingsY + s(160), codecW, s(38)};
+    for (int i = 0; i < 3; ++i) l.codec[i] = {leftX + s(20) + i * (codecW + s(6)), settingsY + s(168), codecW, s(38)};
     backendCount = std::clamp(backendCount, 1, 4);
     const int backendW = (leftW - s(52) - s(6) * (backendCount - 1)) / backendCount;
     for (int index = 0; index < backendCount; ++index) {
         l.backend[index] = {
             leftX + s(20) + index * (backendW + s(6)),
-            settingsY + s(210),
+            settingsY + s(218),
             backendW,
             s(34)
         };
     }
-    l.crfTrack = {leftX + s(20), settingsY + s(276), leftW - s(144), s(10)};
-    l.crfValue = {leftX + leftW - s(112), settingsY + s(261), s(92), s(38)};
+    l.crfTrack = {leftX + s(20), settingsY + s(284), leftW - s(144), s(10)};
+    l.crfValue = {leftX + leftW - s(112), settingsY + s(269), s(92), s(38)};
     const int compW = (leftW - s(52) - s(18)) / 4;
     for (int i = 0; i < 8; ++i) {
         const int row = i / 4, col = i % 4;
-        l.compression[i] = {leftX + s(20) + col * (compW + s(6)), settingsY + s(324) + row * s(39), compW, s(32)};
+        l.compression[i] = {leftX + s(20) + col * (compW + s(6)), settingsY + s(332) + row * s(39), compW, s(32)};
     }
     const int audioW = (leftW - s(52) - s(30)) / 6;
-    for (int i = 0; i < 6; ++i) l.audio[i] = {leftX + s(20) + i * (audioW + s(6)), settingsY + s(366), audioW, s(32)};
+    for (int i = 0; i < 6; ++i) l.audio[i] = {leftX + s(20) + i * (audioW + s(6)), settingsY + s(374), audioW, s(32)};
     const int optionGap = s(6);
     const int optionWidth = (leftW - s(40) - optionGap * 4) / 5;
-    const int optionY = settingsY + s(482);
+    const int optionY = settingsY + s(490);
     l.parallel = {leftX + s(20), optionY, optionWidth, s(32)};
     l.recursive = {leftX + s(20) + optionWidth + optionGap, optionY, optionWidth, s(32)};
     l.skip = {leftX + s(20) + (optionWidth + optionGap) * 2, optionY, optionWidth, s(32)};
     l.preserve = {leftX + s(20) + (optionWidth + optionGap) * 3, optionY, optionWidth, s(32)};
     l.overwrite = {leftX + s(20) + (optionWidth + optionGap) * 4, optionY, optionWidth, s(32)};
-    l.queue = {leftX, settingsY + s(530), leftW, height - (settingsY + s(530)) - pad};
+    l.queue = {leftX, settingsY + s(538), leftW, height - (settingsY + s(530)) - pad};
     l.overallCard = {rightX, top, rightW, s(270)};
     l.overallTrack = {rightX + s(22), top + s(126), rightW - s(44), s(12)};
     l.start = {rightX + s(22), top + s(206), rightW - s(44), s(44)};
@@ -915,7 +915,7 @@ private:
         drawButton(dc,l.removeSelected,L"移除选中",c,smallFont); drawButton(dc,l.clearDone,L"清除已完成",c,smallFont);
 
         const int leftX = s(28), top = s(168), leftW = l.queue.width;
-        drawCard(dc, {leftX, top, leftW, s(520)}, c);
+        drawCard(dc, {leftX, top, leftW, s(528)}, c);
         drawText(dc,{leftX+s(20),top+s(14),s(200),s(26)},L"编码设置",c.text,heading);
         drawText(dc,{leftX+s(20),top+s(43),s(220),s(20)},L"输出文件夹",c.muted,smallFont);
         const std::wstring output = settings_.outputDirectory.empty()
