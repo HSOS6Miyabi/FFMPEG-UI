@@ -279,6 +279,22 @@ int main() {
         require(
             fingerprint != settingsFingerprint(changedFingerprint),
             "The repeat-processing marker must include the audio handling mode.");
+        auto copiedAudioFingerprint = fingerprintSettings;
+        copiedAudioFingerprint.audioMode = AudioMode::Copy;
+        copiedAudioFingerprint.audioBitrateKbps = 96;
+        const auto copiedAudioMarker = settingsFingerprint(copiedAudioFingerprint);
+        copiedAudioFingerprint.audioBitrateKbps = 320;
+        require(
+            copiedAudioMarker == settingsFingerprint(copiedAudioFingerprint),
+            "Unused audio bitrate values must not invalidate copied audio output.");
+        auto mutedAudioFingerprint = fingerprintSettings;
+        mutedAudioFingerprint.audioMode = AudioMode::Remove;
+        mutedAudioFingerprint.audioBitrateKbps = 96;
+        const auto mutedAudioMarker = settingsFingerprint(mutedAudioFingerprint);
+        mutedAudioFingerprint.audioBitrateKbps = 320;
+        require(
+            mutedAudioMarker == settingsFingerprint(mutedAudioFingerprint),
+            "Unused audio bitrate values must not invalidate muted output.");
         changedFingerprint = fingerprintSettings;
         changedFingerprint.outputResolution = OutputResolution::HD720;
         require(
