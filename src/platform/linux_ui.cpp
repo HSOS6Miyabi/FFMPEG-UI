@@ -182,6 +182,122 @@ private:
     void chooseFolder(){ProcessResult result=runProcess({"zenity","--file-selection","--directory","--title=选择输入文件夹"});if(result.exitCode!=0)result=runProcess({"kdialog","--getexistingdirectory",".","选择输入文件夹"});const auto path=trim(result.output);if(!path.empty())controller_.addInputs({path});}
     void chooseOutput(){ProcessResult result=runProcess({"zenity","--file-selection","--directory","--title=选择输出文件夹"});if(result.exitCode!=0)result=runProcess({"kdialog","--getexistingdirectory",".","选择输出文件夹"});const auto path=trim(result.output);if(!path.empty()){settings_.outputDirectory=path;updateSettings();}}
     void updateSettings(){controller_.updateSettings(settings_);}
+    void manageSshServers() {
+        const int dialogWidth=s(980),dialogHeight=s(700);
+        const Window dialog=XCreateSimpleWindow(display_,window_,s(80),s(70),dialogWidth,dialogHeight,1,
+            BlackPixel(display_,screen_),WhitePixel(display_,screen_));
+        XStoreName(display_,dialog,"SSH 服务器管理");XSetTransientForHint(display_,dialog,window_);
+        XSizeHints hints{};hints.flags=PMinSize;hints.min_width=dialogWidth;hints.min_height=dialogHeight;
+        XSetWMNormalHints(display_,dialog,&hints);
+        const Atom deleteMessage=XInternAtom(display_,"WM_DELETE_WINDOW",False);
+        XSetWMProtocols(display_,dialog,const_cast<Atom*>(&deleteMessage),1);
+        XSelectInput(display_,dialog,ExposureMask|StructureNotifyMask|ButtonPressMask|KeyPressMask);
+        XMapRaised(display_,dialog);
+        auto canvas=std::make_unique<XftCanvas>(display_,dialog,scale_);
+        const auto colors=palette(dark_);
+        const auto ss=[&](int v){return s(v);};
+        const Rect listCard{ss(20),ss(70),ss(260),ss(500)};
+        const std::array<Rect,7> fields{{
+            {ss(320),ss(92),ss(280),ss(36)},{ss(630),ss(92),ss(320),ss(36)},
+            {ss(320),ss(172),ss(280),ss(36)},{ss(630),ss(172),ss(130),ss(36)},
+            {ss(320),ss(252),ss(630),ss(36)},{ss(320),ss(332),ss(630),ss(36)},
+            {ss(320),ss(412),ss(630),ss(36)}}};
+        const Rect authButton{ss(320),ss(492),ss(250),ss(36)};
+        std::array<std::string,7> values{};
+        int focused=0;bool passwordAuth=false;int selected=-1;
+        std::string status="服务器列表来自本机 SSH 配置文件。";
+        std::vector<SshServer> servers=controller_.sshServers();
+        const auto clearFields=[&](){values={};values[3]="22";passwordAuth=false;focused=0;selected=-1;};
+        const auto populate=[&](int index){
+            if(index<0||index>=static_cast<int>(servers.size()))return;
+            selected=index;const auto& v=servers[static_cast<std::size_t>(index)];
+            values[0]=v.alias;values[1]=v.hostName;values[2]=v.user;values[3]=std::to_string(v.port);
+            values[4]=v.identityFile;values[5]=v.proxyJump;values[6].clear();
+            passwordAuth=v.authMethod==SshAuthMethod::Password;focused=-1;
+        };
+        const auto makeServer=[&](){
+            SshServer v;v.alias=trim(values[0]);v.hostName=trim(values[1]);v.user=trim(values[2]);
+            try{const auto p=std::stoul(values[3].empty()?"22":values[3]);v.port=p<=65535?static_cast<unsigned int>(p):0;}catch(...){v.port=0;}
+            v.identityFile=trim(values[4]);v.proxyJump=trim(values[5]);
+            v.authMethod=passwordAuth?SshAuthMethod::Password:SshAuthMethod::PublicKey;return v;
+        };
+        const auto refresh=[&](){servers=controller_.sshServers();};
+        const auto save=[&](){
+            const auto v=makeServer();std::string error;
+            if(!controller_.saveSshServer(v,values[6],error)){status=error;return false;}
+            refresh();const auto it=std::find_if(servers.begin(),servers.end(),[&](const auto& item){return item.alias==v.alias;});
+            if(it!=servers.end())populate(static_cast<int>(std::distance(servers.begin(),it)));
+            status="SSH 配置已保存，原有的其他 SSH 选项已保留。";return true;
+        };
+        const auto drawDialog=[&](){
+            canvas->fill({0,0,dialogWidth,dialogHeight},colors.background);
+            canvas->text(ss(24),ss(36),"SSH 服务器",colors.text,2);
+            canvas->text(ss(24),ss(57),"选择现有配置，或添加服务器。密码只保存在安全凭据存储中。",colors.muted,0);
+            canvas->card(listCard,colors);canvas->text(ss(38),ss(96),"本机 SSH 配置",colors.text,1);
+            if(servers.empty())canvas->text(ss(38),ss(145),"没有可用的服务器配置。",colors.muted,0);
+            for(std::size_t i=0;i<servers.size();++i){
+                const int y=ss(112)+static_cast<int>(i)*ss(54);if(y+ss(48)>listCard.y+listCard.height-ss(8))break;
+                const Rect row{ss(30),y,ss(240),ss(46)};
+                if(static_cast<int>(i)==selected)canvas->rounded(row,colors.accentSoft,7);
+                canvas->text(row.x+ss(10),row.y+ss(19),servers[i].alias,static_cast<int>(i)==selected?colors.accent:colors.text,0);
+                canvas->text(row.x+ss(10),row.y+ss(37),servers[i].user+"@"+servers[i].hostName,colors.muted,0);
+            }
+            const std::array<std::string,7> labels{"服务器别名","主机名或 IP 地址","用户名","SSH 端口","私钥文件（可留空以使用 SSH Agent）","跳转服务器（可选）","密码（仅密码认证时填写）"};
+            for(int i=0;i<7;++i){const auto& r=fields[static_cast<std::size_t>(i)];canvas->text(r.x,r.y-ss(10),labels[static_cast<std::size_t>(i)],colors.muted,0);canvas->input(r,values[static_cast<std::size_t>(i)],colors,focused==i,i==6);}
+            canvas->text(authButton.x,authButton.y-ss(10),"认证方式",colors.muted,0);
+            canvas->button(authButton,passwordAuth?"密码认证":"SSH 私钥 / Agent 认证",colors,passwordAuth);
+            const int y=ss(590),bw=ss(112),gap=ss(8);
+            const std::array<std::string,7> actions{"新增","保存并同步","测试连接","使用此服务器","删除","本机编码","关闭"};
+            for(int i=0;i<7;++i)canvas->button({ss(20)+i*(bw+gap),y,bw,ss(42)},actions[static_cast<std::size_t>(i)],colors,i==3);
+            canvas->text(ss(24),ss(670),status,colors.muted,0);canvas->flush();
+        };
+        clearFields();drawDialog();bool done=false;
+        while(!done){
+            if(!XPending(display_)){pollfd fd{ConnectionNumber(display_),POLLIN,0};poll(&fd,1,120);if(!(fd.revents&POLLIN))continue;}
+            XEvent event{};XNextEvent(display_,&event);
+            if(event.type==Expose){drawDialog();continue;}
+            if(event.type==ClientMessage&&static_cast<Atom>(event.xclient.data.l[0])==deleteMessage){done=true;continue;}
+            if(event.type==ButtonPress){
+                const int x=event.xbutton.x,y=event.xbutton.y;
+                if(contains(listCard,x,y)){const int index=(y-ss(112))/ss(54);if(index>=0&&index<static_cast<int>(servers.size()))populate(index);}
+                else{
+                    for(int i=0;i<7;++i)if(contains(fields[static_cast<std::size_t>(i)],x,y))focused=i;
+                    if(contains(authButton,x,y)){passwordAuth=!passwordAuth;values[6].clear();focused=passwordAuth?6:-1;}
+                    const int by=ss(590),bw=ss(112),gap=ss(8);int action=-1;
+                    for(int i=0;i<7;++i)if(contains({ss(20)+i*(bw+gap),by,bw,ss(42)},x,y))action=i;
+                    if(action==0){clearFields();status="填写服务器信息，然后保存。";}
+                    else if(action==1){save();}
+                    else if(action==2){if(save()){std::string error;if(controller_.testSshServer(values[0],error))status=error;else status=error;}}
+                    else if(action==3){if(save()){std::string error;if(controller_.selectRemoteServer(values[0],error)){settings_=controller_.snapshot().settings;done=true;}else status=error;}}
+                    else if(action==4){
+                        if(selected>=0&&selected<static_cast<int>(servers.size())){
+                            std::string error;
+                            if(controller_.removeSshServer(servers[static_cast<std::size_t>(selected)].alias,error)){
+                                refresh();clearFields();status="服务器已删除，SSH 配置已同步更新。";
+                            }else status=error;
+                        }else status="请先选择要删除的服务器。";
+                    }
+                    else if(action==5){controller_.selectLocalEncoder();settings_=controller_.snapshot().settings;done=true;}
+                    else if(action==6)done=true;
+                }
+                drawDialog();continue;
+            }
+            if(event.type==KeyPress){
+                KeySym key{};char buffer[64]{};const int count=XLookupString(&event.xkey,buffer,sizeof(buffer),&key,nullptr);
+                if(key==XK_Escape){done=true;continue;}
+                if(key==XK_Tab){focused=(focused+1)%7;drawDialog();continue;}
+                if(focused>=0&&focused<7){
+                    auto& value=values[static_cast<std::size_t>(focused)];
+                    if(key==XK_BackSpace||key==XK_Delete){if(!value.empty())value.pop_back();}
+                    else if(key==XK_Return||key==XK_KP_Enter){focused=focused<6?focused+1:-1;}
+                    else if(count>0&&buffer[0]>=32&&buffer[0]!=127&&value.size()<1024)value.append(buffer,static_cast<std::size_t>(count));
+                    drawDialog();
+                }
+            }
+        }
+        canvas.reset();XDestroyWindow(display_,dialog);XFlush(display_);
+    }
+
     void commitCrfText(){if(!editingCrf_)return;if(!crfEditText_.empty()){try{settings_.crf=std::clamp(std::stoi(crfEditText_),0,crfMaximum(settings_.codec));updateSettings();}catch(...){}}editingCrf_=false;crfEditText_.clear();}
     void addFiles(bool archiveOnly=false){const auto files=chooseFiles(archiveOnly);if(!files.empty())controller_.addInputs(files);}
     void startOrCancel(){const auto snap=controller_.snapshot();if(!snap.running)controller_.startBatch();else if(snap.paused)controller_.resumeBatch();else controller_.pauseBatch();}
