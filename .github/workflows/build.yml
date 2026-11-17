@@ -26,7 +26,53 @@ jobs:
       - name: Install build and media dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y build-essential cmake ninja-build libx11-dev libxft-dev libfontconfig1 libarchive-dev ffmpeg fonts-noto-cjk
+          sudo apt-get install -y build-essential cmake ninja-build libx11-dev libxft-dev libfontconfig1 libarchive-dev ffmpeg fonts-noto-cjk openssh-server
+
+      - name: Start disposable SSH test server
+        shell: bash
+        run: |
+          test_user=ffmpeg-studio-ci
+          test_password=ffmpeg-studio-ci-test-password
+          sudo useradd --create-home --shell /bin/bash "$test_user"
+          echo "$test_user:$test_password" | sudo chpasswd
+          ssh-keygen -q -t ed25519 -N "" -f "$RUNNER_TEMP/ffmpeg-studio-ci"
+          sudo install -d -o "$test_user" -g "$test_user" -m 700 "/home/$test_user/.ssh"
+          sudo install -o "$test_user" -g "$test_user" -m 600 \
+            "$RUNNER_TEMP/ffmpeg-studio-ci.pub" "/home/$test_user/.ssh/authorized_keys"
+          sudo ssh-keygen -A
+          cat > "$RUNNER_TEMP/sshd_config" <<EOF
+          Port 2222
+          ListenAddress 127.0.0.1
+          HostKey /etc/ssh/ssh_host_ed25519_key
+          PidFile $RUNNER_TEMP/ffmpeg-studio-sshd.pid
+          AuthorizedKeysFile .ssh/authorized_keys
+          PasswordAuthentication yes
+          KbdInteractiveAuthentication no
+          PubkeyAuthentication yes
+          PermitRootLogin no
+          UsePAM yes
+          StrictModes yes
+          AllowUsers $test_user
+          Subsystem sftp /usr/lib/openssh/sftp-server
+          EOF
+          sudo /usr/sbin/sshd -f "$RUNNER_TEMP/sshd_config" -E "$RUNNER_TEMP/sshd.log"
+          for attempt in $(seq 1 20); do
+            if ssh-keyscan -p 2222 127.0.0.1 >/dev/null 2>&1; then
+              break
+            fi
+            sleep 1
+          done
+          if ! ssh-keyscan -p 2222 127.0.0.1 >/dev/null 2>&1; then
+            cat "$RUNNER_TEMP/sshd.log"
+            exit 1
+          fi
+          {
+            echo "FFMPEG_STUDIO_SSH_TEST_REAL=1"
+            echo "FFMPEG_STUDIO_SSH_TEST_USER=$test_user"
+            echo "FFMPEG_STUDIO_SSH_TEST_PORT=2222"
+            echo "FFMPEG_STUDIO_SSH_TEST_KEY=$RUNNER_TEMP/ffmpeg-studio-ci"
+            echo "FFMPEG_STUDIO_SSH_TEST_PASSWORD=$test_password"
+          } >> "$GITHUB_ENV"
 
       - name: Configure
         run: cmake --preset linux-release
@@ -37,7 +83,7 @@ jobs:
       - name: Run unit tests
         run: ctest --preset linux-release
 
-      - name: Run FFmpeg conversion, ZIP and PPTX tests
+      - name: Run FFmpeg conversion, ZIP, PPTX and SSH integration tests
         run: ./build/linux-release/ffmpeg-ui --self-test
 
       - name: Package Linux application
