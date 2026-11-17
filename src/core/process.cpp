@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <chrono>
+#include <cstdint>
 #include <cstdlib>
 #include <cwchar>
 #include <codecvt>
@@ -148,53 +149,123 @@ std::wstring quoteWindowsArgument(std::string_view argument) {
 } // namespace
 
 std::wstring wideFromUtf8(std::string_view value) {
+    std::wstring result;
+    result.reserve(value.size());
+
+    for (std::size_t index = 0; index < value.size();) {
+        const auto first = static_cast<unsigned char>(value[index]);
+        std::uint32_t codePoint = 0;
+        std::size_t sequenceLength = 0;
+
+        if (first <= 0x7F) {
+            codePoint = first;
+            sequenceLength = 1;
+        } else if ((first & 0xE0) == 0xC0) {
+            codePoint = first & 0x1F;
+            sequenceLength = 2;
+        } else if ((first & 0xF0) == 0xE0) {
+            codePoint = first & 0x0F;
+            sequenceLength = 3;
+        } else if ((first & 0xF8) == 0xF0) {
+            codePoint = first & 0x07;
+            sequenceLength = 4;
+        } else {
+            codePoint = 0xFFFD;
+            sequenceLength = 1;
+        }
+
+        bool valid = sequenceLength > 0 && index + sequenceLength <= value.size();
+        for (std::size_t offset = 1; valid && offset < sequenceLength; ++offset) {
+            const auto continuation =
+                static_cast<unsigned char>(value[index + offset]);
+            if ((continuation & 0xC0) != 0x80) {
+                valid = false;
+                break;
+            }
+            codePoint = (codePoint << 6) | (continuation & 0x3F);
+        }
+
+        if (valid) {
+            const bool overlong =
+                (sequenceLength == 2 && codePoint < 0x80) ||
+                (sequenceLength == 3 && codePoint < 0x800) ||
+                (sequenceLength == 4 && codePoint < 0x10000);
+            const bool invalidScalar =
+                codePoint > 0x10FFFF ||
+                (codePoint >= 0xD800 && codePoint <= 0xDFFF);
+            valid = !overlong && !invalidScalar;
+        }
+
+        if (!valid) {
+            codePoint = 0xFFFD;
+            sequenceLength = 1;
+        }
+
 #ifdef _WIN32
-    if (value.empty()) {
-        return {};
-    }
-    const int required = MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS,
-                                              value.data(), static_cast<int>(value.size()),
-                                              nullptr, 0);
-    if (required <= 0) {
-        return std::wstring(value.begin(), value.end());
-    }
-    std::wstring result(static_cast<std::size_t>(required), L'\0');
-    MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, value.data(),
-                        static_cast<int>(value.size()), result.data(), required);
-    return result;
+        if (codePoint <= 0xFFFF) {
+            result.push_back(static_cast<wchar_t>(codePoint));
+        } else {
+            codePoint -= 0x10000;
+            result.push_back(static_cast<wchar_t>(0xD800 + (codePoint >> 10)));
+            result.push_back(static_cast<wchar_t>(0xDC00 + (codePoint & 0x3FF)));
+        }
 #else
-    try {
-        std::wstring_convert<std::codecvt_utf8<wchar_t>> converter;
-        return converter.from_bytes(value.data(), value.data() + value.size());
-    } catch (...) {
-        return std::wstring(value.begin(), value.end());
-    }
+        result.push_back(static_cast<wchar_t>(codePoint));
 #endif
+        index += sequenceLength;
+    }
+
+    return result;
 }
 
 std::string utf8FromWide(const wchar_t* value) {
-    if (value == nullptr || *value == L'\0') {
+    if (value == nullptr) {
         return {};
     }
+
+    std::string result;
+    for (std::size_t index = 0; value[index] != L'\0'; ++index) {
+        std::uint32_t codePoint = static_cast<std::uint32_t>(value[index]);
+
 #ifdef _WIN32
-    const int length = static_cast<int>(wcslen(value));
-    const int required = WideCharToMultiByte(CP_UTF8, 0, value, length, nullptr, 0,
-                                              nullptr, nullptr);
-    if (required <= 0) {
-        return {};
-    }
-    std::string result(static_cast<std::size_t>(required), '\0');
-    WideCharToMultiByte(CP_UTF8, 0, value, length, result.data(), required,
-                        nullptr, nullptr);
-    return result;
+        if (codePoint >= 0xD800 && codePoint <= 0xDBFF) {
+            const std::uint32_t lowSurrogate =
+                static_cast<std::uint32_t>(value[index + 1]);
+            if (lowSurrogate >= 0xDC00 && lowSurrogate <= 0xDFFF) {
+                codePoint = 0x10000 +
+                    ((codePoint - 0xD800) << 10) + (lowSurrogate - 0xDC00);
+                ++index;
+            } else {
+                codePoint = 0xFFFD;
+            }
+        } else if (codePoint >= 0xDC00 && codePoint <= 0xDFFF) {
+            codePoint = 0xFFFD;
+        }
 #else
-    try {
-        std::wstring_convert<std::codecvt_utf8<wchar_t>> converter;
-        return converter.to_bytes(value);
-    } catch (...) {
-        return {};
-    }
+        if (codePoint > 0x10FFFF ||
+            (codePoint >= 0xD800 && codePoint <= 0xDFFF)) {
+            codePoint = 0xFFFD;
+        }
 #endif
+
+        if (codePoint <= 0x7F) {
+            result.push_back(static_cast<char>(codePoint));
+        } else if (codePoint <= 0x7FF) {
+            result.push_back(static_cast<char>(0xC0 | (codePoint >> 6)));
+            result.push_back(static_cast<char>(0x80 | (codePoint & 0x3F)));
+        } else if (codePoint <= 0xFFFF) {
+            result.push_back(static_cast<char>(0xE0 | (codePoint >> 12)));
+            result.push_back(static_cast<char>(0x80 | ((codePoint >> 6) & 0x3F)));
+            result.push_back(static_cast<char>(0x80 | (codePoint & 0x3F)));
+        } else {
+            result.push_back(static_cast<char>(0xF0 | (codePoint >> 18)));
+            result.push_back(static_cast<char>(0x80 | ((codePoint >> 12) & 0x3F)));
+            result.push_back(static_cast<char>(0x80 | ((codePoint >> 6) & 0x3F)));
+            result.push_back(static_cast<char>(0x80 | (codePoint & 0x3F)));
+        }
+    }
+
+    return result;
 }
 
 ProcessResult runProcess(const std::vector<std::string>& arguments,
