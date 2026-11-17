@@ -602,18 +602,38 @@ void AppController::loadQueue() {
 
 void AppController::saveQueueLocked() const {
     const auto path = queueFilePath();
+    auto temporaryPath = path;
+    temporaryPath += ".tmp";
     std::error_code error;
     std::filesystem::create_directories(path.parent_path(), error);
     if (error) return;
-    std::ofstream output(path, std::ios::binary | std::ios::trunc);
-    if (!output) return;
-    output << "FFmpegStudioQueue/1\n";
-    for (const auto& task : tasks_) {
-        if (task.state == TaskState::Completed || task.state == TaskState::Skipped) {
-            continue;
+    {
+        std::ofstream output(temporaryPath, std::ios::binary | std::ios::trunc);
+        if (!output) return;
+        output << "FFmpegStudioQueue/1\n";
+        for (const auto& task : tasks_) {
+            if (task.state == TaskState::Completed || task.state == TaskState::Skipped) {
+                continue;
+            }
+            output << task.inputPath << '\n';
         }
-        output << task.inputPath << '\n';
+        output.flush();
+        if (!output) {
+            output.close();
+            std::filesystem::remove(temporaryPath, error);
+            return;
+        }
     }
+#ifdef _WIN32
+    if (!MoveFileExW(
+            temporaryPath.c_str(), path.c_str(),
+            MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH)) {
+        std::filesystem::remove(temporaryPath, error);
+    }
+#else
+    std::filesystem::rename(temporaryPath, path, error);
+    if (error) std::filesystem::remove(temporaryPath, error);
+#endif
 }
 
 void AppController::saveSettingsLocked() const {
