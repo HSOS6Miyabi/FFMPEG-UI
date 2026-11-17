@@ -611,6 +611,69 @@ FfmpegService::FfmpegService(std::string ffmpegPath, std::string ffprobePath)
 SshService& FfmpegService::sshService() { return *sshService_; }
 const SshService& FfmpegService::sshService() const { return *sshService_; }
 
+RemoteProbeResult FfmpegService::probeRemote(const std::string& alias, bool testHardware) const {
+    RemoteProbeResult result;
+    const std::string command =
+        "command -v ffmpeg >/dev/null 2>&1 && command -v ffprobe >/dev/null 2>&1 && "
+        "ffmpeg -version && ffmpeg -hide_banner -encoders && ffprobe -version && "
+        "printf '\\nFFMPEG_STUDIO_SYSTEM\\n' && uname -s && "
+        "(getconf _NPROCESSORS_ONLN 2>/dev/null || sysctl -n hw.logicalcpu 2>/dev/null || echo 1) && "
+        "(awk '/MemAvailable:/ {printf \"%.0f\\n\", $2 * 1024; found=1} END {if (!found) exit 1}' /proc/meminfo 2>/dev/null || "
+        "sysctl -n hw.memsize 2>/dev/null || echo 0)";
+    const auto probe = sshService_->runRemote(alias, command);
+    if (probe.exitCode != 0) {
+        result.error = trim(probe.output);
+        if (result.error.empty()) result.error = "无法连接远程服务器，或远程服务器没有安装 FFmpeg 和 ffprobe。";
+        return result;
+    }
+    std::istringstream stream(probe.output);
+    std::string line;
+    bool inSystem = false;
+    std::vector<std::string> systemValues;
+    while (std::getline(stream, line)) {
+        if (line.find("ffmpeg version") == 0 && result.capabilities.ffmpegVersion.empty())
+            result.capabilities.ffmpegVersion = line;
+        if (line == "FFMPEG_STUDIO_SYSTEM") { inSystem = true; continue; }
+        if (inSystem && !trim(line).empty()) systemValues.push_back(trim(line));
+    }
+    const auto has = [&](const std::string& name) { return probe.output.find(name) != std::string::npos; };
+    result.capabilities.libx264 = has("libx264");
+    result.capabilities.libx265 = has("libx265");
+    result.capabilities.libsvtav1 = has("libsvtav1");
+    result.capabilities.libaomAv1 = has("libaom-av1");
+    result.capabilities.libopus = has("libopus");
+    result.capabilities.libvorbis = has("libvorbis");
+    result.capabilities.ffprobeAvailable = has("ffprobe version");
+    result.resources.operatingSystem = systemValues.empty() ? "未知" : systemValues[0];
+    if (systemValues.size() > 1) {
+        try { result.resources.logicalCores = std::max(1U, static_cast<unsigned int>(std::stoul(systemValues[1]))); } catch (...) {}
+    }
+    if (systemValues.size() > 2) {
+        try { result.resources.availableMemoryBytes = static_cast<std::uint64_t>(std::stoull(systemValues[2])); } catch (...) {}
+    }
+    const std::vector<std::pair<std::string, bool*>> hardware{
+        {"h264_nvenc", &result.capabilities.h264Nvenc}, {"hevc_nvenc", &result.capabilities.hevcNvenc},
+        {"av1_nvenc", &result.capabilities.av1Nvenc}, {"h264_qsv", &result.capabilities.h264Qsv},
+        {"hevc_qsv", &result.capabilities.hevcQsv}, {"av1_qsv", &result.capabilities.av1Qsv},
+        {"h264_amf", &result.capabilities.h264Amf}, {"hevc_amf", &result.capabilities.hevcAmf},
+        {"av1_amf", &result.capabilities.av1Amf}};
+    for (const auto& [encoder, flag] : hardware) {
+        *flag = has(encoder);
+        if (*flag && testHardware) {
+            const std::string test = "ffmpeg -hide_banner -loglevel error -nostdin -f lavfi -i "
+                "testsrc2=size=128x128:rate=1:duration=1 -frames:v 1 -an -c:v " + encoder +
+                " -f null - >/dev/null 2>&1";
+            *flag = sshService_->runRemote(alias, test).exitCode == 0;
+        }
+    }
+    if (result.capabilities.ffmpegVersion.empty() || !result.capabilities.ffprobeAvailable) {
+        result.error = "远程服务器上的 FFmpeg 或 ffprobe 无法正常运行。";
+        return result;
+    }
+    result.success = true;
+    return result;
+}
+
 EncoderCapabilities FfmpegService::probeCapabilities(bool testHardware) const {
     EncoderCapabilities capabilities;
     const ProcessResult version = runProcess({ffmpegPath_, "-version"});
