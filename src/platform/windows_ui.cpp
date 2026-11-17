@@ -469,8 +469,9 @@ private:
         drawText(dc,{info.x+s(22),info.y+s(88),info.width-s(44),s(22)},L"编码器  "+wide(backendName(settings_.backend)),c.text,normal);
         drawText(dc,{info.x+s(22),info.y+s(118),info.width-s(44),s(22)},L"CRF  "+std::to_wstring(settings_.crf)+L"  ·  "+wide(compressionName(settings_.compression)),c.text,normal);
         drawText(dc,{info.x+s(22),info.y+s(148),info.width-s(44),s(22)},L"音频码率  "+std::to_wstring(settings_.audioBitrateKbps)+L" kbps（按容器选择编码）",c.text,normal);
-        drawText(dc,{info.x+s(22),info.y+s(190),info.width-s(44),s(44)},wide(snap.resourcePlan.explanation),c.muted,smallFont,DT_LEFT|DT_TOP|DT_WORDBREAK);
-        drawText(dc,{info.x+s(22),info.y+s(248),info.width-s(44),s(70)},
+        drawText(dc,{info.x+s(22),info.y+s(178),info.width-s(44),s(22)},settings_.remoteHost.empty()?L"计算设备  本机":L"计算设备  远程 · "+wide(settings_.remoteHost),c.text,normal);
+        drawText(dc,{info.x+s(22),info.y+s(212),info.width-s(44),s(44)},wide(snap.resourcePlan.explanation),c.muted,smallFont,DT_LEFT|DT_TOP|DT_WORDBREAK);
+        drawText(dc,{info.x+s(22),info.y+s(270),info.width-s(44),s(70)},
             L"支持的视频：H.264、H.265、AV1。\nZIP 与 PPTX 会保留其他文件并更新视频引用。\n音频码率可独立设置，并按输出容器选择兼容的音频编码。",c.muted,smallFont,DT_LEFT|DT_TOP|DT_WORDBREAK);
         if(!snap.error.empty()) drawText(dc,{info.x+s(22),info.y+info.height-s(74),info.width-s(44),s(58)},wide(snap.error),c.red,smallFont,DT_LEFT|DT_TOP|DT_WORDBREAK);
 
@@ -532,6 +533,7 @@ private:
         case WM_DESTROY:KillTimer(window_,1);controller_.shutdown();PostQuitMessage(0);return 0;
         default:return DefWindowProcW(window_,msg,wp,lp);
         }
+        return DefWindowProcW(window_,msg,wp,lp);
     }
     AppController& controller_; HWND window_{}; BatchSettings settings_; bool dark_{false};
     bool draggingCrf_{false}; bool editingCrf_{false}; std::wstring crfEditText_; int scrollOffset_{0}; std::uint64_t selectedTask_{0};
