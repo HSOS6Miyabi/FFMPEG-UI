@@ -116,75 +116,611 @@ Layout makeLayout(int width, int height, double scale, int backendCount = 4) {
 
 class XftCanvas {
 public:
-    XftCanvas(Display* d, Window w, double scale)
-        : display_(d),window_(w),screen_(DefaultScreen(d)),colormap_(DefaultColormap(d,screen_)),visual_(DefaultVisual(d,screen_)) {
-        draw_=XftDrawCreate(display_,window_,visual_,colormap_);
-        const int normal=std::max(13,static_cast<int>(std::lround(14*scale)));
-        const int small=std::max(11,static_cast<int>(std::lround(12*scale)));
-        const int title=std::max(20,static_cast<int>(std::lround(25*scale)));
-        const std::string np="Noto Sans CJK SC:pixelsize="+std::to_string(normal);
-        const std::string sp="Noto Sans CJK SC:pixelsize="+std::to_string(small);
-        const std::string tp="Noto Sans CJK SC:style=Bold:pixelsize="+std::to_string(title);
-        normal_=XftFontOpenName(display_,screen_,np.c_str());small_=XftFontOpenName(display_,screen_,sp.c_str());title_=XftFontOpenName(display_,screen_,tp.c_str());
-        if(!normal_)normal_=XftFontOpenName(display_,screen_,"sans:pixelsize=14");
-        if(!small_) small_=normal_;
-        if(!title_) title_=normal_;
+    XftCanvas(Display* display, Window window, double scale)
+        : display_(display),
+          window_(window),
+          screen_(DefaultScreen(display)),
+          colormap_(DefaultColormap(display, screen_)),
+          visual_(DefaultVisual(display, screen_)) {
+        draw_ = XftDrawCreate(display_, window_, visual_, colormap_);
+
+        const int normalSize = std::max(
+            13, static_cast<int>(std::lround(14 * scale)));
+        const int smallSize = std::max(
+            11, static_cast<int>(std::lround(12 * scale)));
+        const int titleSize = std::max(
+            20, static_cast<int>(std::lround(25 * scale)));
+
+        const std::string normalPattern =
+            "Noto Sans CJK SC:pixelsize=" + std::to_string(normalSize);
+        const std::string smallPattern =
+            "Noto Sans CJK SC:pixelsize=" + std::to_string(smallSize);
+        const std::string titlePattern =
+            "Noto Sans CJK SC:style=Bold:pixelsize=" + std::to_string(titleSize);
+
+        normal_ = XftFontOpenName(display_, screen_, normalPattern.c_str());
+        small_ = XftFontOpenName(display_, screen_, smallPattern.c_str());
+        title_ = XftFontOpenName(display_, screen_, titlePattern.c_str());
+
+        if (normal_ == nullptr) {
+            normal_ = XftFontOpenName(display_, screen_, "sans:pixelsize=14");
+        }
+        if (small_ == nullptr) {
+            small_ = normal_;
+        }
+        if (title_ == nullptr) {
+            title_ = normal_;
+        }
     }
-    ~XftCanvas(){if(draw_)XftDrawDestroy(draw_);if(gc_)XFreeGC(display_,gc_);if(title_&&title_!=normal_&&title_!=small_)XftFontClose(display_,title_);if(small_&&small_!=normal_)XftFontClose(display_,small_);if(normal_)XftFontClose(display_,normal_);}
-    void fill(Rect r,const char* color){XSetForeground(display_,gc(),pixel(color));XFillRectangle(display_,window_,gc(),r.x,r.y,std::max(0,r.width),std::max(0,r.height));}
-    void line(int x1,int y1,int x2,int y2,const char* color){XSetForeground(display_,gc(),pixel(color));XDrawLine(display_,window_,gc(),x1,y1,x2,y2);}
-    void rounded(Rect r,const char* color,int radius=9){if(r.width<=0||r.height<=0)return;const int d=radius*2;XSetForeground(display_,gc(),pixel(color));XFillRectangle(display_,window_,gc(),r.x+radius,r.y,std::max(0,r.width-d),r.height);XFillRectangle(display_,window_,gc(),r.x,r.y+radius,r.width,std::max(0,r.height-d));XFillArc(display_,window_,gc(),r.x,r.y,d,d,0,360*64);XFillArc(display_,window_,gc(),r.x+r.width-d,r.y,d,d,0,360*64);XFillArc(display_,window_,gc(),r.x,r.y+r.height-d,d,d,0,360*64);XFillArc(display_,window_,gc(),r.x+r.width-d,r.y+r.height-d,d,d,0,360*64);}
-    void card(Rect r,const Palette& c){rounded({r.x,r.y+2,r.width,r.height},c.border,12);rounded(r,c.card,12);}
-    void text(int x,int baseline,const std::string& value,const char* color,int size=1){XColor xc{};XParseColor(display_,colormap_,color,&xc);XftColor ink{};ink.pixel=pixel(color);ink.color={xc.red,xc.green,xc.blue,65535};_XftFont* font=size==0?small_:size==2?title_:normal_;if(!font)return;XftDrawStringUtf8(draw_,&ink,font,x,baseline,reinterpret_cast<const unsigned char*>(value.data()),static_cast<int>(value.size()));}
-    void button(Rect r,const std::string& label,const Palette& c,bool active=false,bool disabled=false){rounded(r,disabled?c.track:active?c.accent:c.input,8);if(!active&&!disabled)line(r.x+8,r.y+r.height-1,r.x+r.width-8,r.y+r.height-1,c.border);const int estimate=static_cast<int>(label.size())*7/2;text(r.x+std::max(8,(r.width-estimate)/2),r.y+r.height/2+5,label,active&&!disabled?c.white:c.text,0);}
-    void input(Rect r,const std::string& value,const Palette& c,bool focused=false,bool secret=false){
-        rounded(r,c.input,8);const char* border=focused?c.accent:c.border;
-        line(r.x+7,r.y,r.x+r.width-7,r.y,border);line(r.x+7,r.y+r.height-1,r.x+r.width-7,r.y+r.height-1,border);
-        line(r.x,r.y+7,r.x,r.y+r.height-7,border);line(r.x+r.width-1,r.y+7,r.x+r.width-1,r.y+r.height-7,border);
-        text(r.x+10,r.y+r.height/2+5,secret?std::string(value.size(),'*'):value,c.text,0);
+
+    ~XftCanvas() {
+        if (draw_ != nullptr) {
+            XftDrawDestroy(draw_);
+        }
+        if (gc_ != nullptr) {
+            XFreeGC(display_, gc_);
+        }
+        if (title_ != nullptr && title_ != normal_ && title_ != small_) {
+            XftFontClose(display_, title_);
+        }
+        if (small_ != nullptr && small_ != normal_) {
+            XftFontClose(display_, small_);
+        }
+        if (normal_ != nullptr) {
+            XftFontClose(display_, normal_);
+        }
     }
-    void progress(Rect r,double value,const Palette& c){rounded(r,c.track,5);const int fill=static_cast<int>(std::lround(r.width*std::clamp(value,0.0,1.0)));if(fill>0)rounded({r.x,r.y,fill,r.height},c.accent,5);}
-    void flush(){XFlush(display_);}
+
+    void fill(Rect rectangle, const char* color) {
+        XSetForeground(display_, gc(), pixel(color));
+        XFillRectangle(
+            display_, window_, gc(),
+            rectangle.x, rectangle.y,
+            static_cast<unsigned int>(std::max(0, rectangle.width)),
+            static_cast<unsigned int>(std::max(0, rectangle.height)));
+    }
+
+    void line(int x1, int y1, int x2, int y2, const char* color) {
+        XSetForeground(display_, gc(), pixel(color));
+        XDrawLine(display_, window_, gc(), x1, y1, x2, y2);
+    }
+
+    void rounded(Rect rectangle, const char* color, int radius = 9) {
+        if (rectangle.width <= 0 || rectangle.height <= 0) {
+            return;
+        }
+
+        const int diameter = radius * 2;
+        XSetForeground(display_, gc(), pixel(color));
+        XFillRectangle(
+            display_, window_, gc(),
+            rectangle.x + radius, rectangle.y,
+            static_cast<unsigned int>(std::max(0, rectangle.width - diameter)),
+            static_cast<unsigned int>(rectangle.height));
+        XFillRectangle(
+            display_, window_, gc(),
+            rectangle.x, rectangle.y + radius,
+            static_cast<unsigned int>(rectangle.width),
+            static_cast<unsigned int>(std::max(0, rectangle.height - diameter)));
+
+        XFillArc(display_, window_, gc(),
+                 rectangle.x, rectangle.y, diameter, diameter, 0, 360 * 64);
+        XFillArc(display_, window_, gc(),
+                 rectangle.x + rectangle.width - diameter, rectangle.y,
+                 diameter, diameter, 0, 360 * 64);
+        XFillArc(display_, window_, gc(),
+                 rectangle.x, rectangle.y + rectangle.height - diameter,
+                 diameter, diameter, 0, 360 * 64);
+        XFillArc(display_, window_, gc(),
+                 rectangle.x + rectangle.width - diameter,
+                 rectangle.y + rectangle.height - diameter,
+                 diameter, diameter, 0, 360 * 64);
+    }
+
+    void card(Rect rectangle, const Palette& colors) {
+        rounded(
+            {rectangle.x, rectangle.y + 2, rectangle.width, rectangle.height},
+            colors.border, 12);
+        rounded(rectangle, colors.card, 12);
+    }
+
+    void text(int x, int baseline, const std::string& value,
+              const char* color, int size = 1) {
+        XColor parsedColor{};
+        XParseColor(display_, colormap_, color, &parsedColor);
+
+        XftColor foreground{};
+        foreground.pixel = pixel(color);
+        foreground.color = {
+            parsedColor.red, parsedColor.green, parsedColor.blue, 65535
+        };
+
+        _XftFont* font = size == 0 ? small_ : size == 2 ? title_ : normal_;
+        if (font == nullptr) {
+            return;
+        }
+
+        XftDrawStringUtf8(
+            draw_, &foreground, font, x, baseline,
+            reinterpret_cast<const unsigned char*>(value.data()),
+            static_cast<int>(value.size()));
+    }
+
+    void button(Rect rectangle, const std::string& label,
+                const Palette& colors, bool active = false, bool disabled = false) {
+        const char* background =
+            disabled ? colors.track : active ? colors.accent : colors.input;
+        rounded(rectangle, background, 8);
+
+        if (!active && !disabled) {
+            line(
+                rectangle.x + 8, rectangle.y + rectangle.height - 1,
+                rectangle.x + rectangle.width - 8, rectangle.y + rectangle.height - 1,
+                colors.border);
+        }
+
+        const int estimatedTextWidth = static_cast<int>(label.size()) * 7 / 2;
+        const int textX = rectangle.x +
+            std::max(8, (rectangle.width - estimatedTextWidth) / 2);
+        const int textY = rectangle.y + rectangle.height / 2 + 5;
+        text(textX, textY, label,
+             active && !disabled ? colors.white : colors.text, 0);
+    }
+
+    void input(Rect rectangle, const std::string& value,
+               const Palette& colors, bool focused = false, bool secret = false) {
+        rounded(rectangle, colors.input, 8);
+
+        const char* borderColor = focused ? colors.accent : colors.border;
+        line(
+            rectangle.x + 7, rectangle.y,
+            rectangle.x + rectangle.width - 7, rectangle.y,
+            borderColor);
+        line(
+            rectangle.x + 7, rectangle.y + rectangle.height - 1,
+            rectangle.x + rectangle.width - 7, rectangle.y + rectangle.height - 1,
+            borderColor);
+        line(
+            rectangle.x, rectangle.y + 7,
+            rectangle.x, rectangle.y + rectangle.height - 7,
+            borderColor);
+        line(
+            rectangle.x + rectangle.width - 1, rectangle.y + 7,
+            rectangle.x + rectangle.width - 1, rectangle.y + rectangle.height - 7,
+            borderColor);
+
+        const std::string displayValue =
+            secret ? std::string(value.size(), '*') : value;
+        text(
+            rectangle.x + 10, rectangle.y + rectangle.height / 2 + 5,
+            displayValue, colors.text, 0);
+    }
+
+    void progress(Rect rectangle, double value, const Palette& colors) {
+        rounded(rectangle, colors.track, 5);
+        const int filledWidth = static_cast<int>(
+            std::lround(rectangle.width * std::clamp(value, 0.0, 1.0)));
+        if (filledWidth > 0) {
+            rounded(
+                {rectangle.x, rectangle.y, filledWidth, rectangle.height},
+                colors.accent, 5);
+        }
+    }
+
+    void flush() {
+        XFlush(display_);
+    }
+
 private:
-    GC gc(){if(!gc_)gc_=XCreateGC(display_,window_,0,nullptr);return gc_;}
-    unsigned long pixel(const char* name){auto it=pixels_.find(name);if(it!=pixels_.end())return it->second;XColor color{};XParseColor(display_,colormap_,name,&color);XAllocColor(display_,colormap_,&color);pixels_[name]=color.pixel;return color.pixel;}
-    Display* display_{};Window window_{};int screen_{};Colormap colormap_{};Visual* visual_{};_XftDraw* draw_{};_XftFont* normal_{};_XftFont* small_{};_XftFont* title_{};GC gc_{};std::map<std::string,unsigned long> pixels_;
+    GC gc() {
+        if (gc_ == nullptr) {
+            gc_ = XCreateGC(display_, window_, 0, nullptr);
+        }
+        return gc_;
+    }
+
+    unsigned long pixel(const char* name) {
+        const auto cached = pixels_.find(name);
+        if (cached != pixels_.end()) {
+            return cached->second;
+        }
+
+        XColor color{};
+        XParseColor(display_, colormap_, name, &color);
+        XAllocColor(display_, colormap_, &color);
+        pixels_[name] = color.pixel;
+        return color.pixel;
+    }
+
+    Display* display_{};
+    Window window_{};
+    int screen_{};
+    Colormap colormap_{};
+    Visual* visual_{};
+    _XftDraw* draw_{};
+    _XftFont* normal_{};
+    _XftFont* small_{};
+    _XftFont* title_{};
+    GC gc_{};
+    std::map<std::string, unsigned long> pixels_;
 };
 
-std::string basename(const std::string& path){return std::filesystem::path(path).filename().string();}
-std::string formatTime(const std::optional<double>& value){if(!value||*value<0)return "--:--:--";const auto total=static_cast<unsigned long long>(*value);char buffer[32]{};std::snprintf(buffer,sizeof(buffer),"%02llu:%02llu:%02llu",total/3600,(total%3600)/60,total%60);return buffer;}
-std::string formatTaskSize(std::uint64_t inputBytes,std::uint64_t outputBytes){if(inputBytes==0)return {};auto size=[](std::uint64_t value){char b[40]{};const double n=static_cast<double>(value);if(n>=1024.0*1024.0*1024.0)std::snprintf(b,sizeof(b),"%.2f GiB",n/(1024.0*1024.0*1024.0));else if(n>=1024.0*1024.0)std::snprintf(b,sizeof(b),"%.1f MiB",n/(1024.0*1024.0));else std::snprintf(b,sizeof(b),"%.0f KiB",n/1024.0);return std::string(b);};std::string result="输入 "+size(inputBytes);if(outputBytes>0){result+=" → 输出 "+size(outputBytes);if(inputBytes>outputBytes){const double saved=(1.0-static_cast<double>(outputBytes)/static_cast<double>(inputBytes))*100.0;char b[32]{};std::snprintf(b,sizeof(b)," · 节省 %.1f%%",saved);result+=b;}}if(result.size()>136){result.resize(133);result+="...";}return result;}
-std::string formatProgressLine(const ConversionProgress& p,const std::string& fallback){if(!p.frame&&!p.currentTimeSeconds&&!p.fps&&!p.speed&&!p.bitrate&&!p.totalSizeBytes)return fallback;std::string line;auto add=[&](const std::string& v){if(!line.empty())line+=" · ";line+=v;};if(p.frame)add("帧 "+std::to_string(*p.frame));if(p.currentTimeSeconds||p.durationSeconds)add(formatTime(p.currentTimeSeconds)+" / "+formatTime(p.durationSeconds));if(p.fps){char b[32]{};std::snprintf(b,sizeof(b),"%.1f FPS",*p.fps);add(b);}if(p.speed){char b[32]{};std::snprintf(b,sizeof(b),"%.2fx",*p.speed);add(b);}if(p.etaSeconds)add("剩余 "+formatTime(p.etaSeconds));if(p.bitrate)add("码率 "+*p.bitrate);if(p.totalSizeBytes)add("已写入 "+std::to_string(*p.totalSizeBytes/1024)+" KiB");if(line.size()>136){line.resize(133);line+="...";}return line;}
-std::string trim(const std::string& value){const auto first=value.find_first_not_of(" \t\r\n");if(first==std::string::npos)return {};const auto last=value.find_last_not_of(" \t\r\n");return value.substr(first,last-first+1);}
-std::string percentDecode(std::string value){std::string out;for(std::size_t i=0;i<value.size();++i){if(value[i]=='%'&&i+2<value.size()){try{const int v=std::stoi(value.substr(i+1,2),nullptr,16);out.push_back(static_cast<char>(v));i+=2;}catch(...){out.push_back(value[i]);}}else out.push_back(value[i]);}return out;}
+std::string basename(const std::string& path) {
+    return std::filesystem::path(path).filename().string();
+}
+
+std::string formatTime(const std::optional<double>& value) {
+    if (!value || *value < 0) {
+        return "--:--:--";
+    }
+
+    const auto totalSeconds = static_cast<unsigned long long>(*value);
+    char buffer[32]{};
+    std::snprintf(
+        buffer, sizeof(buffer), "%02llu:%02llu:%02llu",
+        totalSeconds / 3600,
+        (totalSeconds % 3600) / 60,
+        totalSeconds % 60);
+    return buffer;
+}
+
+std::string formatTaskSize(std::uint64_t inputBytes, std::uint64_t outputBytes) {
+    if (inputBytes == 0) {
+        return {};
+    }
+
+    const auto formatBytes = [](std::uint64_t value) {
+        char buffer[40]{};
+        const double bytes = static_cast<double>(value);
+
+        if (bytes >= 1024.0 * 1024.0 * 1024.0) {
+            std::snprintf(
+                buffer, sizeof(buffer), "%.2f GiB",
+                bytes / (1024.0 * 1024.0 * 1024.0));
+        } else if (bytes >= 1024.0 * 1024.0) {
+            std::snprintf(
+                buffer, sizeof(buffer), "%.1f MiB",
+                bytes / (1024.0 * 1024.0));
+        } else {
+            std::snprintf(buffer, sizeof(buffer), "%.0f KiB", bytes / 1024.0);
+        }
+
+        return std::string(buffer);
+    };
+
+    std::string result = "输入 " + formatBytes(inputBytes);
+    if (outputBytes > 0) {
+        result += " → 输出 " + formatBytes(outputBytes);
+
+        if (inputBytes > outputBytes) {
+            const double savedPercent =
+                (1.0 - static_cast<double>(outputBytes) /
+                           static_cast<double>(inputBytes)) * 100.0;
+            char buffer[32]{};
+            std::snprintf(buffer, sizeof(buffer), " · 节省 %.1f%%", savedPercent);
+            result += buffer;
+        }
+    }
+
+    if (result.size() > 136) {
+        result.resize(133);
+        result += "...";
+    }
+    return result;
+}
+
+std::string formatProgressLine(const ConversionProgress& progress,
+                               const std::string& fallback) {
+    if (!progress.frame &&
+        !progress.currentTimeSeconds &&
+        !progress.fps &&
+        !progress.speed &&
+        !progress.bitrate &&
+        !progress.totalSizeBytes) {
+        return fallback;
+    }
+
+    std::string result;
+    const auto append = [&](const std::string& value) {
+        if (!result.empty()) {
+            result += " · ";
+        }
+        result += value;
+    };
+
+    if (progress.frame) {
+        append("帧 " + std::to_string(*progress.frame));
+    }
+    if (progress.currentTimeSeconds || progress.durationSeconds) {
+        append(
+            formatTime(progress.currentTimeSeconds) + " / " +
+            formatTime(progress.durationSeconds));
+    }
+    if (progress.fps) {
+        char buffer[32]{};
+        std::snprintf(buffer, sizeof(buffer), "%.1f FPS", *progress.fps);
+        append(buffer);
+    }
+    if (progress.speed) {
+        char buffer[32]{};
+        std::snprintf(buffer, sizeof(buffer), "%.2fx", *progress.speed);
+        append(buffer);
+    }
+    if (progress.etaSeconds) {
+        append("剩余 " + formatTime(progress.etaSeconds));
+    }
+    if (progress.bitrate) {
+        append("码率 " + *progress.bitrate);
+    }
+    if (progress.totalSizeBytes) {
+        append("已写入 " + std::to_string(*progress.totalSizeBytes / 1024) + " KiB");
+    }
+
+    if (result.size() > 136) {
+        result.resize(133);
+        result += "...";
+    }
+    return result;
+}
+
+std::string trim(const std::string& value) {
+    const auto first = value.find_first_not_of(" \t\r\n");
+    if (first == std::string::npos) {
+        return {};
+    }
+
+    const auto last = value.find_last_not_of(" \t\r\n");
+    return value.substr(first, last - first + 1);
+}
+
+std::string percentDecode(const std::string& value) {
+    std::string result;
+    result.reserve(value.size());
+
+    for (std::size_t index = 0; index < value.size(); ++index) {
+        if (value[index] == '%' && index + 2 < value.size()) {
+            try {
+                const int decoded = std::stoi(value.substr(index + 1, 2), nullptr, 16);
+                result.push_back(static_cast<char>(decoded));
+                index += 2;
+            } catch (const std::exception&) {
+                result.push_back(value[index]);
+            }
+        } else {
+            result.push_back(value[index]);
+        }
+    }
+
+    return result;
+}
 
 class LinuxWindow {
 public:
     explicit LinuxWindow(AppController& controller):controller_(controller){}
-    int run(){display_=XOpenDisplay(nullptr);if(!display_)return 1;screen_=DefaultScreen(display_);scale_=detectScale();width_=1500*scale_;height_=1020*scale_;
-        window_=XCreateSimpleWindow(display_,RootWindow(display_,screen_),0,0,width_,height_,0,BlackPixel(display_,screen_),WhitePixel(display_,screen_));
-        XStoreName(display_,window_,"FFmpeg Studio");XClassHint hint{};hint.res_name=const_cast<char*>("ffmpeg-studio");hint.res_class=const_cast<char*>("FFmpegStudio");XSetClassHint(display_,window_,&hint);
-        XSelectInput(display_,window_,ExposureMask|StructureNotifyMask|ButtonPressMask|ButtonReleaseMask|PointerMotionMask|KeyPressMask|PropertyChangeMask);
-        wmDelete_=XInternAtom(display_,"WM_DELETE_WINDOW",False);XSetWMProtocols(display_,window_,&wmDelete_,1);
-        setDnd();XSizeHints sizeHints{};sizeHints.flags=PMinSize;sizeHints.min_width=static_cast<int>(1180*scale_);sizeHints.min_height=static_cast<int>(820*scale_);XSetWMNormalHints(display_,window_,&sizeHints);
-        XMapWindow(display_,window_);canvas_=std::make_unique<XftCanvas>(display_,window_,scale_);
-        bool quit=false;while(!quit){while(XPending(display_)){XEvent event{};XNextEvent(display_,&event);if(handle(event))quit=true;}pollfd fd{ConnectionNumber(display_),POLLIN,0};poll(&fd,1,120);if(fd.revents&POLLIN)continue;draw();}
-        controller_.shutdown();canvas_.reset();XDestroyWindow(display_,window_);XCloseDisplay(display_);return 0;}
-private:
-    double detectScale(){double dpi=96.0;const char* resources=XResourceManagerString(display_);if(resources){std::string text(resources);auto pos=text.find("Xft.dpi:");if(pos!=std::string::npos){try{dpi=std::stod(text.substr(pos+8));}catch(...){}}}return std::clamp(dpi/96.0,0.8,2.5);}
-    int s(int v)const{return static_cast<int>(std::lround(v*scale_));}
-    void setDnd(){Atom aware=XInternAtom(display_,"XdndAware",False);unsigned long version=5;XChangeProperty(display_,window_,aware,XA_ATOM,32,PropModeReplace,reinterpret_cast<unsigned char*>(&version),1);xdndEnter_=XInternAtom(display_,"XdndEnter",False);xdndPosition_=XInternAtom(display_,"XdndPosition",False);xdndStatus_=XInternAtom(display_,"XdndStatus",False);xdndDrop_=XInternAtom(display_,"XdndDrop",False);xdndFinished_=XInternAtom(display_,"XdndFinished",False);xdndSelection_=XInternAtom(display_,"XdndSelection",False);uriList_=XInternAtom(display_,"text/uri-list",False);}
-    std::vector<std::string> chooseFiles(bool archiveOnly=false){
-        const std::string filter=archiveOnly?"--file-filter=ZIP and PowerPoint | *.zip *.pptx":"--file-filter=Media and archives | *.mp4 *.m4v *.mov *.mkv *.avi *.webm *.wmv *.flv *.mpg *.mpeg *.3gp *.ts *.m2ts *.mts *.zip *.pptx";
-        ProcessResult result=runProcess({"zenity","--file-selection","--multiple","--separator=\n","--title=添加媒体文件",filter});
-        if(result.exitCode!=0){result=runProcess({"kdialog","--getopenfilename",".",archiveOnly?"*.zip *.pptx":"*.mp4 *.mkv *.mov *.avi *.webm *.zip *.pptx","--multiple","--separate-output"});}
-        std::vector<std::string> paths;std::istringstream stream(result.output);std::string line;while(std::getline(stream,line)){line=trim(line);if(!line.empty())paths.push_back(line);}return paths;
+    int run() {
+        display_ = XOpenDisplay(nullptr);
+        if (display_ == nullptr) {
+            return 1;
+        }
+
+        screen_ = DefaultScreen(display_);
+        scale_ = detectScale();
+        width_ = static_cast<int>(1500 * scale_);
+        height_ = static_cast<int>(1020 * scale_);
+
+        window_ = XCreateSimpleWindow(
+            display_, RootWindow(display_, screen_),
+            0, 0, static_cast<unsigned int>(width_),
+            static_cast<unsigned int>(height_),
+            0, BlackPixel(display_, screen_), WhitePixel(display_, screen_));
+        XStoreName(display_, window_, "FFmpeg Studio");
+
+        XClassHint classHint{};
+        classHint.res_name = const_cast<char*>("ffmpeg-studio");
+        classHint.res_class = const_cast<char*>("FFmpegStudio");
+        XSetClassHint(display_, window_, &classHint);
+
+        XSelectInput(
+            display_, window_,
+            ExposureMask | StructureNotifyMask | ButtonPressMask |
+            ButtonReleaseMask | PointerMotionMask | KeyPressMask | PropertyChangeMask);
+
+        wmDelete_ = XInternAtom(display_, "WM_DELETE_WINDOW", False);
+        XSetWMProtocols(display_, window_, &wmDelete_, 1);
+        setDnd();
+
+        XSizeHints sizeHints{};
+        sizeHints.flags = PMinSize;
+        sizeHints.min_width = static_cast<int>(1180 * scale_);
+        sizeHints.min_height = static_cast<int>(820 * scale_);
+        XSetWMNormalHints(display_, window_, &sizeHints);
+
+        XMapWindow(display_, window_);
+        canvas_ = std::make_unique<XftCanvas>(display_, window_, scale_);
+
+        bool quit = false;
+        while (!quit) {
+            while (XPending(display_)) {
+                XEvent event{};
+                XNextEvent(display_, &event);
+                if (handle(event)) {
+                    quit = true;
+                }
+            }
+
+            pollfd descriptor{ConnectionNumber(display_), POLLIN, 0};
+            poll(&descriptor, 1, 120);
+            if ((descriptor.revents & POLLIN) != 0) {
+                continue;
+            }
+            draw();
+        }
+
+        controller_.shutdown();
+        canvas_.reset();
+        XDestroyWindow(display_, window_);
+        XCloseDisplay(display_);
+        return 0;
     }
-    void importQueueDialog(){ProcessResult result=runProcess({"zenity","--file-selection","--title=导入任务清单","--file-filter=FFmpeg Studio Queue | *.ffq *.txt"});if(result.exitCode!=0)result=runProcess({"kdialog","--getopenfilename",".","*.ffq *.txt","导入任务清单"});const auto path=trim(result.output);if(path.empty())return;std::string error;const auto added=controller_.importQueue(path,error);if(!error.empty())std::cerr<<error<<'\n';else if(added==0)std::cerr<<"任务清单中没有新增任务。\n";}
-    void exportQueueDialog(){ProcessResult result=runProcess({"zenity","--file-selection","--save","--confirm-overwrite","--title=导出任务清单","--file-filter=FFmpeg Studio Queue | *.ffq"});if(result.exitCode!=0)result=runProcess({"kdialog","--getsavefilename",".","*.ffq","导出任务清单"});auto path=trim(result.output);if(path.empty())return;if(std::filesystem::path(path).extension().empty())path+=".ffq";std::string error;if(!controller_.exportQueue(path,error))std::cerr<<error<<'\n';}
-    void chooseFolder(){ProcessResult result=runProcess({"zenity","--file-selection","--directory","--title=选择输入文件夹"});if(result.exitCode!=0)result=runProcess({"kdialog","--getexistingdirectory",".","选择输入文件夹"});const auto path=trim(result.output);if(!path.empty())controller_.addInputs({path});}
-    void chooseOutput(){ProcessResult result=runProcess({"zenity","--file-selection","--directory","--title=选择输出文件夹"});if(result.exitCode!=0)result=runProcess({"kdialog","--getexistingdirectory",".","选择输出文件夹"});const auto path=trim(result.output);if(!path.empty()){settings_.outputDirectory=path;updateSettings();}}
-    void updateSettings(){controller_.updateSettings(settings_);}
+
+private:
+    double detectScale() {
+        double dpi = 96.0;
+        const char* resources = XResourceManagerString(display_);
+        if (resources != nullptr) {
+            const std::string resourceText(resources);
+            const auto position = resourceText.find("Xft.dpi:");
+            if (position != std::string::npos) {
+                try {
+                    dpi = std::stod(resourceText.substr(position + 8));
+                } catch (const std::exception&) {
+                    // Use the standard DPI when the X resource value is invalid.
+                }
+            }
+        }
+        return std::clamp(dpi / 96.0, 0.8, 2.5);
+    }
+
+    int s(int value) const {
+        return static_cast<int>(std::lround(value * scale_));
+    }
+
+    void setDnd() {
+        const Atom aware = XInternAtom(display_, "XdndAware", False);
+        unsigned long version = 5;
+        XChangeProperty(
+            display_, window_, aware, XA_ATOM, 32, PropModeReplace,
+            reinterpret_cast<unsigned char*>(&version), 1);
+
+        xdndEnter_ = XInternAtom(display_, "XdndEnter", False);
+        xdndPosition_ = XInternAtom(display_, "XdndPosition", False);
+        xdndStatus_ = XInternAtom(display_, "XdndStatus", False);
+        xdndDrop_ = XInternAtom(display_, "XdndDrop", False);
+        xdndFinished_ = XInternAtom(display_, "XdndFinished", False);
+        xdndSelection_ = XInternAtom(display_, "XdndSelection", False);
+        uriList_ = XInternAtom(display_, "text/uri-list", False);
+    }
+
+    std::vector<std::string> chooseFiles(bool archiveOnly = false) {
+        const std::string filter = archiveOnly
+            ? "--file-filter=ZIP and PowerPoint | *.zip *.pptx"
+            : "--file-filter=Media and archives | "
+              "*.mp4 *.m4v *.mov *.mkv *.avi *.webm *.wmv *.flv "
+              "*.mpg *.mpeg *.3gp *.ts *.m2ts *.mts *.zip *.pptx";
+
+        ProcessResult result = runProcess({
+            "zenity", "--file-selection", "--multiple", "--separator=\n",
+            "--title=添加媒体文件", filter
+        });
+        if (result.exitCode != 0) {
+            const std::string fallbackFilter = archiveOnly
+                ? "*.zip *.pptx"
+                : "*.mp4 *.mkv *.mov *.avi *.webm *.zip *.pptx";
+            result = runProcess({
+                "kdialog", "--getopenfilename", ".", fallbackFilter,
+                "--multiple", "--separate-output"
+            });
+        }
+
+        std::vector<std::string> paths;
+        std::istringstream input(result.output);
+        std::string line;
+        while (std::getline(input, line)) {
+            line = trim(line);
+            if (!line.empty()) {
+                paths.push_back(std::move(line));
+            }
+        }
+        return paths;
+    }
+
+    void importQueueDialog() {
+        ProcessResult result = runProcess({
+            "zenity", "--file-selection", "--title=导入任务清单",
+            "--file-filter=FFmpeg Studio Queue | *.ffq *.txt"
+        });
+        if (result.exitCode != 0) {
+            result = runProcess({
+                "kdialog", "--getopenfilename", ".", "*.ffq *.txt", "导入任务清单"
+            });
+        }
+
+        const std::string path = trim(result.output);
+        if (path.empty()) {
+            return;
+        }
+
+        std::string error;
+        const std::size_t added = controller_.importQueue(path, error);
+        if (!error.empty()) {
+            std::cerr << error << '\n';
+        } else if (added == 0) {
+            std::cerr << "任务清单中没有新增任务。\n";
+        }
+    }
+
+    void exportQueueDialog() {
+        ProcessResult result = runProcess({
+            "zenity", "--file-selection", "--save", "--confirm-overwrite",
+            "--title=导出任务清单", "--file-filter=FFmpeg Studio Queue | *.ffq"
+        });
+        if (result.exitCode != 0) {
+            result = runProcess({
+                "kdialog", "--getsavefilename", ".", "*.ffq", "导出任务清单"
+            });
+        }
+
+        std::string path = trim(result.output);
+        if (path.empty()) {
+            return;
+        }
+        if (std::filesystem::path(path).extension().empty()) {
+            path += ".ffq";
+        }
+
+        std::string error;
+        if (!controller_.exportQueue(path, error)) {
+            std::cerr << error << '\n';
+        }
+    }
+
+    void chooseFolder() {
+        ProcessResult result = runProcess({
+            "zenity", "--file-selection", "--directory", "--title=选择输入文件夹"
+        });
+        if (result.exitCode != 0) {
+            result = runProcess({
+                "kdialog", "--getexistingdirectory", ".", "选择输入文件夹"
+            });
+        }
+
+        const std::string path = trim(result.output);
+        if (!path.empty()) {
+            controller_.addInputs({path});
+        }
+    }
+
+    void chooseOutput() {
+        ProcessResult result = runProcess({
+            "zenity", "--file-selection", "--directory", "--title=选择输出文件夹"
+        });
+        if (result.exitCode != 0) {
+            result = runProcess({
+                "kdialog", "--getexistingdirectory", ".", "选择输出文件夹"
+            });
+        }
+
+        const std::string path = trim(result.output);
+        if (!path.empty()) {
+            settings_.outputDirectory = path;
+            updateSettings();
+        }
+    }
+
+    void updateSettings() {
+        controller_.updateSettings(settings_);
+    }
+
     void manageSshServers() {
         const int dialogWidth=s(980),dialogHeight=s(700);
         XWindowAttributes parentAttributes{};
