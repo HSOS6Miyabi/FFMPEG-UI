@@ -1512,17 +1512,23 @@ private:
             colors.text, 0);
         canvas_->text(
             information.x + s(22), information.y + s(168),
-            "音频码率  " + std::to_string(settings_.audioBitrateKbps) +
-                " kbps（按容器选择编码）",
+            "音频  " + audioModeName(settings_.audioMode) +
+                (settings_.audioMode == AudioMode::Encode
+                    ? " · " + std::to_string(settings_.audioBitrateKbps) + " kbps"
+                    : ""),
             colors.text, 0);
         canvas_->text(
             information.x + s(22), information.y + s(198),
+            "分辨率  " + outputResolutionName(settings_.outputResolution),
+            colors.text, 0);
+        canvas_->text(
+            information.x + s(22), information.y + s(228),
             settings_.remoteHost.empty()
                 ? "计算设备  本机"
                 : "计算设备  远程 · " + settings_.remoteHost,
             colors.text, 0);
         canvas_->text(
-            information.x + s(22), information.y + s(228),
+            information.x + s(22), information.y + s(258),
             snapshot.resourcePlan.explanation, colors.muted, 0);
         canvas_->text(
             information.x + s(22), information.y + s(270),
@@ -1680,9 +1686,27 @@ private:
         }
 
         const std::array<int, 6> audioRates{96, 128, 160, 192, 256, 320};
-        for (std::size_t index = 0; index < audioRates.size(); ++index) {
-            if (contains(layout.audio[index], x, y)) {
-                settings_.audioBitrateKbps = audioRates[index];
+        if (settings_.audioMode == AudioMode::Encode) {
+            for (std::size_t index = 0; index < audioRates.size(); ++index) {
+                if (contains(layout.audio[index], x, y)) {
+                    settings_.audioBitrateKbps = audioRates[index];
+                    updateSettings();
+                    return;
+                }
+            }
+        }
+
+        for (std::size_t index = 0; index < 6; ++index) {
+            if (contains(layout.resolution[index], x, y)) {
+                settings_.outputResolution = static_cast<OutputResolution>(index);
+                updateSettings();
+                return;
+            }
+        }
+
+        for (std::size_t index = 0; index < 3; ++index) {
+            if (contains(layout.audioMode[index], x, y)) {
+                settings_.audioMode = static_cast<AudioMode>(index);
                 updateSettings();
                 return;
             }
