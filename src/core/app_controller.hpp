@@ -64,6 +64,12 @@ public:
 
     void initialize();
     AppSnapshot snapshot() const;
+    std::vector<SshServer> sshServers() const;
+    bool saveSshServer(const SshServer& server, const std::string& password, std::string& error);
+    bool removeSshServer(const std::string& alias, std::string& error);
+    bool testSshServer(const std::string& alias, std::string& error) const;
+    bool selectRemoteServer(const std::string& alias, std::string& error);
+    void selectLocalEncoder();
     void updateSettings(const BatchSettings& settings);
     void addInputs(const std::vector<std::string>& paths);
     void removeTask(std::uint64_t id);
@@ -90,6 +96,7 @@ private:
     mutable std::mutex mutex_;
     BatchSettings settings_;
     EncoderCapabilities capabilities_;
+    RemoteResources remoteResources_;
     ResourcePlan resourcePlan_;
     std::vector<BatchTaskSnapshot> tasks_;
     bool running_{false};

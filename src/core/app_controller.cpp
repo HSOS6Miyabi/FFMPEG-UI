@@ -98,19 +98,33 @@ AppController::AppController(FfmpegService service) : service_(std::move(service
 AppController::~AppController() { shutdown(); }
 
 void AppController::initialize() {
-    const auto capabilities = service_.probeCapabilities(true);
+    EncoderCapabilities capabilities = service_.probeCapabilities(true);
+    RemoteResources remoteResources;
+    std::string remoteError;
+    std::string selectedRemote;
+    {
+        std::lock_guard lock(mutex_);
+        selectedRemote = settings_.remoteHost;
+    }
+    if (!selectedRemote.empty()) {
+        const auto remote = service_.probeRemote(selectedRemote, true);
+        if (remote.success) { capabilities = remote.capabilities; remoteResources = remote.resources; }
+        else { remoteError = remote.error; selectedRemote.clear(); }
+    }
     std::lock_guard lock(mutex_);
     capabilities_ = capabilities;
+    remoteResources_ = remoteResources;
+    settings_.remoteHost = selectedRemote;
     if (!capabilities_.supports(settings_.codec, settings_.backend)) {
         for (const auto candidate : {EncoderBackend::CPU, EncoderBackend::NVENC, EncoderBackend::QSV, EncoderBackend::AMF}) {
-            if (capabilities_.supports(settings_.codec, candidate)) {
-                settings_.backend = candidate;
-                break;
-            }
+            if (capabilities_.supports(settings_.codec, candidate)) { settings_.backend = candidate; break; }
         }
     }
     saveSettingsLocked();
-    if (capabilities_.ffmpegVersion.empty()) {
+    if (!remoteError.empty()) {
+        status_ = "远程服务器暂时不可用";
+        error_ = "无法连接上次选择的 SSH 服务器，已切换到本机编码。" + remoteError;
+    } else if (capabilities_.ffmpegVersion.empty()) {
         status_ = "未检测到 FFmpeg";
         error_ = "请安装 FFmpeg，并确保 ffmpeg 和 ffprobe 可以从命令行访问。";
     } else if (!capabilities_.ffprobeAvailable) {
@@ -118,9 +132,86 @@ void AppController::initialize() {
         error_ = "当前环境未检测到 ffprobe。请安装与 FFmpeg 配套的工具后重新启动程序。";
     } else {
         status_ = "就绪";
-        detail_ = "FFmpeg 与 ffprobe 已就绪。已检测当前设备支持的硬件编码器。";
+        detail_ = selectedRemote.empty() ? "本机 FFmpeg 与 ffprobe 已就绪。"
+            : "已连接远程服务器 " + selectedRemote + "，后续任务将使用远程算力。";
         error_.clear();
     }
+}
+
+std::vector<SshServer> AppController::sshServers() const {
+    return service_.sshService().listServers();
+}
+
+bool AppController::saveSshServer(const SshServer& server, const std::string& password, std::string& error) {
+    { std::lock_guard lock(mutex_); if (running_) { error = "批量任务运行期间不能修改 SSH 服务器。"; return false; } }
+    return service_.sshService().saveServer(server, password, error);
+}
+
+bool AppController::removeSshServer(const std::string& alias, std::string& error) {
+    { std::lock_guard lock(mutex_); if (running_) { error = "批量任务运行期间不能删除 SSH 服务器。"; return false; } }
+    if (!service_.sshService().removeServer(alias, error)) return false;
+    bool selected = false;
+    { std::lock_guard lock(mutex_); selected = settings_.remoteHost == alias; }
+    if (selected) selectLocalEncoder();
+    error.clear();
+    return true;
+}
+
+bool AppController::testSshServer(const std::string& alias, std::string& error) const {
+    if (!service_.sshService().testConnection(alias, error)) return false;
+    const auto remote = service_.probeRemote(alias, true);
+    if (!remote.success) { error = remote.error; return false; }
+    std::ostringstream summary;
+    summary << "SSH 连接成功。远程系统：" << remote.resources.operatingSystem
+            << "，逻辑 CPU：" << remote.resources.logicalCores;
+    if (remote.resources.availableMemoryBytes > 0)
+        summary << "，可用内存：" << (remote.resources.availableMemoryBytes / (1024ULL * 1024ULL)) << " MiB";
+    summary << "。远程 FFmpeg 和编码器检测正常。";
+    error = summary.str();
+    return true;
+}
+
+bool AppController::selectRemoteServer(const std::string& alias, std::string& error) {
+    { std::lock_guard lock(mutex_); if (running_) { error = "批量任务运行期间不能切换编码设备。"; return false; } }
+    const auto remote = service_.probeRemote(alias, true);
+    if (!remote.success) { error = remote.error; return false; }
+    std::lock_guard lock(mutex_);
+    if (!remote.capabilities.supports(settings_.codec, settings_.backend)) {
+        bool selected = false;
+        for (const auto candidate : {EncoderBackend::CPU, EncoderBackend::NVENC, EncoderBackend::QSV, EncoderBackend::AMF}) {
+            if (remote.capabilities.supports(settings_.codec, candidate)) { settings_.backend = candidate; selected = true; break; }
+        }
+        if (!selected) { error = "远程服务器没有可用于当前视频编码格式的编码器。"; return false; }
+    }
+    settings_.remoteHost = alias;
+    capabilities_ = remote.capabilities;
+    remoteResources_ = remote.resources;
+    refreshOutputPathsLocked();
+    saveSettingsLocked();
+    status_ = "已选择远程服务器";
+    detail_ = "后续任务将通过 SSH 使用 " + alias + " 上的 FFmpeg，处理结果会自动下载到本机。";
+    error_.clear();
+    error.clear();
+    return true;
+}
+
+void AppController::selectLocalEncoder() {
+    { std::lock_guard lock(mutex_); if (running_) return; }
+    const auto local = service_.probeCapabilities(true);
+    std::lock_guard lock(mutex_);
+    settings_.remoteHost.clear();
+    remoteResources_ = {};
+    capabilities_ = local;
+    if (!capabilities_.supports(settings_.codec, settings_.backend)) {
+        for (const auto candidate : {EncoderBackend::CPU, EncoderBackend::NVENC, EncoderBackend::QSV, EncoderBackend::AMF}) {
+            if (capabilities_.supports(settings_.codec, candidate)) { settings_.backend = candidate; break; }
+        }
+    }
+    refreshOutputPathsLocked();
+    saveSettingsLocked();
+    status_ = "使用本机编码";
+    detail_ = "视频将在本机使用 FFmpeg 处理。";
+    error_.clear();
 }
 
 AppSnapshot AppController::snapshot() const {
@@ -129,10 +220,11 @@ AppSnapshot AppController::snapshot() const {
     result.settings = settings_;
     result.capabilities = capabilities_;
     const bool singleArchive = tasks_.size() == 1 && tasks_.front().kind != TaskKind::Video;
-    result.resourcePlan = resourcePlan_.parallelJobs == 0 && !tasks_.empty()
-        ? recommendResourcePlan(singleArchive ? 64U : tasks_.size(), settings_.backend,
-                                settings_.codec, settings_.maxParallelJobs)
-        : resourcePlan_;
+    result.resourcePlan = running_ ? resourcePlan_ :
+        (!tasks_.empty() ? recommendResourcePlan(singleArchive ? 64U : tasks_.size(), settings_.backend,
+                                settings_.codec, settings_.maxParallelJobs,
+                                remoteResources_.logicalCores, remoteResources_.availableMemoryBytes,
+                                settings_.remoteHost.empty() ? "本机" : "远程服务器") : resourcePlan_);
     result.tasks = tasks_;
     result.running = running_;
     result.paused = pauseRequested_.load();
@@ -295,6 +387,7 @@ void AppController::loadSettings() {
             else if (key == "skipAlreadyProcessed") settings_.skipAlreadyProcessed = parseBool(value, settings_.skipAlreadyProcessed);
             else if (key == "overwrite") settings_.overwrite = parseBool(value, settings_.overwrite);
             else if (key == "outputDirectory") settings_.outputDirectory = value;
+            else if (key == "remoteHost") settings_.remoteHost = value;
         } catch (...) {}
     }
     settings_.crf = std::clamp(settings_.crf, 0, crfMaximum(settings_.codec));
@@ -320,7 +413,8 @@ void AppController::saveSettingsLocked() const {
            << "preserveDirectoryStructure=" << (settings_.preserveDirectoryStructure ? 1 : 0) << '\n'
            << "skipAlreadyProcessed=" << (settings_.skipAlreadyProcessed ? 1 : 0) << '\n'
            << "overwrite=" << (settings_.overwrite ? 1 : 0) << '\n'
-           << "outputDirectory=" << settings_.outputDirectory << '\n';
+           << "outputDirectory=" << settings_.outputDirectory << '\n'
+           << "remoteHost=" << settings_.remoteHost << '\n';
 }
 
 std::size_t AppController::importQueue(const std::string& path, std::string& error) {
@@ -442,7 +536,9 @@ bool AppController::startBatch() {
         const bool singleArchive = pending.size() == 1 &&
             tasks_[pending.front()].kind != TaskKind::Video;
         plan = recommendResourcePlan(singleArchive ? 64U : pending.size(), settings_.backend,
-                                     settings_.codec, settings_.maxParallelJobs);
+                                     settings_.codec, settings_.maxParallelJobs,
+                                     remoteResources_.logicalCores, remoteResources_.availableMemoryBytes,
+                                     settings_.remoteHost.empty() ? "本机" : "远程服务器");
         resourcePlan_ = plan;
         running_ = true;
         cancelRequested_.store(false);
@@ -516,6 +612,7 @@ void AppController::runTask(std::size_t index, const ResourcePlan& plan, std::si
     ConversionSettings settings;
     settings.inputPath = task.inputPath;
     settings.outputPath = task.outputPath;
+    settings.remoteHost = batchSettings.remoteHost;
     settings.outputContainer = batchSettings.outputContainer;
     settings.codec = batchSettings.codec;
     settings.backend = batchSettings.backend;
