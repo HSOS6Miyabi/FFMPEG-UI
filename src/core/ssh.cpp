@@ -416,7 +416,10 @@ bool SshService::writeConfig(const std::vector<std::string>& lines, std::string&
     }
 
     std::error_code filesystemError;
-    std::filesystem::create_directories(destination.parent_path(), filesystemError);
+    const auto parentDirectory = destination.parent_path();
+    if (!parentDirectory.empty()) {
+        std::filesystem::create_directories(parentDirectory, filesystemError);
+    }
     if (filesystemError) {
         error = "无法创建 SSH 配置目录：" + filesystemError.message();
         return false;
@@ -439,7 +442,7 @@ bool SshService::writeConfig(const std::vector<std::string>& lines, std::string&
         const std::string entry = line + "\n";
         DWORD written = 0;
         if (!WriteFile(file, entry.data(), static_cast<DWORD>(entry.size()), &written, nullptr) ||
-            written != entry.size()) {
+            written != static_cast<DWORD>(entry.size())) {
             writeSucceeded = false;
             break;
         }
@@ -602,7 +605,12 @@ bool SshService::removeServer(const std::string& alias, std::string& error) {
 }
 
 bool SshService::hasPassword(const std::string& alias) const {
-    return readPassword(alias).has_value();
+    auto password = readPassword(alias);
+    const bool exists = password.has_value();
+    if (password) {
+        eraseSecret(*password);
+    }
+    return exists;
 }
 
 bool SshService::setPassword(const std::string& alias, const std::string& password,
@@ -635,7 +643,9 @@ bool SshService::setPassword(const std::string& alias, const std::string& passwo
     }
 #else
     std::lock_guard lock(passwordMutex);
-    sessionPasswords[credentialTarget(alias)] = password;
+    auto& storedPassword = sessionPasswords[credentialTarget(alias)];
+    eraseSecret(storedPassword);
+    storedPassword = password;
 #endif
 
     error.clear();
@@ -654,7 +664,11 @@ bool SshService::clearPassword(const std::string& alias, std::string& error) {
     }
 #else
     std::lock_guard lock(passwordMutex);
-    sessionPasswords.erase(credentialTarget(alias));
+    const auto it = sessionPasswords.find(credentialTarget(alias));
+    if (it != sessionPasswords.end()) {
+        eraseSecret(it->second);
+        sessionPasswords.erase(it);
+    }
 #endif
 
     error.clear();
@@ -696,7 +710,7 @@ std::string SshService::executablePath() const {
 #ifdef _WIN32
     std::wstring path(32768, L'\0');
     const DWORD length = GetModuleFileNameW(nullptr, path.data(), static_cast<DWORD>(path.size()));
-    if (length == 0 || length >= path.size()) {
+    if (length == 0 || length >= static_cast<DWORD>(path.size())) {
         return {};
     }
     path.resize(length);
@@ -823,10 +837,16 @@ bool SshService::testConnection(const std::string& alias, std::string& error) co
         return false;
     }
 
-    const auto environment = processEnvironment(alias);
+    auto environment = processEnvironment(alias);
     const auto result = runProcess(
         sshArguments(alias, "printf 'FFMPEG_STUDIO_SSH_OK'"),
         nullptr, {}, nullptr, &environment);
+#ifndef _WIN32
+    if (auto password = environment.find("FFMPEG_STUDIO_SSH_PASSWORD");
+        password != environment.end()) {
+        eraseSecret(password->second);
+    }
+#endif
 
     if (result.exitCode != 0 ||
         result.output.find("FFMPEG_STUDIO_SSH_OK") == std::string::npos) {
@@ -845,25 +865,48 @@ ProcessResult SshService::runRemote(const std::string& alias, const std::string&
                                     const std::atomic_bool* cancelRequested,
                                     ProcessLineCallback onLine,
                                     const std::atomic_bool* pauseRequested) const {
-    const auto environment = processEnvironment(alias);
-    return runProcess(sshArguments(alias, command), cancelRequested, std::move(onLine),
-                      pauseRequested, &environment);
+    auto environment = processEnvironment(alias);
+    ProcessResult result = runProcess(sshArguments(alias, command), cancelRequested,
+                                      std::move(onLine), pauseRequested, &environment);
+#ifndef _WIN32
+    if (auto password = environment.find("FFMPEG_STUDIO_SSH_PASSWORD");
+        password != environment.end()) {
+        eraseSecret(password->second);
+    }
+#endif
+    return result;
 }
 
 ProcessResult SshService::upload(const std::string& alias, const std::string& localPath,
                                  const std::string& remotePath,
                                  const std::atomic_bool* cancelRequested) const {
-    const auto environment = processEnvironment(alias);
-    return runProcess(scpArguments(alias, localPath, alias + ":" + remotePath),
-                      cancelRequested, {}, nullptr, &environment);
+    auto environment = processEnvironment(alias);
+    ProcessResult result = runProcess(
+        scpArguments(alias, localPath, alias + ":" + remotePath),
+        cancelRequested, {}, nullptr, &environment);
+#ifndef _WIN32
+    if (auto password = environment.find("FFMPEG_STUDIO_SSH_PASSWORD");
+        password != environment.end()) {
+        eraseSecret(password->second);
+    }
+#endif
+    return result;
 }
 
 ProcessResult SshService::download(const std::string& alias, const std::string& remotePath,
                                    const std::string& localPath,
                                    const std::atomic_bool* cancelRequested) const {
-    const auto environment = processEnvironment(alias);
-    return runProcess(scpArguments(alias, alias + ":" + remotePath, localPath),
-                      cancelRequested, {}, nullptr, &environment);
+    auto environment = processEnvironment(alias);
+    ProcessResult result = runProcess(
+        scpArguments(alias, alias + ":" + remotePath, localPath),
+        cancelRequested, {}, nullptr, &environment);
+#ifndef _WIN32
+    if (auto password = environment.find("FFMPEG_STUDIO_SSH_PASSWORD");
+        password != environment.end()) {
+        eraseSecret(password->second);
+    }
+#endif
+    return result;
 }
 
 } // namespace ffmpegui
