@@ -4,7 +4,7 @@
 
 ## 当前项目状态
 
-- 项目名称：FFmpeg Studio。
+- 项目名称：视频压缩工作台。
 - 当前开发版本：1.2.0。
 - 主要分支：`main`。
 - 目标平台：Windows x64、Linux x86_64。
@@ -57,7 +57,7 @@ sudo apt-get install -y build-essential cmake ninja-build libx11-dev libxft-dev 
 cmake --preset linux-release
 cmake --build --preset linux-release --parallel
 ctest --preset linux-release
-./build/linux-release/ffmpeg-ui --self-test
+./build/linux-release/video-compression-workbench --self-test
 ```
 
 ### Windows
@@ -72,7 +72,7 @@ cmake --preset windows-release `
   -DVCPKG_TARGET_TRIPLET=x64-windows-static
 cmake --build --preset windows-release --parallel
 ctest --preset windows-release
-.\build\windows-release\ffmpeg-ui.exe --self-test
+.\build\windows-release\video-compression-workbench.exe --self-test
 ```
 
 vcpkg 依赖由 `vcpkg.json` 声明。FFmpeg/ffprobe 由用户或运行环境安装，当前发布包不包含 FFmpeg 二进制文件。
@@ -80,10 +80,10 @@ vcpkg 依赖由 `vcpkg.json` 声明。FFmpeg/ffprobe 由用户或运行环境安
 ## 运行与调试
 
 ```bash
-ffmpeg-ui --encoders
-ffmpeg-ui --self-test
-ffmpeg-ui --demo
-ffmpeg-ui /path/to/video.mp4 /path/to/input.zip /path/to/slides.pptx
+video-compression-workbench --encoders
+video-compression-workbench --self-test
+video-compression-workbench --demo
+video-compression-workbench /path/to/video.mp4 /path/to/input.zip /path/to/slides.pptx
 ```
 
 Windows 文件关联或“发送到”菜单可以直接把一个或多个路径作为命令行参数传给程序。开发时可设置 `FFMPEG_PATH` 和 `FFPROBE_PATH` 指向指定的可执行文件。
@@ -108,7 +108,7 @@ Windows 文件关联或“发送到”菜单可以直接把一个或多个路径
 ```bash
 cmake --build build --parallel
 ctest --test-dir build --output-on-failure
-./build/ffmpeg-ui --self-test
+./build/video-compression-workbench --self-test
 ```
 
 `ctest` 运行核心单元测试，覆盖 SSH 配置解析、凭据保存与删除、编码参数映射、归档路径安全和任务调度等逻辑。`--self-test` 使用本机 FFmpeg 创建测试媒体，检查可用的 CPU 编码器、AAC 音频、进度解析、重复处理标记、ZIP/PPTX 替换、并行处理和 Linux 下的模拟 SSH 远程处理。缺少的可选编码器会跳过。真实 SSH 服务器的认证、文件传输、断线恢复和远程清理仍应在独立测试服务器上验证。硬件编码器需要真实设备和驱动；没有设备时，验证对应选项不会出现在界面中。
