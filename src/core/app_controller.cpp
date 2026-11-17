@@ -163,6 +163,9 @@ void AppController::initialize() {
         detail_ = selectedRemote.empty()
             ? "本机 FFmpeg 与 ffprobe 已就绪。"
             : "已连接远程服务器 " + selectedRemote + "，后续任务将使用远程算力。";
+        if (!tasks_.empty()) {
+            detail_ += " 已恢复上次的 " + std::to_string(tasks_.size()) + " 个待处理任务。";
+        }
         error_.clear();
     }
 }
