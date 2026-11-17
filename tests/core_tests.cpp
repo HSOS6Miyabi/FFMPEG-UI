@@ -300,7 +300,7 @@ int main() {
                 "Output suffixes must identify removed audio.");
         auto scaledSuffix = fingerprintSettings;
         scaledSuffix.outputResolution = OutputResolution::FullHD1080;
-        require(outputSuffix(scaledSuffix).ends_with("_A192_R3"),
+        require(outputSuffix(scaledSuffix).ends_with("_A192_R1080"),
                 "Output suffixes must identify the selected resolution.");
         require(outputVideoExtension(OutputContainer::MP4, "sample.mov") == ".mp4",
                 "MP4 mode must use the MP4 extension for every source container.");
