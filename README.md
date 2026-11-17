@@ -246,4 +246,6 @@ ctest --test-dir build --output-on-failure
 
 项目决策和后续维护要求记录在 [`docs/decision-log.md`](docs/decision-log.md)。
 
+产品功能评估和后续开发建议见 [`docs/product-review.md`](docs/product-review.md)。
+
 新开发者请先阅读[开发者接管指南](docs/developer-handoff.md)，其中包含构建环境、目录说明、实现约束、测试流程和发布方法。
