@@ -346,7 +346,7 @@ int runSelfTest(bool keepFiles) {
                    << "while [ \"$#\" -gt 0 ]; do\n"
                    << "  case \"$1\" in\n"
                    << "    -T) shift ;;\n"
-                   << "    -o) shift 2 ;;\n"
+                   << "    -o|-F) shift 2 ;;\n"
                    << "    *) break ;;\n"
                    << "  esac\n"
                    << "done\n"
@@ -362,7 +362,7 @@ int runSelfTest(bool keepFiles) {
                    << "while [ \"$#\" -gt 0 ]; do\n"
                    << "  case \"$1\" in\n"
                    << "    -q) shift ;;\n"
-                   << "    -o) shift 2 ;;\n"
+                   << "    -o|-F) shift 2 ;;\n"
                    << "    *) break ;;\n"
                    << "  esac\n"
                    << "done\n"
@@ -440,7 +440,7 @@ int runSelfTest(bool keepFiles) {
                 saved);
             check(useRealSsh ? "SSH key authentication" : "SSH mock connection", connected);
             if (!connected && !sshError.empty()) {
-                std::cout << "SSH connection detail: " << sshError << '\\n';
+                std::cout << "SSH connection detail: " << sshError << '\n';
             }
             check("SSH remote FFmpeg capability probe", remoteProbe.success);
 
@@ -498,7 +498,7 @@ int runSelfTest(bool keepFiles) {
                 const bool passwordConnected = passwordSaved &&
                     remoteService.sshService().testConnection(passwordServer.alias, sshError);
                 if (!passwordConnected && !sshError.empty()) {
-                    std::cout << "SSH password authentication detail: " << sshError << '\\n';
+                    std::cout << "SSH password authentication detail: " << sshError << '\n';
                 }
                 check("SSH password authentication", passwordConnected);
 
