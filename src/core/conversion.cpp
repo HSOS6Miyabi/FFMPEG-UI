@@ -266,6 +266,40 @@ std::string outputScaleFilter(OutputResolution resolution) {
         ")':force_original_aspect_ratio=decrease:force_divisible_by=2";
 }
 
+std::pair<int, int> outputResolutionBounds(OutputResolution resolution) {
+    switch (resolution) {
+    case OutputResolution::Original: return {0, 0};
+    case OutputResolution::UHD4K: return {3840, 2160};
+    case OutputResolution::QHD1440: return {2560, 1440};
+    case OutputResolution::FullHD1080: return {1920, 1080};
+    case OutputResolution::HD720: return {1280, 720};
+    case OutputResolution::SD480: return {854, 480};
+    }
+    return {0, 0};
+}
+
+std::optional<int> integerFieldValue(const std::string& text, std::string_view field) {
+    const std::size_t position = text.find(field);
+    if (position == std::string::npos) return std::nullopt;
+    const std::size_t start = position + field.size();
+    const std::size_t end = text.find_first_not_of("0123456789", start);
+    try {
+        return std::stoi(text.substr(start, end == std::string::npos
+            ? std::string::npos : end - start));
+    } catch (const std::exception&) {
+        return std::nullopt;
+    }
+}
+
+bool outputResolutionMatches(const std::string& format, OutputResolution resolution) {
+    const auto [maximumWidth, maximumHeight] = outputResolutionBounds(resolution);
+    if (maximumWidth == 0 || maximumHeight == 0) return true;
+    const auto width = integerFieldValue(format, "width=");
+    const auto height = integerFieldValue(format, "height=");
+    return width && height && *width > 0 && *height > 0 &&
+        *width <= maximumWidth && *height <= maximumHeight;
+}
+
 std::string audioEncoderForExtension(const std::string& extension,
                                     const EncoderCapabilities& capabilities) {
     if (extension == ".webm" || extension == ".ogv") {
