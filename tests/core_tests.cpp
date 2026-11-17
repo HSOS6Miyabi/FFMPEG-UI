@@ -486,6 +486,62 @@ int main() {
             fs::remove_all(testDirectory, cleanupError);
         }
 
+        {
+            namespace fs = std::filesystem;
+            const fs::path testDirectory = fs::temp_directory_path() /
+                ("video-compression-workbench-queue-" +
+                 std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()));
+            std::error_code cleanupError;
+            fs::remove_all(testDirectory, cleanupError);
+            fs::create_directories(testDirectory);
+            const fs::path inputFile = testDirectory / "resume-after-restart.mp4";
+            {
+                std::ofstream output(inputFile, std::ios::binary);
+                output << "queue recovery fixture";
+            }
+            const auto previousConfigDirectory =
+                environmentVariable("FFMPEG_STUDIO_CONFIG_DIR");
+#ifdef _WIN32
+            _putenv_s("FFMPEG_STUDIO_CONFIG_DIR", pathToUtf8(testDirectory / "config").c_str());
+#else
+            setenv("FFMPEG_STUDIO_CONFIG_DIR",
+                   pathToUtf8(testDirectory / "config").c_str(), 1);
+#endif
+            {
+                AppController firstRun;
+                auto settings = firstRun.snapshot().settings;
+                settings.audioMode = AudioMode::Copy;
+                settings.outputResolution = OutputResolution::HD720;
+                firstRun.updateSettings(settings);
+                firstRun.addInputs({pathToUtf8(inputFile)});
+                require(firstRun.snapshot().totalTasks == 1,
+                        "Adding an input must save the current task queue.");
+            }
+            {
+                AppController restoredRun;
+                const auto restored = restoredRun.snapshot();
+                require(restored.totalTasks == 1,
+                        "The pending task queue must be restored after restarting the application.");
+                require(restored.settings.audioMode == AudioMode::Copy &&
+                        restored.settings.outputResolution == OutputResolution::HD720,
+                        "Audio handling and output resolution settings must persist across restarts.");
+                restoredRun.clearAll();
+                require(restoredRun.snapshot().totalTasks == 0,
+                        "Clearing the task list must update the persisted queue.");
+            }
+#ifdef _WIN32
+            _putenv_s("FFMPEG_STUDIO_CONFIG_DIR",
+                      previousConfigDirectory ? previousConfigDirectory->c_str() : "");
+#else
+            if (previousConfigDirectory) {
+                setenv("FFMPEG_STUDIO_CONFIG_DIR", previousConfigDirectory->c_str(), 1);
+            } else {
+                unsetenv("FFMPEG_STUDIO_CONFIG_DIR");
+            }
+#endif
+            fs::remove_all(testDirectory, cleanupError);
+        }
+
 #ifndef _WIN32
         std::atomic_bool cancelProcess{false};
         std::thread cancelThread([&cancelProcess]() {
