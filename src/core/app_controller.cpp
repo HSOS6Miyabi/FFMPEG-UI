@@ -593,7 +593,11 @@ void AppController::loadQueue() {
         if (!line.empty() && line.back() == '\r') line.pop_back();
         if (!line.empty()) paths.push_back(line);
     }
-    if (!paths.empty()) addInputs(paths);
+    if (!paths.empty()) {
+        addInputs(paths);
+        std::lock_guard lock(mutex_);
+        saveQueueLocked();
+    }
 }
 
 void AppController::saveQueueLocked() const {
