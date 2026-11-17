@@ -42,7 +42,9 @@ ctest --preset linux-release
 Windows：
 
 ```powershell
-cmake --preset windows-release
+cmake --preset windows-release `
+  -DCMAKE_TOOLCHAIN_FILE="$env:VCPKG_INSTALLATION_ROOT/scripts/buildsystems/vcpkg.cmake" `
+  -DVCPKG_TARGET_TRIPLET=x64-windows-static
 cmake --build --preset windows-release --parallel
 ctest --preset windows-release
 .\build\windows-release\video-compression-workbench.exe --self-test
