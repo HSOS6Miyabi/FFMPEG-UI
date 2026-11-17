@@ -91,12 +91,17 @@ std::filesystem::path settingsFilePath() {
 #endif
 }
 
+std::filesystem::path queueFilePath() {
+    return settingsFilePath().parent_path() / "queue.ffq";
+}
+
 
 } // namespace
 
 AppController::AppController(FfmpegService service) : service_(std::move(service)) {
     settings_.crf = defaultCrf(settings_.codec);
     loadSettings();
+    loadQueue();
 }
 
 AppController::~AppController() { shutdown(); }
@@ -394,6 +399,10 @@ void AppController::updateSettings(const BatchSettings& settings) {
     settings_ = settings;
     settings_.crf = std::clamp(settings_.crf, 0, crfMaximum(settings_.codec));
     settings_.audioBitrateKbps = std::clamp(settings_.audioBitrateKbps, 64, 320);
+    settings_.audioMode = static_cast<AudioMode>(
+        std::clamp(static_cast<int>(settings_.audioMode), 0, 2));
+    settings_.outputResolution = static_cast<OutputResolution>(
+        std::clamp(static_cast<int>(settings_.outputResolution), 0, 5));
     settings_.maxParallelJobs = std::clamp(settings_.maxParallelJobs, 0, 128);
     refreshOutputPathsLocked();
     saveSettingsLocked();
@@ -473,6 +482,7 @@ void AppController::addInputs(const std::vector<std::string>& paths) {
         status_ = "没有新增任务";
         detail_ = "请添加视频、ZIP 压缩包或 PPTX 演示文稿。";
     }
+    if (added > 0) saveQueueLocked();
 }
 
 void AppController::removeTask(std::uint64_t id) {
@@ -481,6 +491,7 @@ void AppController::removeTask(std::uint64_t id) {
     tasks_.erase(std::remove_if(tasks_.begin(), tasks_.end(), [id](const auto& task) {
         return task.id == id;
     }), tasks_.end());
+    saveQueueLocked();
 }
 
 void AppController::clearCompleted() {
@@ -489,12 +500,14 @@ void AppController::clearCompleted() {
     tasks_.erase(std::remove_if(tasks_.begin(), tasks_.end(), [](const auto& task) {
         return task.state == TaskState::Completed || task.state == TaskState::Skipped;
     }), tasks_.end());
+    saveQueueLocked();
 }
 
 void AppController::clearAll() {
     std::lock_guard lock(mutex_);
     if (running_) return;
     tasks_.clear();
+    saveQueueLocked();
     status_ = "就绪";
     detail_ = "任务列表已清空。";
     error_.clear();
@@ -526,6 +539,12 @@ void AppController::loadSettings() {
                 settings_.crf = std::stoi(value);
             } else if (key == "audioBitrateKbps") {
                 settings_.audioBitrateKbps = std::stoi(value);
+            } else if (key == "audioMode") {
+                settings_.audioMode = static_cast<AudioMode>(
+                    std::clamp(std::stoi(value), 0, 2));
+            } else if (key == "outputResolution") {
+                settings_.outputResolution = static_cast<OutputResolution>(
+                    std::clamp(std::stoi(value), 0, 5));
             } else if (key == "maxParallelJobs") {
                 settings_.maxParallelJobs = std::stoi(value);
             } else if (key == "recursive") {
@@ -549,29 +568,40 @@ void AppController::loadSettings() {
     }
     settings_.crf = std::clamp(settings_.crf, 0, crfMaximum(settings_.codec));
     settings_.audioBitrateKbps = std::clamp(settings_.audioBitrateKbps, 64, 320);
+    settings_.audioMode = static_cast<AudioMode>(
+        std::clamp(static_cast<int>(settings_.audioMode), 0, 2));
+    settings_.outputResolution = static_cast<OutputResolution>(
+        std::clamp(static_cast<int>(settings_.outputResolution), 0, 5));
     settings_.maxParallelJobs = std::clamp(settings_.maxParallelJobs, 0, 128);
 }
 
-void AppController::saveSettingsLocked() const {
-    const auto path = settingsFilePath();
+void AppController::loadQueue() {
+    std::ifstream input(queueFilePath(), std::ios::binary);
+    if (!input) return;
+    std::vector<std::string> paths;
+    std::string line;
+    bool first = true;
+    while (std::getline(input, line)) {
+        if (first && line == "FFmpegStudioQueue/1") {
+            first = false;
+            continue;
+        }
+        first = false;
+        if (!line.empty() && line.back() == '\r') line.pop_back();
+        if (!line.empty()) paths.push_back(line);
+    }
+    if (!paths.empty()) addInputs(paths);
+}
+
+void AppController::saveQueueLocked() const {
+    const auto path = queueFilePath();
     std::error_code error;
     std::filesystem::create_directories(path.parent_path(), error);
     if (error) return;
     std::ofstream output(path, std::ios::binary | std::ios::trunc);
     if (!output) return;
-    output << "outputContainer=" << static_cast<int>(settings_.outputContainer) << '\n'
-           << "codec=" << static_cast<int>(settings_.codec) << '\n'
-           << "backend=" << static_cast<int>(settings_.backend) << '\n'
-           << "compression=" << static_cast<int>(settings_.compression) << '\n'
-           << "crf=" << settings_.crf << '\n'
-           << "audioBitrateKbps=" << settings_.audioBitrateKbps << '\n'
-           << "maxParallelJobs=" << settings_.maxParallelJobs << '\n'
-           << "recursive=" << (settings_.recursive ? 1 : 0) << '\n'
-           << "preserveDirectoryStructure=" << (settings_.preserveDirectoryStructure ? 1 : 0) << '\n'
-           << "skipAlreadyProcessed=" << (settings_.skipAlreadyProcessed ? 1 : 0) << '\n'
-           << "overwrite=" << (settings_.overwrite ? 1 : 0) << '\n'
-           << "outputDirectory=" << settings_.outputDirectory << '\n'
-           << "remoteHost=" << settings_.remoteHost << '\n';
+    output << "FFmpegStudioQueue/1\n";
+    for (const auto& task : tasks_) output << task.inputPath << '\n';
 }
 
 std::size_t AppController::importQueue(const std::string& path, std::string& error) {
@@ -612,6 +642,8 @@ std::string AppController::makeOutputPathLocked(const BatchTaskSnapshot& task) c
     encoding.compression = settings_.compression;
     encoding.crf = settings_.crf;
     encoding.audioBitrateKbps = settings_.audioBitrateKbps;
+    encoding.audioMode = settings_.audioMode;
+    encoding.outputResolution = settings_.outputResolution;
     const std::string suffix = outputSuffix(encoding);
     const std::filesystem::path input = pathFromUtf8(task.inputPath);
     std::filesystem::path directory = input.parent_path();
@@ -776,6 +808,8 @@ void AppController::runTask(std::size_t index, const ResourcePlan& plan, std::si
     settings.compression = batchSettings.compression;
     settings.crf = batchSettings.crf;
     settings.audioBitrateKbps = batchSettings.audioBitrateKbps;
+    settings.audioMode = batchSettings.audioMode;
+    settings.outputResolution = batchSettings.outputResolution;
     settings.threadsPerJob = static_cast<int>(plan.threadsPerJob);
     settings.overwrite = batchSettings.overwrite;
     settings.skipAlreadyProcessed = batchSettings.skipAlreadyProcessed;
