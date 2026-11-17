@@ -178,6 +178,14 @@ bool AppController::saveSshServer(const SshServer& server, const std::string& pa
 }
 
 bool AppController::removeSshServer(const std::string& alias, std::string& error) {
+    {
+        std::lock_guard lock(mutex_);
+        if (running_) {
+            error = "批量任务运行期间不能删除 SSH 服务器。";
+            return false;
+        }
+    }
+
     const auto localCapabilities = service_.probeCapabilities(true);
 
     std::lock_guard lock(mutex_);
@@ -246,6 +254,14 @@ bool AppController::testSshServer(const std::string& alias, std::string& error) 
 }
 
 bool AppController::selectRemoteServer(const std::string& alias, std::string& error) {
+    {
+        std::lock_guard lock(mutex_);
+        if (running_) {
+            error = "批量任务运行期间不能切换编码设备。";
+            return false;
+        }
+    }
+
     const auto remote = service_.probeRemote(alias, true);
     if (!remote.success) {
         error = remote.error;
@@ -294,6 +310,13 @@ bool AppController::selectRemoteServer(const std::string& alias, std::string& er
 }
 
 void AppController::selectLocalEncoder() {
+    {
+        std::lock_guard lock(mutex_);
+        if (running_) {
+            return;
+        }
+    }
+
     const auto localCapabilities = service_.probeCapabilities(true);
 
     std::lock_guard lock(mutex_);
