@@ -361,59 +361,59 @@ private:
         const Palette c = palette(dark_); const auto backends = availableBackends(snap.capabilities, settings_.codec);
         const auto l = makeLayout(width, height, scale(), static_cast<int>(backends.size()));
         HBRUSH bg = CreateSolidBrush(c.background); RECT full{0,0,width,height}; FillRect(dc,&full,bg); DeleteObject(bg);
-        HFONT title = font(25, FW_BOLD), normal = font(14), small = font(12), heading = font(16, FW_SEMIBOLD);
+        HFONT title = font(25, FW_BOLD), normal = font(14), smallFont = font(12), heading = font(16, FW_SEMIBOLD);
         drawText(dc, {s(30),s(22),s(420),s(38)}, L"FFmpeg Studio", c.text, title);
-        drawText(dc, {s(31),s(60),s(700),s(24)}, L"批量视频压缩 · ZIP / PPTX 媒体处理 · CPU 与硬件编码", c.muted, small);
-        drawButton(dc, l.theme, dark_ ? L"浅色外观" : L"深色外观", c, small);
+        drawText(dc, {s(31),s(60),s(700),s(24)}, L"批量视频压缩 · ZIP / PPTX 媒体处理 · CPU 与硬件编码", c.muted, smallFont);
+        drawButton(dc, l.theme, dark_ ? L"浅色外观" : L"深色外观", c, smallFont);
 
         drawButton(dc,l.addFiles,L"添加文件",c,normal,true); drawButton(dc,l.addFolder,L"添加文件夹",c,normal);
         drawButton(dc,l.addArchive,L"添加 ZIP / PPTX",c,normal);
-        drawButton(dc,l.importQueue,L"导入清单",c,small); drawButton(dc,l.exportQueue,L"导出清单",c,small);
-        drawButton(dc,l.removeSelected,L"移除选中",c,small); drawButton(dc,l.clearDone,L"清除已完成",c,small);
+        drawButton(dc,l.importQueue,L"导入清单",c,smallFont); drawButton(dc,l.exportQueue,L"导出清单",c,smallFont);
+        drawButton(dc,l.removeSelected,L"移除选中",c,smallFont); drawButton(dc,l.clearDone,L"清除已完成",c,smallFont);
 
         const int leftX = s(28), top = s(168), leftW = l.queue.width;
         drawCard(dc, {leftX, top, leftW, s(500)}, c);
         drawText(dc,{leftX+s(20),top+s(14),s(200),s(26)},L"编码设置",c.text,heading);
-        drawText(dc,{leftX+s(20),top+s(43),s(220),s(20)},L"输出文件夹",c.muted,small);
+        drawText(dc,{leftX+s(20),top+s(43),s(220),s(20)},L"输出文件夹",c.muted,smallFont);
         std::wstring output = settings_.outputDirectory.empty() ? L"默认：与每个源文件保存在同一文件夹" : wide(settings_.outputDirectory);
-        drawText(dc,l.outputField,output,c.text,small);
-        drawButton(dc,l.outputBrowse,L"选择目录",c,small);
-        drawText(dc,{leftX+s(20),top+s(98),s(150),s(20)},L"输出容器格式",c.muted,small);
+        drawText(dc,l.outputField,output,c.text,smallFont);
+        drawButton(dc,l.outputBrowse,L"选择目录",c,smallFont);
+        drawText(dc,{leftX+s(20),top+s(98),s(150),s(20)},L"输出容器格式",c.muted,smallFont);
         const std::array<std::wstring,2> containers{L"MP4",L"与源文件相同"};
-        for(int i=0;i<2;++i) drawButton(dc,l.container[i],containers[i],c,small,static_cast<int>(settings_.outputContainer)==i);
-        drawText(dc,{leftX+s(20),top+s(149),s(150),s(22)},L"视频编码格式",c.muted,small);
+        for(int i=0;i<2;++i) drawButton(dc,l.container[i],containers[i],c,smallFont,static_cast<int>(settings_.outputContainer)==i);
+        drawText(dc,{leftX+s(20),top+s(149),s(150),s(22)},L"视频编码格式",c.muted,smallFont);
         const std::array<std::wstring,3> codecs{L"H.264",L"H.265",L"AV1"};
         for (int i=0;i<3;++i) drawButton(dc,l.codec[i],codecs[i],c,normal,static_cast<int>(settings_.codec)==i);
-        drawText(dc,{leftX+s(20),top+s(197),s(150),s(20)},L"编码设备",c.muted,small);
+        drawText(dc,{leftX+s(20),top+s(197),s(150),s(20)},L"编码设备",c.muted,smallFont);
         const std::array<std::wstring,4> backendLabels{L"CPU",L"NVIDIA NVENC",L"Intel QSV",L"AMD AMF"};
         for (std::size_t i=0;i<backends.size();++i) {
             const int labelIndex = backends[i] == EncoderBackend::CPU ? 0 : backends[i] == EncoderBackend::NVENC ? 1 : backends[i] == EncoderBackend::QSV ? 2 : 3;
-            drawButton(dc,l.backend[i],backendLabels[labelIndex],c,small,settings_.backend==backends[i]);
+            drawButton(dc,l.backend[i],backendLabels[labelIndex],c,smallFont,settings_.backend==backends[i]);
         }
-        if (backends.empty()) drawText(dc,{leftX+s(20),top+s(162),leftW-s(40),s(34)},L"当前 FFmpeg 环境没有可用的视频编码器",c.red,small);
-        drawText(dc,{leftX+s(20),top+s(245),s(140),s(22)},L"CRF / 目标质量",c.muted,small);
+        if (backends.empty()) drawText(dc,{leftX+s(20),top+s(162),leftW-s(40),s(34)},L"当前 FFmpeg 环境没有可用的视频编码器",c.red,smallFont);
+        drawText(dc,{leftX+s(20),top+s(245),s(140),s(22)},L"CRF / 目标质量",c.muted,smallFont);
         drawProgress(dc,{l.crfTrack.x,l.crfTrack.y,l.crfTrack.width,l.crfTrack.height},
             static_cast<double>(settings_.crf)/crfMaximum(settings_.codec),c);
         const int knobX=l.crfTrack.x+static_cast<int>(std::lround(l.crfTrack.width*static_cast<double>(settings_.crf)/crfMaximum(settings_.codec)));
         fillRound(dc,{knobX-s(7),l.crfTrack.y-s(5),s(14),s(20)},c.accent,c.accent,7);
         drawButton(dc,l.crfValue,editingCrf_ ? (crfEditText_.empty() ? L"输入" : crfEditText_) : std::to_wstring(settings_.crf),c,normal,true);
-        drawText(dc,{leftX+s(20),top+s(296),s(200),s(20)},L"压缩级别",c.muted,small);
+        drawText(dc,{leftX+s(20),top+s(296),s(200),s(20)},L"压缩级别",c.muted,smallFont);
         const std::array<std::wstring,8> levels{L"极速",L"非常快",L"快速",L"均衡",L"慢速",L"较慢",L"很慢",L"极致压缩"};
-        for(int i=0;i<8;++i) drawButton(dc,l.compression[i],levels[i],c,small,static_cast<int>(settings_.compression)==i);
-        drawText(dc,{leftX+s(20),top+s(383),s(200),s(20)},L"音频码率",c.muted,small);
+        for(int i=0;i<8;++i) drawButton(dc,l.compression[i],levels[i],c,smallFont,static_cast<int>(settings_.compression)==i);
+        drawText(dc,{leftX+s(20),top+s(383),s(200),s(20)},L"音频码率",c.muted,smallFont);
         const std::array<int,6> rates{96,128,160,192,256,320};
-        for(int i=0;i<6;++i) drawButton(dc,l.audio[i],std::to_wstring(rates[i])+L" kbps",c,small,settings_.audioBitrateKbps==rates[i]);
-        drawButton(dc,l.parallel,settings_.maxParallelJobs==0?L"并行：自动":L"并行："+std::to_wstring(settings_.maxParallelJobs),c,small);
-        drawButton(dc,l.recursive,settings_.recursive?L"递归扫描✓":L"递归扫描",c,small,settings_.recursive);
-        drawButton(dc,l.skip,settings_.skipAlreadyProcessed?L"跳过重复✓":L"跳过重复",c,small,settings_.skipAlreadyProcessed);
-        drawButton(dc,l.preserve,settings_.preserveDirectoryStructure?L"保留目录✓":L"保留目录",c,small,settings_.preserveDirectoryStructure);
-        drawButton(dc,l.overwrite,settings_.overwrite?L"覆盖文件✓":L"保留文件",c,small,settings_.overwrite);
+        for(int i=0;i<6;++i) drawButton(dc,l.audio[i],std::to_wstring(rates[i])+L" kbps",c,smallFont,settings_.audioBitrateKbps==rates[i]);
+        drawButton(dc,l.parallel,settings_.maxParallelJobs==0?L"并行：自动":L"并行："+std::to_wstring(settings_.maxParallelJobs),c,smallFont);
+        drawButton(dc,l.recursive,settings_.recursive?L"递归扫描✓":L"递归扫描",c,smallFont,settings_.recursive);
+        drawButton(dc,l.skip,settings_.skipAlreadyProcessed?L"跳过重复✓":L"跳过重复",c,smallFont,settings_.skipAlreadyProcessed);
+        drawButton(dc,l.preserve,settings_.preserveDirectoryStructure?L"保留目录✓":L"保留目录",c,smallFont,settings_.preserveDirectoryStructure);
+        drawButton(dc,l.overwrite,settings_.overwrite?L"覆盖文件✓":L"保留文件",c,smallFont,settings_.overwrite);
 
         drawCard(dc,l.queue,c);
         drawText(dc,{l.queue.x+s(20),l.queue.y+s(14),s(280),s(26)},L"处理队列",c.text,heading);
         drawText(dc,{l.queue.x+l.queue.width-s(340),l.queue.y+s(16),s(320),s(22)},
             L"总计 "+std::to_wstring(snap.totalTasks)+L"  ·  运行 "+std::to_wstring(snap.runningTasks)+
-            L"  ·  完成 "+std::to_wstring(snap.completedTasks)+L"  ·  失败 "+std::to_wstring(snap.failedTasks),c.muted,small,DT_RIGHT|DT_VCENTER|DT_SINGLELINE);
+            L"  ·  完成 "+std::to_wstring(snap.completedTasks)+L"  ·  失败 "+std::to_wstring(snap.failedTasks),c.muted,smallFont,DT_RIGHT|DT_VCENTER|DT_SINGLELINE);
         auto rows=visibleRows(snap); const int rowH=s(68); const int listTop=l.queue.y+s(54); const int visible=std::max(1,(l.queue.height-s(68))/rowH);
         const int maxScroll=std::max(0,static_cast<int>(rows.size())-visible); scrollOffset_=std::clamp(scrollOffset_,0,maxScroll);
         if(rows.empty()) {
@@ -423,36 +423,36 @@ private:
             for(int i=0;i<visible && i+scrollOffset_<static_cast<int>(rows.size());++i) {
                 const auto& [task,item]=rows[static_cast<std::size_t>(i+scrollOffset_)];
                 const int y=listTop+i*rowH; const bool child=task.kind!=TaskKind::Video && item.name!=basename(task.inputPath);
-                if(child) drawText(dc,{l.queue.x+s(38),y+s(4),l.queue.width-s(58),s(20)},L"↳ "+wide(item.name),c.muted,small);
+                if(child) drawText(dc,{l.queue.x+s(38),y+s(4),l.queue.width-s(58),s(20)},L"↳ "+wide(item.name),c.muted,smallFont);
                 else drawText(dc,{l.queue.x+s(20),y+s(5),l.queue.width-s(40),s(22)},wide(item.name)+L"   ·   "+wide(taskKindName(task.kind)),c.text,normal);
                 const TaskState state=child?item.state:task.state; const double progress=child?item.progress:task.progress;
                 if (selectedTask_ == task.id)
                     fillRound(dc, {l.queue.x+s(10), y+s(2), l.queue.width-s(20), rowH-s(4)}, c.accentSoft, c.accentSoft, 7);
                 const std::wstring stateText=wide(taskStateName(state));
                 drawText(dc,{l.queue.x+l.queue.width-s(160),y+s(5),s(140),s(20)},stateText,
-                    state==TaskState::Failed?c.red:state==TaskState::Completed||state==TaskState::Skipped?c.green:c.muted,small,DT_RIGHT|DT_VCENTER|DT_SINGLELINE);
+                    state==TaskState::Failed?c.red:state==TaskState::Completed||state==TaskState::Skipped?c.green:c.muted,smallFont,DT_RIGHT|DT_VCENTER|DT_SINGLELINE);
                 drawProgress(dc,{l.queue.x+s(20),y+s(36),l.queue.width-s(180),s(7)},progress,c);
                 std::wstring detail=child?formatProgressLine(item.progressInfo,item.detail):
                     (task.kind==TaskKind::Video&&!task.items.empty()?formatProgressLine(task.items[0].progressInfo,task.detail):wide(task.detail));
                 const auto sizeLine = child ? formatTaskSize(item.inputSizeBytes,item.outputSizeBytes) :
                     formatTaskSize(task.inputSizeBytes,task.outputSizeBytes);
                 if (!sizeLine.empty() && (state==TaskState::Completed || state==TaskState::Skipped)) detail=sizeLine;
-                drawText(dc,{l.queue.x+l.queue.width-s(148),y+s(27),s(128),s(22)},detail,c.muted,small,DT_RIGHT|DT_VCENTER|DT_SINGLELINE);
+                drawText(dc,{l.queue.x+l.queue.width-s(148),y+s(27),s(128),s(22)},detail,c.muted,smallFont,DT_RIGHT|DT_VCENTER|DT_SINGLELINE);
                 HPEN pen=CreatePen(PS_SOLID,1,c.border); auto old=SelectObject(dc,pen); MoveToEx(dc,l.queue.x+s(18),y+rowH-s(2),nullptr); LineTo(dc,l.queue.x+l.queue.width-s(18),y+rowH-s(2)); SelectObject(dc,old); DeleteObject(pen);
             }
         }
         if(rows.size()>static_cast<std::size_t>(visible)) drawText(dc,{l.queue.x+l.queue.width-s(130),l.queue.y+l.queue.height-s(24),s(110),s(18)},
-            L"滚动查看其余任务",c.muted,small,DT_RIGHT|DT_VCENTER|DT_SINGLELINE);
+            L"滚动查看其余任务",c.muted,smallFont,DT_RIGHT|DT_VCENTER|DT_SINGLELINE);
 
         drawCard(dc,l.overallCard,c);
         drawText(dc,{l.overallCard.x+s(22),l.overallCard.y+s(18),l.overallCard.width-s(44),s(28)},L"批量处理进度",c.text,heading);
         drawText(dc,{l.overallCard.x+s(22),l.overallCard.y+s(54),l.overallCard.width-s(44),s(24)},wide(snap.status),c.text,normal);
-        drawText(dc,{l.overallCard.x+s(22),l.overallCard.y+s(82),l.overallCard.width-s(44),s(22)},wide(snap.detail),c.muted,small);
+        drawText(dc,{l.overallCard.x+s(22),l.overallCard.y+s(82),l.overallCard.width-s(44),s(22)},wide(snap.detail),c.muted,smallFont);
         drawProgress(dc,l.overallTrack,snap.overallProgress,c);
         wchar_t percent[24]{}; swprintf_s(percent,L"%.1f%%",snap.overallProgress*100.0);
         drawText(dc,{l.overallCard.x+s(22),l.overallCard.y+s(144),s(100),s(26)},percent,c.accent,heading);
         drawText(dc,{l.overallCard.x+s(130),l.overallCard.y+s(145),l.overallCard.width-s(152),s(24)},
-            L"完成 "+std::to_wstring(snap.completedTasks+snap.skippedTasks)+L" / "+std::to_wstring(snap.totalTasks),c.muted,small);
+            L"完成 "+std::to_wstring(snap.completedTasks+snap.skippedTasks)+L" / "+std::to_wstring(snap.totalTasks),c.muted,smallFont);
         if (!snap.running) {
             drawButton(dc,l.start,L"开始批量处理",c,normal,true,
                 snap.tasks.empty() || !snap.capabilities.supports(settings_.codec,settings_.backend));
@@ -469,12 +469,12 @@ private:
         drawText(dc,{info.x+s(22),info.y+s(88),info.width-s(44),s(22)},L"编码器  "+wide(backendName(settings_.backend)),c.text,normal);
         drawText(dc,{info.x+s(22),info.y+s(118),info.width-s(44),s(22)},L"CRF  "+std::to_wstring(settings_.crf)+L"  ·  "+wide(compressionName(settings_.compression)),c.text,normal);
         drawText(dc,{info.x+s(22),info.y+s(148),info.width-s(44),s(22)},L"音频码率  "+std::to_wstring(settings_.audioBitrateKbps)+L" kbps（按容器选择编码）",c.text,normal);
-        drawText(dc,{info.x+s(22),info.y+s(190),info.width-s(44),s(44)},wide(snap.resourcePlan.explanation),c.muted,small,DT_LEFT|DT_TOP|DT_WORDBREAK);
+        drawText(dc,{info.x+s(22),info.y+s(190),info.width-s(44),s(44)},wide(snap.resourcePlan.explanation),c.muted,smallFont,DT_LEFT|DT_TOP|DT_WORDBREAK);
         drawText(dc,{info.x+s(22),info.y+s(248),info.width-s(44),s(70)},
-            L"支持的视频：H.264、H.265、AV1。\nZIP 与 PPTX 会保留其他文件并更新视频引用。\n音频码率可独立设置，并按输出容器选择兼容的音频编码。",c.muted,small,DT_LEFT|DT_TOP|DT_WORDBREAK);
-        if(!snap.error.empty()) drawText(dc,{info.x+s(22),info.y+info.height-s(74),info.width-s(44),s(58)},wide(snap.error),c.red,small,DT_LEFT|DT_TOP|DT_WORDBREAK);
+            L"支持的视频：H.264、H.265、AV1。\nZIP 与 PPTX 会保留其他文件并更新视频引用。\n音频码率可独立设置，并按输出容器选择兼容的音频编码。",c.muted,smallFont,DT_LEFT|DT_TOP|DT_WORDBREAK);
+        if(!snap.error.empty()) drawText(dc,{info.x+s(22),info.y+info.height-s(74),info.width-s(44),s(58)},wide(snap.error),c.red,smallFont,DT_LEFT|DT_TOP|DT_WORDBREAK);
 
-        DeleteObject(title); DeleteObject(normal); DeleteObject(small); DeleteObject(heading);
+        DeleteObject(title); DeleteObject(normal); DeleteObject(smallFont); DeleteObject(heading);
         BitBlt(target,0,0,width,height,dc,0,0,SRCCOPY); SelectObject(dc,oldBitmap); DeleteObject(bitmap); DeleteDC(dc); ReleaseDC(window_,target);
     }
     void handleClick(int x,int y) {
