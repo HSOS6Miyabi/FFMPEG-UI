@@ -544,10 +544,36 @@ int runSelfTest(bool keepFiles) {
         fs::copy_file(source, pptxVideo, fs::copy_options::overwrite_existing);
         const fs::path pptxInput = work / "presentation.pptx";
         const fs::path pptxOutput = work / "presentation_compressed.pptx";
-        const fs::path types = work / "types.xml", presentation = work / "presentation.xml", rels = work / "slide1.xml.rels";
-        { std::ofstream f(types); f << "<?xml version=\"1.0\"?><Types xmlns=\"http://schemas.openxmlformats.org/package/2006/content-types\"><Default Extension=\"xml\" ContentType=\"application/xml\"/></Types>"; }
-        { std::ofstream f(presentation); f << "<?xml version=\"1.0\"?><p:presentation xmlns:p=\"http://schemas.openxmlformats.org/presentationml/2006/main\"/>"; }
-        { std::ofstream f(rels); f << "<?xml version=\"1.0\"?><Relationships><Relationship Id=\"rId1\" Type=\"video\" Target=\"../media/clip.mov\"/><Relationship Id=\"rId2\" Type=\"video\" Target=\"../media/clip2.mov\"/></Relationships>"; }
+        const fs::path types = work / "types.xml";
+        const fs::path presentation = work / "presentation.xml";
+        const fs::path relationships = work / "slide1.xml.rels";
+
+        {
+            std::ofstream output(types);
+            output
+                << "<?xml version=\"1.0\"?>"
+                << "<Types xmlns=\"http://schemas.openxmlformats.org/package/2006/content-types\">"
+                << "<Default Extension=\"xml\" ContentType=\"application/xml\"/>"
+                << "</Types>";
+        }
+        {
+            std::ofstream output(presentation);
+            output
+                << "<?xml version=\"1.0\"?>"
+                << "<p:presentation "
+                << "xmlns:p=\"http://schemas.openxmlformats.org/presentationml/2006/main\"/>";
+        }
+        {
+            std::ofstream output(relationships);
+            output
+                << "<?xml version=\"1.0\"?>"
+                << "<Relationships>"
+                << "<Relationship Id=\"rId1\" Type=\"video\" "
+                << "Target=\"../media/clip.mov\"/>"
+                << "<Relationship Id=\"rId2\" Type=\"video\" "
+                << "Target=\"../media/clip2.mov\"/>"
+                << "</Relationships>";
+        }
         check("create PPTX test fixture", createZip(pptxInput, {
             {"[Content_Types].xml", types}, {"ppt/presentation.xml", presentation},
             {"ppt/slides/_rels/slide1.xml.rels", rels}, {"ppt/media/clip.mov", pptxVideo},

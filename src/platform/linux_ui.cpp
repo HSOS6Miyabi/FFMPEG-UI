@@ -1886,7 +1886,30 @@ private:
 
         return false;
     }
-    AppController& controller_;Display* display_{};int screen_{};Window window_{};double scale_{1.0};int width_{1500},height_{1020};std::unique_ptr<XftCanvas> canvas_;BatchSettings settings_;bool dark_{false},draggingCrf_{false},editingCrf_{false};std::string crfEditText_;int scrollOffset_{0};std::uint64_t selectedTask_{0};Atom wmDelete_{},xdndEnter_{},xdndPosition_{},xdndStatus_{},xdndDrop_{},xdndFinished_{},xdndSelection_{},uriList_{};Window dragSource_{};
+    AppController& controller_;
+    Display* display_{};
+    int screen_{};
+    Window window_{};
+    double scale_{1.0};
+    int width_{1500};
+    int height_{1020};
+    std::unique_ptr<XftCanvas> canvas_;
+    BatchSettings settings_;
+    bool dark_{false};
+    bool draggingCrf_{false};
+    bool editingCrf_{false};
+    std::string crfEditText_;
+    int scrollOffset_{0};
+    std::uint64_t selectedTask_{0};
+    Atom wmDelete_{};
+    Atom xdndEnter_{};
+    Atom xdndPosition_{};
+    Atom xdndStatus_{};
+    Atom xdndDrop_{};
+    Atom xdndFinished_{};
+    Atom xdndSelection_{};
+    Atom uriList_{};
+    Window dragSource_{};
 };
 
 } // namespace

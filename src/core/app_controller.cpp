@@ -380,20 +380,42 @@ void AppController::loadSettings() {
         const std::string key = line.substr(0, separator);
         const std::string value = line.substr(separator + 1);
         try {
-            if (key == "outputContainer") settings_.outputContainer = static_cast<OutputContainer>(std::clamp(std::stoi(value), 0, 1));
-            else if (key == "codec") settings_.codec = static_cast<VideoCodec>(std::clamp(std::stoi(value), 0, 2));
-            else if (key == "backend") settings_.backend = static_cast<EncoderBackend>(std::clamp(std::stoi(value), 0, 3));
-            else if (key == "compression") settings_.compression = static_cast<CompressionLevel>(std::clamp(std::stoi(value), 0, 7));
-            else if (key == "crf") settings_.crf = std::stoi(value);
-            else if (key == "audioBitrateKbps") settings_.audioBitrateKbps = std::stoi(value);
-            else if (key == "maxParallelJobs") settings_.maxParallelJobs = std::stoi(value);
-            else if (key == "recursive") settings_.recursive = parseBool(value, settings_.recursive);
-            else if (key == "preserveDirectoryStructure") settings_.preserveDirectoryStructure = parseBool(value, settings_.preserveDirectoryStructure);
-            else if (key == "skipAlreadyProcessed") settings_.skipAlreadyProcessed = parseBool(value, settings_.skipAlreadyProcessed);
-            else if (key == "overwrite") settings_.overwrite = parseBool(value, settings_.overwrite);
-            else if (key == "outputDirectory") settings_.outputDirectory = value;
-            else if (key == "remoteHost") settings_.remoteHost = value;
-        } catch (...) {}
+            if (key == "outputContainer") {
+                settings_.outputContainer = static_cast<OutputContainer>(
+                    std::clamp(std::stoi(value), 0, 1));
+            } else if (key == "codec") {
+                settings_.codec = static_cast<VideoCodec>(
+                    std::clamp(std::stoi(value), 0, 2));
+            } else if (key == "backend") {
+                settings_.backend = static_cast<EncoderBackend>(
+                    std::clamp(std::stoi(value), 0, 3));
+            } else if (key == "compression") {
+                settings_.compression = static_cast<CompressionLevel>(
+                    std::clamp(std::stoi(value), 0, 7));
+            } else if (key == "crf") {
+                settings_.crf = std::stoi(value);
+            } else if (key == "audioBitrateKbps") {
+                settings_.audioBitrateKbps = std::stoi(value);
+            } else if (key == "maxParallelJobs") {
+                settings_.maxParallelJobs = std::stoi(value);
+            } else if (key == "recursive") {
+                settings_.recursive = parseBool(value, settings_.recursive);
+            } else if (key == "preserveDirectoryStructure") {
+                settings_.preserveDirectoryStructure =
+                    parseBool(value, settings_.preserveDirectoryStructure);
+            } else if (key == "skipAlreadyProcessed") {
+                settings_.skipAlreadyProcessed =
+                    parseBool(value, settings_.skipAlreadyProcessed);
+            } else if (key == "overwrite") {
+                settings_.overwrite = parseBool(value, settings_.overwrite);
+            } else if (key == "outputDirectory") {
+                settings_.outputDirectory = value;
+            } else if (key == "remoteHost") {
+                settings_.remoteHost = value;
+            }
+        } catch (const std::exception&) {
+            // Invalid persisted values are ignored; the in-memory defaults remain active.
+        }
     }
     settings_.crf = std::clamp(settings_.crf, 0, crfMaximum(settings_.codec));
     settings_.audioBitrateKbps = std::clamp(settings_.audioBitrateKbps, 64, 320);

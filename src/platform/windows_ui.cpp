@@ -743,9 +743,18 @@ private:
         drawText(
             dc, {info.x + s(22), info.y + s(178), info.width - s(44), s(22)},
             computeTarget, c.text, normal);
-        drawText(dc,{info.x+s(22),info.y+s(212),info.width-s(44),s(44)},wide(snap.resourcePlan.explanation),c.muted,smallFont,DT_LEFT|DT_TOP|DT_WORDBREAK);
-        drawText(dc,{info.x+s(22),info.y+s(270),info.width-s(44),s(70)},
-            L"支持的视频：H.264、H.265、AV1。\nZIP 与 PPTX 会保留其他文件并更新视频引用。\n音频码率可独立设置，并按输出容器选择兼容的音频编码。",c.muted,smallFont,DT_LEFT|DT_TOP|DT_WORDBREAK);
+        drawText(
+            dc,
+            {info.x + s(22), info.y + s(212), info.width - s(44), s(44)},
+            wide(snap.resourcePlan.explanation), c.muted, smallFont,
+            DT_LEFT | DT_TOP | DT_WORDBREAK);
+        drawText(
+            dc,
+            {info.x + s(22), info.y + s(270), info.width - s(44), s(70)},
+            L"支持的视频：H.264、H.265、AV1。\n"
+            L"ZIP 与 PPTX 会保留其他文件并更新视频引用。\n"
+            L"音频码率可独立设置，并按输出容器选择兼容的音频编码。",
+            c.muted, smallFont, DT_LEFT | DT_TOP | DT_WORDBREAK);
         if (!snap.error.empty()) {
             drawText(
                 dc,
