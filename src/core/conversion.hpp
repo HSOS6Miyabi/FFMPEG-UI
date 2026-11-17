@@ -4,6 +4,8 @@
 #include <cstdint>
 #include <functional>
 #include <optional>
+#include <memory>
+#include "ssh.hpp"
 #include <string>
 #include <vector>
 
@@ -20,6 +22,8 @@ enum class TaskState { Pending, Running, Completed, Skipped, Failed, Cancelled }
 struct ConversionSettings {
     std::string inputPath;
     std::string outputPath;
+    std::string remoteHost;
+    std::string markerSourcePath;
     OutputContainer outputContainer{OutputContainer::MP4};
     VideoCodec codec{VideoCodec::H264};
     EncoderBackend backend{EncoderBackend::CPU};
@@ -44,6 +48,7 @@ struct BatchSettings {
     bool skipAlreadyProcessed{true};
     bool overwrite{false};
     std::string outputDirectory;
+    std::string remoteHost;
 };
 
 struct EncoderCapabilities {
@@ -68,6 +73,9 @@ struct EncoderCapabilities {
     bool supports(VideoCodec codec, EncoderBackend backend) const;
     std::string cpuAv1Encoder() const;
 };
+
+struct RemoteResources { unsigned int logicalCores{0}; std::uint64_t availableMemoryBytes{0}; std::string operatingSystem; };
+struct RemoteProbeResult { bool success{false}; EncoderCapabilities capabilities; RemoteResources resources; std::string error; };
 
 struct ConversionProgress {
     double fraction{0.0};
@@ -132,6 +140,9 @@ public:
                            std::string ffprobePath = "ffprobe");
 
     EncoderCapabilities probeCapabilities(bool testHardware = true) const;
+    RemoteProbeResult probeRemote(const std::string& alias, bool testHardware = true) const;
+    SshService& sshService();
+    const SshService& sshService() const;
     std::optional<double> probeDuration(const std::string& inputPath) const;
     bool isAlreadyProcessed(const std::string& inputPath,
                             const ConversionSettings& settings) const;
@@ -147,6 +158,9 @@ public:
     const std::string& ffprobePath() const { return ffprobePath_; }
 
 private:
+    ConversionResult convertRemote(const ConversionSettings& settings, const EncoderCapabilities& capabilities,
+                                   const ProgressCallback& onProgress, const std::atomic_bool* cancelRequested,
+                                   const std::atomic_bool* pauseRequested) const;
     bool probeHardwareEncoder(const std::string& encoder) const;
     bool verifyOutput(const std::string& path, VideoCodec codec,
                       const std::string& expectedMarker,
@@ -154,6 +168,7 @@ private:
 
     std::string ffmpegPath_;
     std::string ffprobePath_;
+    std::shared_ptr<SshService> sshService_;
 };
 
 } // namespace ffmpegui
