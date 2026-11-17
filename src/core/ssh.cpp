@@ -806,6 +806,11 @@ std::vector<std::string> SshService::sshArguments(const std::string& alias,
         "-o", passwordAuthentication ? "BatchMode=no" : "BatchMode=yes"
     };
 
+    const auto configOverride = environmentVariable("FFMPEG_STUDIO_SSH_CONFIG");
+    if (configOverride && !configOverride->empty()) {
+        arguments.insert(arguments.end(), {"-F", *configOverride});
+    }
+
     if (passwordAuthentication) {
         arguments.insert(arguments.end(), {
             "-o", "PubkeyAuthentication=no",
@@ -836,6 +841,11 @@ std::vector<std::string> SshService::scpArguments(const std::string& alias,
         "-o", "StrictHostKeyChecking=accept-new",
         "-o", passwordAuthentication ? "BatchMode=no" : "BatchMode=yes"
     };
+
+    const auto configOverride = environmentVariable("FFMPEG_STUDIO_SSH_CONFIG");
+    if (configOverride && !configOverride->empty()) {
+        arguments.insert(arguments.end(), {"-F", *configOverride});
+    }
 
     if (passwordAuthentication) {
         arguments.insert(arguments.end(), {
