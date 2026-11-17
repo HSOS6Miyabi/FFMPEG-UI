@@ -43,7 +43,7 @@
 - 每个任务保存输入路径、输出路径、相对目录、状态、进度、输入大小、输出大小和错误信息。
 - 手动任务清单使用 UTF-8 的 `.ffq` 文件，每行记录一个输入路径。导入时复用同一套路径去重和文件夹扫描逻辑。
 - 程序会在用户配置目录中自动保存待处理任务。重新启动后，程序会恢复这些输入路径，并重新建立等待处理的任务；已经生成的输出会通过媒体参数标记自动跳过。
-- 用户的编码参数、输出目录和任务列表保存在同一个配置目录中。Windows 使用 `%APPDATA%\\FFmpegStudio\\settings.ini` 和 `queue.ffq`；Linux 使用 `$XDG_CONFIG_HOME/ffmpeg-studio/settings.ini`、`queue.ffq`，或 `$HOME/.config/ffmpeg-studio/settings.ini`、`queue.ffq`。程序继续使用原有配置目录，以保留现有用户设置。
+- 用户的编码参数、输出目录和任务列表保存在同一个配置目录中。Windows 使用 `%APPDATA%\FFmpegStudio\settings.ini` 和 `queue.ffq`；Linux 使用 `$XDG_CONFIG_HOME/ffmpeg-studio/settings.ini`、`queue.ffq`，或 `$HOME/.config/ffmpeg-studio/settings.ini`、`queue.ffq`。程序继续使用原有配置目录，以保留现有用户设置。
 
 ## 资源调度
 
