@@ -722,138 +722,406 @@ private:
     }
 
     void manageSshServers() {
-        const int dialogWidth=s(980),dialogHeight=s(700);
+        const int dialogWidth = s(980);
+        const int dialogHeight = s(700);
+
         XWindowAttributes parentAttributes{};
         XGetWindowAttributes(display_, window_, &parentAttributes);
         const int dialogX = std::max(0, (parentAttributes.width - dialogWidth) / 2);
         const int dialogY = std::max(0, (parentAttributes.height - dialogHeight) / 2);
-        const Window dialog = XCreateSimpleWindow(display_, window_, dialogX, dialogY,
-            dialogWidth, dialogHeight, 1, BlackPixel(display_, screen_), WhitePixel(display_, screen_));
-        XStoreName(display_,dialog,"SSH 服务器管理");XSetTransientForHint(display_,dialog,window_);
-        XSizeHints hints{};hints.flags=PMinSize;hints.min_width=dialogWidth;hints.min_height=dialogHeight;
-        XSetWMNormalHints(display_,dialog,&hints);
-        const Atom deleteMessage=XInternAtom(display_,"WM_DELETE_WINDOW",False);
-        XSetWMProtocols(display_,dialog,const_cast<Atom*>(&deleteMessage),1);
-        XSelectInput(display_,dialog,ExposureMask|StructureNotifyMask|ButtonPressMask|KeyPressMask);
-        XMapRaised(display_,dialog);
-        auto canvas=std::make_unique<XftCanvas>(display_,dialog,scale_);
-        const auto colors=palette(dark_);
-        const auto ss=[&](int v){return s(v);};
-        const Rect listCard{ss(20),ss(70),ss(260),ss(500)};
-        const std::array<Rect,7> fields{{
-            {ss(320),ss(92),ss(280),ss(36)},{ss(630),ss(92),ss(320),ss(36)},
-            {ss(320),ss(172),ss(280),ss(36)},{ss(630),ss(172),ss(130),ss(36)},
-            {ss(320),ss(252),ss(630),ss(36)},{ss(320),ss(332),ss(630),ss(36)},
-            {ss(320),ss(412),ss(630),ss(36)}}};
-        const Rect authButton{ss(320),ss(492),ss(250),ss(36)};
-        std::array<std::string,7> values{};
-        int focused=0;bool passwordAuth=false;int selected=-1;
-        std::string status="服务器列表来自本机 SSH 配置文件。";
-        std::vector<SshServer> servers=controller_.sshServers();
-        const auto clearFields=[&](){values={};values[3]="22";passwordAuth=false;focused=0;selected=-1;};
-        const auto populate=[&](int index){
-            if(index<0||index>=static_cast<int>(servers.size()))return;
-            selected=index;const auto& v=servers[static_cast<std::size_t>(index)];
-            values[0]=v.alias;values[1]=v.hostName;values[2]=v.user;values[3]=std::to_string(v.port);
-            values[4]=v.identityFile;values[5]=v.proxyJump;values[6].clear();
-            passwordAuth=v.authMethod==SshAuthMethod::Password;focused=-1;
+
+        const Window dialog = XCreateSimpleWindow(
+            display_, window_, dialogX, dialogY,
+            static_cast<unsigned int>(dialogWidth),
+            static_cast<unsigned int>(dialogHeight),
+            1, BlackPixel(display_, screen_), WhitePixel(display_, screen_));
+        XStoreName(display_, dialog, "SSH 服务器管理");
+        XSetTransientForHint(display_, dialog, window_);
+
+        XSizeHints sizeHints{};
+        sizeHints.flags = PMinSize;
+        sizeHints.min_width = dialogWidth;
+        sizeHints.min_height = dialogHeight;
+        XSetWMNormalHints(display_, dialog, &sizeHints);
+
+        const Atom deleteMessage = XInternAtom(display_, "WM_DELETE_WINDOW", False);
+        XSetWMProtocols(display_, dialog, const_cast<Atom*>(&deleteMessage), 1);
+        XSelectInput(
+            display_, dialog,
+            ExposureMask | StructureNotifyMask | ButtonPressMask | KeyPressMask);
+        XMapRaised(display_, dialog);
+
+        auto canvas = std::make_unique<XftCanvas>(display_, dialog, scale_);
+        const Palette colors = palette(dark_);
+        const auto scaled = [&](int value) {
+            return s(value);
         };
-        const auto makeServer=[&](){
-            SshServer v;v.alias=trim(values[0]);v.hostName=trim(values[1]);v.user=trim(values[2]);
-            try{const auto p=std::stoul(values[3].empty()?"22":values[3]);v.port=p<=65535?static_cast<unsigned int>(p):0;}catch(...){v.port=0;}
-            v.identityFile=trim(values[4]);v.proxyJump=trim(values[5]);
-            v.authMethod=passwordAuth?SshAuthMethod::Password:SshAuthMethod::PublicKey;return v;
+
+        const Rect listCard{
+            scaled(20), scaled(70), scaled(260), scaled(500)
         };
-        const auto refresh=[&](){servers=controller_.sshServers();};
-        const auto save=[&](){
-            const auto v=makeServer();std::string error;
-            if(!controller_.saveSshServer(v,values[6],error)){status=error;return false;}
-            refresh();const auto it=std::find_if(servers.begin(),servers.end(),[&](const auto& item){return item.alias==v.alias;});
-            if(it!=servers.end())populate(static_cast<int>(std::distance(servers.begin(),it)));
-            status="SSH 配置已保存，原有的其他 SSH 选项已保留。";return true;
+        const std::array<Rect, 7> fields{{
+            {scaled(320), scaled(92), scaled(280), scaled(36)},
+            {scaled(630), scaled(92), scaled(320), scaled(36)},
+            {scaled(320), scaled(172), scaled(280), scaled(36)},
+            {scaled(630), scaled(172), scaled(130), scaled(36)},
+            {scaled(320), scaled(252), scaled(630), scaled(36)},
+            {scaled(320), scaled(332), scaled(630), scaled(36)},
+            {scaled(320), scaled(412), scaled(630), scaled(36)}
+        }};
+        const Rect authenticationButton{
+            scaled(320), scaled(492), scaled(250), scaled(36)
         };
-        const auto drawDialog=[&](){
-            canvas->fill({0,0,dialogWidth,dialogHeight},colors.background);
-            canvas->text(ss(24),ss(36),"SSH 服务器",colors.text,2);
-            canvas->text(ss(24),ss(57),"选择现有配置，或添加服务器。密码只保存在安全凭据存储中。",colors.muted,0);
-            canvas->card(listCard,colors);canvas->text(ss(38),ss(96),"本机 SSH 配置",colors.text,1);
-            if(servers.empty())canvas->text(ss(38),ss(145),"没有可用的服务器配置。",colors.muted,0);
-            for(std::size_t i=0;i<servers.size();++i){
-                const int y=ss(112)+static_cast<int>(i)*ss(54);if(y+ss(48)>listCard.y+listCard.height-ss(8))break;
-                const Rect row{ss(30),y,ss(240),ss(46)};
-                if(static_cast<int>(i)==selected)canvas->rounded(row,colors.accentSoft,7);
-                canvas->text(row.x+ss(10),row.y+ss(19),servers[i].alias,static_cast<int>(i)==selected?colors.accent:colors.text,0);
-                canvas->text(row.x+ss(10),row.y+ss(37),servers[i].user+"@"+servers[i].hostName,colors.muted,0);
+
+        std::array<std::string, 7> values{};
+        int focusedField = 0;
+        bool passwordAuthentication = false;
+        int selectedServer = -1;
+        std::string status = "服务器列表来自本机 SSH 配置文件。";
+        std::vector<SshServer> servers = controller_.sshServers();
+
+        const auto clearFields = [&]() {
+            values = {};
+            values[3] = "22";
+            passwordAuthentication = false;
+            focusedField = 0;
+            selectedServer = -1;
+        };
+
+        const auto populateFields = [&](int index) {
+            if (index < 0 || index >= static_cast<int>(servers.size())) {
+                return;
             }
-            const std::array<std::string,7> labels{"服务器别名","主机名或 IP 地址","用户名","SSH 端口","私钥文件（可留空以使用 SSH Agent）","跳转服务器（可选）","密码（仅密码认证时填写）"};
-            for (int i = 0; i < 6; ++i) {
-                const auto& field = fields[static_cast<std::size_t>(i)];
-                canvas->text(field.x, field.y - ss(10),
-                             labels[static_cast<std::size_t>(i)], colors.muted, 0);
-                canvas->input(field, values[static_cast<std::size_t>(i)],
-                              colors, focused == i);
-            }
-            const auto& passwordField = fields[6];
-            canvas->text(passwordField.x, passwordField.y - ss(10),
-                         labels[6], colors.muted, 0);
-            if (passwordAuth) {
-                canvas->input(passwordField, values[6], colors, focused == 6, true);
-            } else {
-                canvas->text(passwordField.x + ss(10), passwordField.y + ss(23),
-                             "切换到密码认证后填写", colors.muted, 0);
-            }
-            canvas->text(authButton.x,authButton.y-ss(10),"认证方式",colors.muted,0);
-            canvas->button(authButton,passwordAuth?"密码认证":"SSH 私钥 / Agent 认证",colors,passwordAuth);
-            const int y=ss(590),bw=ss(112),gap=ss(8);
-            const std::array<std::string,7> actions{"新增","保存并同步","测试连接","使用此服务器","删除","本机编码","关闭"};
-            for(int i=0;i<7;++i)canvas->button({ss(20)+i*(bw+gap),y,bw,ss(42)},actions[static_cast<std::size_t>(i)],colors,i==3);
-            canvas->text(ss(24),ss(670),status,colors.muted,0);canvas->flush();
+
+            selectedServer = index;
+            const auto& server = servers[static_cast<std::size_t>(index)];
+            values[0] = server.alias;
+            values[1] = server.hostName;
+            values[2] = server.user;
+            values[3] = std::to_string(server.port);
+            values[4] = server.identityFile;
+            values[5] = server.proxyJump;
+            values[6].clear();
+
+            passwordAuthentication = server.authMethod == SshAuthMethod::Password;
+            focusedField = -1;
         };
-        clearFields();drawDialog();bool done=false;
-        while(!done){
-            if(!XPending(display_)){pollfd fd{ConnectionNumber(display_),POLLIN,0};poll(&fd,1,120);if(!(fd.revents&POLLIN))continue;}
-            XEvent event{};XNextEvent(display_,&event);
-            if(event.type==Expose){drawDialog();continue;}
-            if(event.type==ClientMessage&&static_cast<Atom>(event.xclient.data.l[0])==deleteMessage){done=true;continue;}
-            if(event.type==ButtonPress){
-                const int x=event.xbutton.x,y=event.xbutton.y;
-                if(contains(listCard,x,y)){const int index=(y-ss(112))/ss(54);if(index>=0&&index<static_cast<int>(servers.size()))populate(index);}
-                else{
-                    for(int i=0;i<7;++i)if(contains(fields[static_cast<std::size_t>(i)],x,y))focused=i;
-                    if(contains(authButton,x,y)){passwordAuth=!passwordAuth;values[6].clear();focused=passwordAuth?6:-1;}
-                    const int by=ss(590),bw=ss(112),gap=ss(8);int action=-1;
-                    for(int i=0;i<7;++i)if(contains({ss(20)+i*(bw+gap),by,bw,ss(42)},x,y))action=i;
-                    if(action==0){clearFields();status="填写服务器信息，然后保存。";}
-                    else if(action==1){save();}
-                    else if(action==2){if(save()){std::string error;if(controller_.testSshServer(values[0],error))status=error;else status=error;}}
-                    else if(action==3){if(save()){std::string error;if(controller_.selectRemoteServer(values[0],error)){settings_=controller_.snapshot().settings;done=true;}else status=error;}}
-                    else if(action==4){
-                        if(selected>=0&&selected<static_cast<int>(servers.size())){
-                            std::string error;
-                            if(controller_.removeSshServer(servers[static_cast<std::size_t>(selected)].alias,error)){
-                                refresh();clearFields();status="服务器已删除，SSH 配置已同步更新。";
-                            }else status=error;
-                        }else status="请先选择要删除的服务器。";
-                    }
-                    else if(action==5){controller_.selectLocalEncoder();settings_=controller_.snapshot().settings;done=true;}
-                    else if(action==6)done=true;
+
+        const auto makeServer = [&]() {
+            SshServer server;
+            server.alias = trim(values[0]);
+            server.hostName = trim(values[1]);
+            server.user = trim(values[2]);
+
+            try {
+                const auto port = std::stoul(values[3].empty() ? "22" : values[3]);
+                server.port = port <= 65535 ? static_cast<unsigned int>(port) : 0;
+            } catch (const std::exception&) {
+                server.port = 0;
+            }
+
+            server.identityFile = trim(values[4]);
+            server.proxyJump = trim(values[5]);
+            server.authMethod = passwordAuthentication
+                ? SshAuthMethod::Password
+                : SshAuthMethod::PublicKey;
+            return server;
+        };
+
+        const auto refreshServers = [&]() {
+            servers = controller_.sshServers();
+        };
+
+        const auto saveServer = [&]() {
+            const SshServer server = makeServer();
+            std::string error;
+            if (!controller_.saveSshServer(server, values[6], error)) {
+                status = error;
+                return false;
+            }
+
+            refreshServers();
+            const auto savedServer = std::find_if(
+                servers.begin(), servers.end(),
+                [&](const SshServer& item) {
+                    return item.alias == server.alias;
+                });
+            if (savedServer != servers.end()) {
+                populateFields(static_cast<int>(
+                    std::distance(servers.begin(), savedServer)));
+            }
+
+            status = "SSH 配置已保存，原有的其他 SSH 选项已保留。";
+            return true;
+        };
+
+        const auto drawDialog = [&]() {
+            canvas->fill(
+                {0, 0, dialogWidth, dialogHeight}, colors.background);
+            canvas->text(
+                scaled(24), scaled(36), "SSH 服务器", colors.text, 2);
+            canvas->text(
+                scaled(24), scaled(57),
+                "选择现有配置，或添加服务器。密码只保存在安全凭据存储中。",
+                colors.muted, 0);
+
+            canvas->card(listCard, colors);
+            canvas->text(
+                scaled(38), scaled(96), "本机 SSH 配置", colors.text, 1);
+
+            if (servers.empty()) {
+                canvas->text(
+                    scaled(38), scaled(145),
+                    "没有可用的服务器配置。", colors.muted, 0);
+            }
+
+            for (std::size_t index = 0; index < servers.size(); ++index) {
+                const int rowY = scaled(112) +
+                    static_cast<int>(index) * scaled(54);
+                if (rowY + scaled(48) > listCard.y + listCard.height - scaled(8)) {
+                    break;
                 }
-                drawDialog();continue;
+
+                const Rect row{
+                    scaled(30), rowY, scaled(240), scaled(46)
+                };
+                const bool selected = static_cast<int>(index) == selectedServer;
+                if (selected) {
+                    canvas->rounded(row, colors.accentSoft, 7);
+                }
+
+                const auto& server = servers[index];
+                canvas->text(
+                    row.x + scaled(10), row.y + scaled(19),
+                    server.alias, selected ? colors.accent : colors.text, 0);
+                canvas->text(
+                    row.x + scaled(10), row.y + scaled(37),
+                    server.user + "@" + server.hostName,
+                    colors.muted, 0);
             }
-            if(event.type==KeyPress){
-                KeySym key{};char buffer[64]{};const int count=XLookupString(&event.xkey,buffer,sizeof(buffer),&key,nullptr);
-                if(key==XK_Escape){done=true;continue;}
-                if(key==XK_Tab){focused=(focused+1)%7;drawDialog();continue;}
-                if(focused>=0&&focused<7){
-                    auto& value=values[static_cast<std::size_t>(focused)];
-                    if(key==XK_BackSpace||key==XK_Delete){if(!value.empty())value.pop_back();}
-                    else if(key==XK_Return||key==XK_KP_Enter){focused=focused<6?focused+1:-1;}
-                    else if(count>0&&buffer[0]>=32&&buffer[0]!=127&&value.size()<1024)value.append(buffer,static_cast<std::size_t>(count));
+
+            const std::array<std::string, 7> fieldLabels{
+                "服务器别名",
+                "主机名或 IP 地址",
+                "用户名",
+                "SSH 端口",
+                "私钥文件（可留空以使用 SSH Agent）",
+                "跳转服务器（可选）",
+                "密码（仅密码认证时填写）"
+            };
+
+            for (std::size_t index = 0; index < 6; ++index) {
+                const Rect& field = fields[index];
+                canvas->text(
+                    field.x, field.y - scaled(10),
+                    fieldLabels[index], colors.muted, 0);
+                canvas->input(
+                    field, values[index], colors,
+                    focusedField == static_cast<int>(index));
+            }
+
+            const Rect& passwordField = fields[6];
+            canvas->text(
+                passwordField.x, passwordField.y - scaled(10),
+                fieldLabels[6], colors.muted, 0);
+            if (passwordAuthentication) {
+                canvas->input(
+                    passwordField, values[6], colors,
+                    focusedField == 6, true);
+            } else {
+                canvas->text(
+                    passwordField.x + scaled(10),
+                    passwordField.y + scaled(23),
+                    "切换到密码认证后填写", colors.muted, 0);
+            }
+
+            canvas->text(
+                authenticationButton.x,
+                authenticationButton.y - scaled(10),
+                "认证方式", colors.muted, 0);
+            canvas->button(
+                authenticationButton,
+                passwordAuthentication ? "密码认证" : "SSH 私钥 / Agent 认证",
+                colors, passwordAuthentication);
+
+            const int actionY = scaled(590);
+            const int buttonWidth = scaled(112);
+            const int buttonGap = scaled(8);
+            const std::array<std::string, 7> actionLabels{
+                "新增", "保存并同步", "测试连接", "使用此服务器",
+                "删除", "本机编码", "关闭"
+            };
+
+            for (std::size_t index = 0; index < actionLabels.size(); ++index) {
+                const Rect button{
+                    scaled(20) + static_cast<int>(index) * (buttonWidth + buttonGap),
+                    actionY,
+                    buttonWidth,
+                    scaled(42)
+                };
+                canvas->button(button, actionLabels[index], colors, index == 3);
+            }
+
+            canvas->text(scaled(24), scaled(670), status, colors.muted, 0);
+            canvas->flush();
+        };
+
+        clearFields();
+        drawDialog();
+
+        bool done = false;
+        while (!done) {
+            if (!XPending(display_)) {
+                pollfd descriptor{ConnectionNumber(display_), POLLIN, 0};
+                poll(&descriptor, 1, 120);
+                if ((descriptor.revents & POLLIN) == 0) {
+                    continue;
+                }
+            }
+
+            XEvent event{};
+            XNextEvent(display_, &event);
+
+            if (event.type == Expose) {
+                drawDialog();
+                continue;
+            }
+            if (event.type == ClientMessage &&
+                static_cast<Atom>(event.xclient.data.l[0]) == deleteMessage) {
+                done = true;
+                continue;
+            }
+
+            if (event.type == ButtonPress) {
+                const int x = event.xbutton.x;
+                const int y = event.xbutton.y;
+
+                if (contains(listCard, x, y)) {
+                    const int index = (y - scaled(112)) / scaled(54);
+                    if (index >= 0 && index < static_cast<int>(servers.size())) {
+                        populateFields(index);
+                    }
+                } else {
+                    for (std::size_t index = 0; index < fields.size(); ++index) {
+                        if (contains(fields[index], x, y)) {
+                            focusedField = static_cast<int>(index);
+                        }
+                    }
+
+                    if (contains(authenticationButton, x, y)) {
+                        passwordAuthentication = !passwordAuthentication;
+                        values[6].clear();
+                        focusedField = passwordAuthentication ? 6 : -1;
+                    }
+
+                    const int actionY = scaled(590);
+                    const int buttonWidth = scaled(112);
+                    const int buttonGap = scaled(8);
+                    int action = -1;
+
+                    for (int index = 0; index < 7; ++index) {
+                        const Rect button{
+                            scaled(20) + index * (buttonWidth + buttonGap),
+                            actionY,
+                            buttonWidth,
+                            scaled(42)
+                        };
+                        if (contains(button, x, y)) {
+                            action = index;
+                            break;
+                        }
+                    }
+
+                    if (action == 0) {
+                        clearFields();
+                        status = "填写服务器信息，然后保存。";
+                    } else if (action == 1) {
+                        (void)saveServer();
+                    } else if (action == 2) {
+                        if (saveServer()) {
+                            std::string error;
+                            (void)controller_.testSshServer(values[0], error);
+                            status = error;
+                        }
+                    } else if (action == 3) {
+                        if (saveServer()) {
+                            std::string error;
+                            if (controller_.selectRemoteServer(values[0], error)) {
+                                settings_ = controller_.snapshot().settings;
+                                done = true;
+                            } else {
+                                status = error;
+                            }
+                        }
+                    } else if (action == 4) {
+                        if (selectedServer >= 0 &&
+                            selectedServer < static_cast<int>(servers.size())) {
+                            std::string error;
+                            const std::string alias =
+                                servers[static_cast<std::size_t>(selectedServer)].alias;
+                            if (controller_.removeSshServer(alias, error)) {
+                                refreshServers();
+                                clearFields();
+                                status = "服务器已删除，SSH 配置已同步更新。";
+                            } else {
+                                status = error;
+                            }
+                        } else {
+                            status = "请先选择要删除的服务器。";
+                        }
+                    } else if (action == 5) {
+                        controller_.selectLocalEncoder();
+                        settings_ = controller_.snapshot().settings;
+                        done = true;
+                    } else if (action == 6) {
+                        done = true;
+                    }
+                }
+
+                drawDialog();
+                continue;
+            }
+
+            if (event.type == KeyPress) {
+                KeySym key{};
+                char buffer[64]{};
+                const int count = XLookupString(
+                    &event.xkey, buffer, sizeof(buffer), &key, nullptr);
+
+                if (key == XK_Escape) {
+                    done = true;
+                    continue;
+                }
+                if (key == XK_Tab) {
+                    focusedField = (focusedField + 1) % 7;
+                    drawDialog();
+                    continue;
+                }
+
+                if (focusedField >= 0 &&
+                    focusedField < static_cast<int>(values.size())) {
+                    auto& value = values[static_cast<std::size_t>(focusedField)];
+
+                    if (key == XK_BackSpace || key == XK_Delete) {
+                        if (!value.empty()) {
+                            value.pop_back();
+                        }
+                    } else if (key == XK_Return || key == XK_KP_Enter) {
+                        focusedField = focusedField < 6 ? focusedField + 1 : -1;
+                    } else if (count > 0 &&
+                               buffer[0] >= 32 && buffer[0] != 127 &&
+                               value.size() < 1024) {
+                        value.append(buffer, static_cast<std::size_t>(count));
+                    }
+
                     drawDialog();
                 }
             }
         }
-        canvas.reset();XDestroyWindow(display_,dialog);XFlush(display_);
+
+        canvas.reset();
+        XDestroyWindow(display_, dialog);
+        XFlush(display_);
     }
 
     void commitCrfText() {
