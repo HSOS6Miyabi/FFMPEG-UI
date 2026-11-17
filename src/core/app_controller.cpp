@@ -1,5 +1,6 @@
 #include "app_controller.hpp"
 #include "process.hpp"
+#include "process.hpp"
 
 #include <algorithm>
 #include <cctype>
@@ -66,9 +67,9 @@ bool parseBool(const std::string& value, bool fallback) {
 }
 
 std::filesystem::path settingsFilePath() {
-    if (const char* overrideDirectory = std::getenv("FFMPEG_STUDIO_CONFIG_DIR");
-        overrideDirectory != nullptr && *overrideDirectory != '\0') {
-        return pathFromUtf8(overrideDirectory) / "settings.ini";
+    const auto overrideDirectory = environmentVariable("FFMPEG_STUDIO_CONFIG_DIR");
+    if (overrideDirectory && !overrideDirectory->empty()) {
+        return pathFromUtf8(*overrideDirectory) / "settings.ini";
     }
 #ifdef _WIN32
     std::wstring appData(32768, L'\0');
@@ -79,10 +80,14 @@ std::filesystem::path settingsFilePath() {
     }
     return std::filesystem::temp_directory_path() / "FFmpegStudio" / "settings.ini";
 #else
-    if (const char* xdg = std::getenv("XDG_CONFIG_HOME"); xdg != nullptr && *xdg != '\0')
-        return pathFromUtf8(xdg) / "ffmpeg-studio" / "settings.ini";
-    if (const char* home = std::getenv("HOME"); home != nullptr && *home != '\0')
-        return pathFromUtf8(home) / ".config" / "ffmpeg-studio" / "settings.ini";
+    const auto xdg = environmentVariable("XDG_CONFIG_HOME");
+    if (xdg && !xdg->empty()) {
+        return pathFromUtf8(*xdg) / "ffmpeg-studio" / "settings.ini";
+    }
+    const auto home = environmentVariable("HOME");
+    if (home && !home->empty()) {
+        return pathFromUtf8(*home) / ".config" / "ffmpeg-studio" / "settings.ini";
+    }
     return std::filesystem::temp_directory_path() / "ffmpeg-studio" / "settings.ini";
 #endif
 }

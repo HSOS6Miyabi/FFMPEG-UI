@@ -3,6 +3,7 @@
 #include <atomic>
 #include <functional>
 #include <map>
+#include <optional>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -26,5 +27,6 @@ ProcessResult runProcess(const std::vector<std::string>& arguments,
 
 std::string utf8FromWide(const wchar_t* value);
 std::wstring wideFromUtf8(std::string_view value);
+std::optional<std::string> environmentVariable(std::string_view name);
 
 } // namespace ffmpegui

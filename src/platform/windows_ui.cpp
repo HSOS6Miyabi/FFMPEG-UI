@@ -206,8 +206,12 @@ public:
         wc.hbrBackground=reinterpret_cast<HBRUSH>(COLOR_WINDOW+1);RegisterClassW(&wc);
         const UINT dpi=GetDpiForWindow(owner);scale_=static_cast<double>(dpi?dpi:96)/96.0;
         const int width=s(1000),height=s(740);RECT ownerRect{};GetWindowRect(owner,&ownerRect);
-        const int x=ownerRect.left+std::max(0,(ownerRect.right-ownerRect.left-width)/2);
-        const int y=ownerRect.top+std::max(0,(ownerRect.bottom-ownerRect.top-height)/2);
+        const int ownerLeft = static_cast<int>(ownerRect.left);
+        const int ownerTop = static_cast<int>(ownerRect.top);
+        const int ownerWidth = static_cast<int>(ownerRect.right - ownerRect.left);
+        const int ownerHeight = static_cast<int>(ownerRect.bottom - ownerRect.top);
+        const int x = ownerLeft + std::max(0, (ownerWidth - width) / 2);
+        const int y = ownerTop + std::max(0, (ownerHeight - height) / 2);
         hwnd_=CreateWindowExW(WS_EX_DLGMODALFRAME,wc.lpszClassName,L"SSH 服务器管理",
             WS_OVERLAPPED|WS_CAPTION|WS_SYSMENU|WS_CLIPCHILDREN,x,y,width,height,owner,nullptr,instance,this);
         if(!hwnd_)return 1;

@@ -102,16 +102,24 @@ std::vector<std::string> inheritedOptions(const std::vector<std::string>& lines,
 } // namespace
 
 SshService::SshService(){
-    if(const char* v=std::getenv("FFMPEG_STUDIO_SSH_PATH");v&&*v)sshPath_=v;else sshPath_="ssh";
-    if(const char* v=std::getenv("FFMPEG_STUDIO_SCP_PATH");v&&*v)scpPath_=v;else scpPath_="scp";
+    const auto sshPath = environmentVariable("FFMPEG_STUDIO_SSH_PATH");
+    const auto scpPath = environmentVariable("FFMPEG_STUDIO_SCP_PATH");
+    sshPath_ = sshPath && !sshPath->empty() ? *sshPath : "ssh";
+    scpPath_ = scpPath && !scpPath->empty() ? *scpPath : "scp";
 }
 std::string SshService::configPath() const{
-    if(const char* v=std::getenv("FFMPEG_STUDIO_SSH_CONFIG");v&&*v)return v;
+    const auto overridePath = environmentVariable("FFMPEG_STUDIO_SSH_CONFIG");
+    if (overridePath && !overridePath->empty()) {
+        return *overridePath;
+    }
 #ifdef _WIN32
-    if(const char* home=std::getenv("USERPROFILE");home&&*home)return toUtf8(fromUtf8(home)/".ssh"/"config");
+    const auto home = environmentVariable("USERPROFILE");
 #else
-    if(const char* home=std::getenv("HOME");home&&*home)return toUtf8(fromUtf8(home)/".ssh"/"config");
+    const auto home = environmentVariable("HOME");
 #endif
+    if (home && !home->empty()) {
+        return toUtf8(fromUtf8(*home) / ".ssh" / "config");
+    }
     return {};
 }
 bool SshService::validAlias(const std::string& alias){
@@ -223,7 +231,8 @@ std::optional<std::string> SshService::passwordForAskpass(const std::string& ali
 #ifdef _WIN32
     return readPassword(alias);
 #else
-    (void)alias;const char* value=std::getenv("FFMPEG_STUDIO_SSH_PASSWORD");if(value)return std::string(value);return std::nullopt;
+    (void)alias;
+    return environmentVariable("FFMPEG_STUDIO_SSH_PASSWORD");
 #endif
 }
 std::string SshService::executablePath() const{

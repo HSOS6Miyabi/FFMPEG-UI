@@ -94,13 +94,15 @@ Layout makeLayout(int width, int height, double scale, int backendCount = 4) {
     for(int i=0;i<8;++i){const int row=i/4,col=i%4;l.compression[i]={leftX+s(20)+col*(compW+s(6)),sy+s(324)+row*s(39),compW,s(32)};}
     const int audioW=(leftW-s(52)-s(30))/6;
     for(int i=0;i<6;++i)l.audio[i]={leftX+s(20)+i*(audioW+s(6)),sy+s(414),audioW,s(32)};
-    const int optionGap=s(6),optionWidth=(leftW-s(40)-optionGap*4)/5,optionY=sy+s(462);
+    const int optionGap = s(6);
+    const int optionWidth = (leftW - s(40) - optionGap * 4) / 5;
+    const int optionY = sy + s(482);
     l.parallel={leftX+s(20),optionY,optionWidth,s(32)};
     l.recursive={leftX+s(20)+optionWidth+optionGap,optionY,optionWidth,s(32)};
     l.skip={leftX+s(20)+(optionWidth+optionGap)*2,optionY,optionWidth,s(32)};
     l.preserve={leftX+s(20)+(optionWidth+optionGap)*3,optionY,optionWidth,s(32)};
     l.overwrite={leftX+s(20)+(optionWidth+optionGap)*4,optionY,optionWidth,s(32)};
-    l.queue={leftX,sy+s(510),leftW,height-(sy+s(510))-pad};
+    l.queue = {leftX, sy + s(530), leftW, height - (sy + s(530)) - pad};
     l.overallCard={rightX,top,rightW,s(270)};l.overallTrack={rightX+s(22),top+s(126),rightW-s(44),s(12)};
     l.start={rightX+s(22),top+s(206),rightW-s(44),s(44)};
     const int actionGap=s(8),actionWidth=(rightW-s(52)-actionGap)/2;
@@ -184,8 +186,12 @@ private:
     void updateSettings(){controller_.updateSettings(settings_);}
     void manageSshServers() {
         const int dialogWidth=s(980),dialogHeight=s(700);
-        const Window dialog=XCreateSimpleWindow(display_,window_,s(80),s(70),dialogWidth,dialogHeight,1,
-            BlackPixel(display_,screen_),WhitePixel(display_,screen_));
+        XWindowAttributes parentAttributes{};
+        XGetWindowAttributes(display_, window_, &parentAttributes);
+        const int dialogX = std::max(0, (parentAttributes.width - dialogWidth) / 2);
+        const int dialogY = std::max(0, (parentAttributes.height - dialogHeight) / 2);
+        const Window dialog = XCreateSimpleWindow(display_, window_, dialogX, dialogY,
+            dialogWidth, dialogHeight, 1, BlackPixel(display_, screen_), WhitePixel(display_, screen_));
         XStoreName(display_,dialog,"SSH 服务器管理");XSetTransientForHint(display_,dialog,window_);
         XSizeHints hints{};hints.flags=PMinSize;hints.min_width=dialogWidth;hints.min_height=dialogHeight;
         XSetWMNormalHints(display_,dialog,&hints);
@@ -305,7 +311,7 @@ private:
     void draw(){const auto snap=controller_.snapshot();const auto backends=availableBackends(snap.capabilities,settings_.codec);const auto l=makeLayout(width_,height_,scale_,static_cast<int>(backends.size()));const auto c=palette(dark_);canvas_->fill({0,0,width_,height_},c.background);
         canvas_->text(s(30),s(50),"FFmpeg Studio",c.text,2);canvas_->text(s(31),s(82),"批量视频压缩 · ZIP / PPTX 媒体处理 · CPU 与硬件编码",c.muted,0);canvas_->button(l.ssh,"SSH 服务器",c,!settings_.remoteHost.empty());canvas_->button(l.theme,dark_?"浅色外观":"深色外观",c);
         canvas_->button(l.addFiles,"添加文件",c,true);canvas_->button(l.addFolder,"添加文件夹",c);canvas_->button(l.addArchive,"添加 ZIP / PPTX",c);canvas_->button(l.importQueue,"导入清单",c);canvas_->button(l.exportQueue,"导出清单",c);canvas_->button(l.removeSelected,"移除选中",c);canvas_->button(l.clearDone,"清除已完成",c);
-        const int leftX=s(28),top=s(168);canvas_->card({leftX,top,l.queue.width,s(500)},c);canvas_->text(leftX+s(20),top+s(32),"编码设置",c.text,1);canvas_->text(leftX+s(20),top+s(64),"输出文件夹",c.muted,0);
+        const int leftX=s(28),top=s(168);canvas_->card({leftX,top,l.queue.width,s(520)},c);canvas_->text(leftX+s(20),top+s(32),"编码设置",c.text,1);canvas_->text(leftX+s(20),top+s(64),"输出文件夹",c.muted,0);
         const std::string output=settings_.outputDirectory.empty()?"默认：与每个源文件保存在同一文件夹":settings_.outputDirectory;
         canvas_->rounded(l.outputField,c.input,8);canvas_->text(l.outputField.x+s(12),l.outputField.y+l.outputField.height/2+s(5),output,c.text,0);canvas_->button(l.outputBrowse,"选择目录",c);
         canvas_->text(leftX+s(20),top+s(98),"输出容器格式",c.muted,0);const std::array<std::string,2> containers{"MP4","与源文件相同"};for(int i=0;i<2;++i)canvas_->button(l.container[i],containers[i],c,static_cast<int>(settings_.outputContainer)==i);

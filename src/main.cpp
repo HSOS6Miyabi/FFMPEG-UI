@@ -46,8 +46,12 @@ fs::path pathFromUtf8(std::string_view value) {
 
 ffmpegui::FfmpegService makeService() {
     std::string ffmpeg = "ffmpeg", ffprobe = "ffprobe";
-    if (const char* value = std::getenv("FFMPEG_PATH")) ffmpeg = value;
-    if (const char* value = std::getenv("FFPROBE_PATH")) ffprobe = value;
+    if (const auto value = ffmpegui::environmentVariable("FFMPEG_PATH"); value && !value->empty()) {
+        ffmpeg = *value;
+    }
+    if (const auto value = ffmpegui::environmentVariable("FFPROBE_PATH"); value && !value->empty()) {
+        ffprobe = *value;
+    }
     return ffmpegui::FfmpegService(ffmpeg, ffprobe);
 }
 
@@ -521,10 +525,13 @@ int runSelfTest(bool keepFiles) {
 }
 
 int runSshAskpass() {
-    const char* alias = std::getenv("FFMPEG_STUDIO_SSH_ASKPASS_ALIAS");
-    if (alias == nullptr || *alias == '\0') return 1;
+    const auto alias = ffmpegui::environmentVariable("FFMPEG_STUDIO_SSH_ASKPASS_ALIAS");
+    if (!alias || alias->empty()) {
+        return 1;
+    }
+
     ffmpegui::SshService ssh;
-    auto password = ssh.passwordForAskpass(alias);
+    auto password = ssh.passwordForAskpass(*alias);
     if (!password || password->empty()) return 1;
     bool written = false;
 #ifdef _WIN32
@@ -587,7 +594,9 @@ int appMain(const std::vector<std::string>& arguments) {
 } // namespace
 
 int main(int argc, char** argv) {
-    if (std::getenv("FFMPEG_STUDIO_SSH_ASKPASS_ALIAS") != nullptr) return runSshAskpass();
+    if (ffmpegui::environmentVariable("FFMPEG_STUDIO_SSH_ASKPASS_ALIAS")) {
+        return runSshAskpass();
+    }
     std::vector<std::string> arguments;
 #ifdef _WIN32
     int count = 0;

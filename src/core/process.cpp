@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <chrono>
+#include <cstdlib>
 #include <cwchar>
 #include <codecvt>
 #include <locale>
@@ -31,6 +32,35 @@ extern char** environ;
 #endif
 
 namespace ffmpegui {
+
+
+std::optional<std::string> environmentVariable(std::string_view name) {
+    if (name.empty()) {
+        return std::nullopt;
+    }
+
+    const std::string key(name);
+#ifdef _WIN32
+    char* buffer = nullptr;
+    std::size_t length = 0;
+    const errno_t status = _dupenv_s(&buffer, &length, key.c_str());
+    if (status != 0 || buffer == nullptr) {
+        std::free(buffer);
+        return std::nullopt;
+    }
+
+    std::string value(buffer);
+    std::free(buffer);
+    return value;
+#else
+    const char* value = std::getenv(key.c_str());
+    if (value == nullptr) {
+        return std::nullopt;
+    }
+    return std::string(value);
+#endif
+}
+
 namespace {
 
 void appendOutput(ProcessResult& result, std::string_view chunk, std::string& pending,
