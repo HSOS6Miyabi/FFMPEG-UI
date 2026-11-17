@@ -91,7 +91,14 @@ Layout makeLayout(int width, int height, double scale, int backendCount = 4) {
     for (int i = 0; i < 3; ++i) l.codec[i] = {leftX + s(20) + i * (codecW + s(6)), settingsY + s(160), codecW, s(38)};
     backendCount = std::clamp(backendCount, 1, 4);
     const int backendW = (leftW - s(52) - s(6) * (backendCount - 1)) / backendCount;
-    for (int i = 0; i < backendCount; ++i) l.backend[i] = {leftX + s(20) + i * (backendW + s(6)), settingsY + s(210), backendW, s(34)};
+    for (int index = 0; index < backendCount; ++index) {
+        l.backend[index] = {
+            leftX + s(20) + index * (backendW + s(6)),
+            settingsY + s(210),
+            backendW,
+            s(34)
+        };
+    }
     l.crfTrack = {leftX + s(20), settingsY + s(276), leftW - s(144), s(10)};
     l.crfValue = {leftX + leftW - s(112), settingsY + s(261), s(92), s(38)};
     const int compW = (leftW - s(52) - s(18)) / 4;
@@ -151,7 +158,10 @@ void drawCard(HDC dc, const Rect& r, const Palette& c) {
 }
 
 std::wstring wide(const std::string& value) { return wideFromUtf8(value); }
-std::string basename(const std::string& path) { return utf8FromWide(std::filesystem::path(wide(path)).filename().c_str()); }
+std::string basename(const std::string& path) {
+    const std::filesystem::path filePath(wide(path));
+    return utf8FromWide(filePath.filename().c_str());
+}
 
 std::wstring formatTime(const std::optional<double>& value) {
     if (!value || *value < 0) return L"--:--:--";
@@ -718,7 +728,10 @@ private:
         }
         return self ? self->handle(msg, wp, lp) : DefWindowProcW(hwnd, msg, wp, lp);
     }
-    double scale() const { const UINT dpi = GetDpiForWindow(window_); return static_cast<double>(dpi ? dpi : 96) / 96.0; }
+    double scale() const {
+        const UINT dpi = GetDpiForWindow(window_);
+        return static_cast<double>(dpi == 0 ? 96 : dpi) / 96.0;
+    }
     int s(int v) const { return static_cast<int>(std::lround(v * scale())); }
     HFONT font(int px, int weight = FW_NORMAL) const {
         return CreateFontW(-s(px), 0, 0, 0, weight, FALSE, FALSE, FALSE, DEFAULT_CHARSET,
@@ -822,8 +835,13 @@ private:
     void commitCrfText() {
         if (!editingCrf_) return;
         if (!crfEditText_.empty()) {
-            try { settings_.crf = std::clamp(std::stoi(crfEditText_), 0, crfMaximum(settings_.codec)); updateSettings(); }
-            catch (...) {}
+            try {
+                settings_.crf = std::clamp(
+                    std::stoi(crfEditText_), 0, crfMaximum(settings_.codec));
+                updateSettings();
+            } catch (const std::exception&) {
+                // Keep the previous value when the entered CRF is invalid.
+            }
         }
         editingCrf_ = false;
         crfEditText_.clear();
@@ -831,7 +849,13 @@ private:
     void startOrCancel() {
         const auto snap = controller_.snapshot();
         if (!snap.running) {
-            if (!controller_.startBatch()) MessageBoxW(window_, L"请添加待处理文件，并确认当前编码器可用。", L"无法开始任务", MB_ICONINFORMATION | MB_OK);
+            if (!controller_.startBatch()) {
+                MessageBoxW(
+                    window_,
+                    L"请添加待处理文件，并确认当前编码器可用。",
+                    L"无法开始任务",
+                    MB_ICONINFORMATION | MB_OK);
+            }
         } else if (snap.paused) controller_.resumeBatch();
         else controller_.pauseBatch();
     }
@@ -841,7 +865,12 @@ private:
             if (task.kind == TaskKind::Video) {
                 BatchItemSnapshot item;
                 if (!task.items.empty()) item = task.items.front();
-                else { item.name = basename(task.inputPath); item.state = task.state; item.progress = task.progress; item.detail = task.detail; }
+                else {
+                    item.name = basename(task.inputPath);
+                    item.state = task.state;
+                    item.progress = task.progress;
+                    item.detail = task.detail;
+                }
                 rows.emplace_back(task, item);
             } else {
                 BatchItemSnapshot parent; parent.name = basename(task.inputPath); parent.state = task.state;
@@ -860,11 +889,16 @@ private:
     void draw() {
         const auto snap = controller_.snapshot();
         RECT client{}; GetClientRect(window_, &client); const int width = client.right, height = client.bottom;
-        HDC target = GetDC(window_); HDC dc = CreateCompatibleDC(target); HBITMAP bitmap = CreateCompatibleBitmap(target, width, height);
+        HDC target = GetDC(window_);
+        HDC dc = CreateCompatibleDC(target);
+        HBITMAP bitmap = CreateCompatibleBitmap(target, width, height);
         auto oldBitmap = SelectObject(dc, bitmap);
         const Palette c = palette(dark_); const auto backends = availableBackends(snap.capabilities, settings_.codec);
         const auto l = makeLayout(width, height, scale(), static_cast<int>(backends.size()));
-        HBRUSH bg = CreateSolidBrush(c.background); RECT full{0,0,width,height}; FillRect(dc,&full,bg); DeleteObject(bg);
+        HBRUSH backgroundBrush = CreateSolidBrush(c.background);
+        RECT fullRectangle{0, 0, width, height};
+        FillRect(dc, &fullRectangle, backgroundBrush);
+        DeleteObject(backgroundBrush);
         HFONT title = font(25, FW_BOLD), normal = font(14), smallFont = font(12), heading = font(16, FW_SEMIBOLD);
         drawText(dc, {s(30),s(22),s(420),s(38)}, L"FFmpeg Studio", c.text, title);
         drawText(dc, {s(31),s(60),s(700),s(24)}, L"批量视频压缩 · ZIP / PPTX 媒体处理 · CPU 与硬件编码", c.muted, smallFont);
@@ -880,12 +914,19 @@ private:
         drawCard(dc, {leftX, top, leftW, s(520)}, c);
         drawText(dc,{leftX+s(20),top+s(14),s(200),s(26)},L"编码设置",c.text,heading);
         drawText(dc,{leftX+s(20),top+s(43),s(220),s(20)},L"输出文件夹",c.muted,smallFont);
-        std::wstring output = settings_.outputDirectory.empty() ? L"默认：与每个源文件保存在同一文件夹" : wide(settings_.outputDirectory);
+        const std::wstring output = settings_.outputDirectory.empty()
+            ? L"默认：与每个源文件保存在同一文件夹"
+            : wide(settings_.outputDirectory);
         drawText(dc,l.outputField,output,c.text,smallFont);
         drawButton(dc,l.outputBrowse,L"选择目录",c,smallFont);
         drawText(dc,{leftX+s(20),top+s(98),s(150),s(20)},L"输出容器格式",c.muted,smallFont);
         const std::array<std::wstring,2> containers{L"MP4",L"与源文件相同"};
-        for(int i=0;i<2;++i) drawButton(dc,l.container[i],containers[i],c,smallFont,static_cast<int>(settings_.outputContainer)==i);
+        for (int index = 0; index < 2; ++index) {
+            const bool selected =
+                static_cast<int>(settings_.outputContainer) == index;
+            drawButton(
+                dc, l.container[index], containers[index], c, smallFont, selected);
+        }
         drawText(dc,{leftX+s(20),top+s(149),s(150),s(22)},L"视频编码格式",c.muted,smallFont);
         const std::array<std::wstring,3> codecs{L"H.264",L"H.265",L"AV1"};
         for (int i=0;i<3;++i) drawButton(dc,l.codec[i],codecs[i],c,normal,static_cast<int>(settings_.codec)==i);
@@ -911,23 +952,56 @@ private:
                 dc, l.backend[i], backendLabels[static_cast<std::size_t>(labelIndex)],
                 c, smallFont, settings_.backend == backends[i]);
         }
-        if (backends.empty()) drawText(dc,{leftX+s(20),top+s(162),leftW-s(40),s(34)},L"当前 FFmpeg 环境没有可用的视频编码器",c.red,smallFont);
+        if (backends.empty()) {
+            drawText(
+                dc,
+                {leftX + s(20), top + s(162), leftW - s(40), s(34)},
+                L"当前 FFmpeg 环境没有可用的视频编码器",
+                c.red,
+                smallFont);
+        }
         drawText(dc,{leftX+s(20),top+s(245),s(140),s(22)},L"CRF / 目标质量",c.muted,smallFont);
         drawProgress(dc,{l.crfTrack.x,l.crfTrack.y,l.crfTrack.width,l.crfTrack.height},
             static_cast<double>(settings_.crf)/crfMaximum(settings_.codec),c);
-        const int knobX=l.crfTrack.x+static_cast<int>(std::lround(l.crfTrack.width*static_cast<double>(settings_.crf)/crfMaximum(settings_.codec)));
+        const double crfFraction =
+            static_cast<double>(settings_.crf) / crfMaximum(settings_.codec);
+        const int knobX = l.crfTrack.x +
+            static_cast<int>(std::lround(l.crfTrack.width * crfFraction));
         fillRound(dc,{knobX-s(7),l.crfTrack.y-s(5),s(14),s(20)},c.accent,c.accent,7);
-        drawButton(dc,l.crfValue,editingCrf_ ? (crfEditText_.empty() ? L"输入" : crfEditText_) : std::to_wstring(settings_.crf),c,normal,true);
+        const std::wstring crfValue = editingCrf_
+            ? (crfEditText_.empty() ? L"输入" : crfEditText_)
+            : std::to_wstring(settings_.crf);
+        drawButton(dc, l.crfValue, crfValue, c, normal, true);
         drawText(dc,{leftX+s(20),top+s(296),s(200),s(20)},L"压缩级别",c.muted,smallFont);
         const std::array<std::wstring,8> levels{L"极速",L"非常快",L"快速",L"均衡",L"慢速",L"较慢",L"很慢",L"极致压缩"};
-        for(int i=0;i<8;++i) drawButton(dc,l.compression[i],levels[i],c,smallFont,static_cast<int>(settings_.compression)==i);
+        for (int index = 0; index < 8; ++index) {
+            const bool selected =
+                static_cast<int>(settings_.compression) == index;
+            drawButton(
+                dc, l.compression[index], levels[index], c, smallFont, selected);
+        }
         drawText(dc,{leftX+s(20),top+s(383),s(200),s(20)},L"音频码率",c.muted,smallFont);
         const std::array<int,6> rates{96,128,160,192,256,320};
-        for(int i=0;i<6;++i) drawButton(dc,l.audio[i],std::to_wstring(rates[i])+L" kbps",c,smallFont,settings_.audioBitrateKbps==rates[i]);
-        drawButton(dc,l.parallel,settings_.maxParallelJobs==0?L"并行：自动":L"并行："+std::to_wstring(settings_.maxParallelJobs),c,smallFont);
+        for (int index = 0; index < 6; ++index) {
+            const bool selected = settings_.audioBitrateKbps == rates[index];
+            drawButton(
+                dc, l.audio[index],
+                std::to_wstring(rates[index]) + L" kbps",
+                c, smallFont, selected);
+        }
+        const std::wstring parallelLabel = settings_.maxParallelJobs == 0
+            ? L"并行：自动"
+            : L"并行：" + std::to_wstring(settings_.maxParallelJobs);
+        drawButton(dc, l.parallel, parallelLabel, c, smallFont);
         drawButton(dc,l.recursive,settings_.recursive?L"递归扫描✓":L"递归扫描",c,smallFont,settings_.recursive);
-        drawButton(dc,l.skip,settings_.skipAlreadyProcessed?L"跳过重复✓":L"跳过重复",c,smallFont,settings_.skipAlreadyProcessed);
-        drawButton(dc,l.preserve,settings_.preserveDirectoryStructure?L"保留目录✓":L"保留目录",c,smallFont,settings_.preserveDirectoryStructure);
+        drawButton(
+            dc, l.skip,
+            settings_.skipAlreadyProcessed ? L"跳过重复✓" : L"跳过重复",
+            c, smallFont, settings_.skipAlreadyProcessed);
+        drawButton(
+            dc, l.preserve,
+            settings_.preserveDirectoryStructure ? L"保留目录✓" : L"保留目录",
+            c, smallFont, settings_.preserveDirectoryStructure);
         drawButton(dc,l.overwrite,settings_.overwrite?L"覆盖文件✓":L"保留文件",c,smallFont,settings_.overwrite);
 
         drawCard(dc,l.queue,c);
@@ -942,15 +1016,27 @@ private:
             {l.queue.x + l.queue.width - s(340), l.queue.y + s(16), s(320), s(22)},
             queueSummary, c.muted, smallFont,
             DT_RIGHT | DT_VCENTER | DT_SINGLELINE);
-        auto rows=visibleRows(snap); const int rowH=s(68); const int listTop=l.queue.y+s(54); const int visible=std::max(1,(l.queue.height-s(68))/rowH);
-        const int maxScroll=std::max(0,static_cast<int>(rows.size())-visible); scrollOffset_=std::clamp(scrollOffset_,0,maxScroll);
+        const auto rows = visibleRows(snap);
+        const int rowHeight = s(68);
+        const int listTop = l.queue.y + s(54);
+        const int visibleRowsCount =
+            std::max(1, (l.queue.height - s(68)) / rowHeight);
+        const int maxScroll = std::max(
+            0, static_cast<int>(rows.size()) - visibleRowsCount);
+        scrollOffset_ = std::clamp(scrollOffset_, 0, maxScroll);
         if(rows.empty()) {
             drawText(dc,{l.queue.x+s(30),listTop+s(36),l.queue.width-s(60),s(100)},
                 L"将视频、ZIP 或 PPTX 文件拖到窗口中，或使用上方按钮添加文件和文件夹。",c.muted,normal,DT_CENTER|DT_VCENTER|DT_WORDBREAK);
         } else {
-            for(int i=0;i<visible && i+scrollOffset_<static_cast<int>(rows.size());++i) {
+            for (int i = 0;
+                 i < visibleRowsCount &&
+                 i + scrollOffset_ < static_cast<int>(rows.size());
+                 ++i) {
                 const auto& [task,item]=rows[static_cast<std::size_t>(i+scrollOffset_)];
-                const int y=listTop+i*rowH; const bool child=task.kind!=TaskKind::Video && item.name!=basename(task.inputPath);
+                const int y = listTop + i * rowHeight;
+                const bool child =
+                    task.kind != TaskKind::Video &&
+                    item.name != basename(task.inputPath);
                 if (child) {
                     drawText(
                         dc,
@@ -963,9 +1049,14 @@ private:
                         wide(item.name) + L"   ·   " + wide(taskKindName(task.kind)),
                         c.text, normal);
                 }
-                const TaskState state=child?item.state:task.state; const double progress=child?item.progress:task.progress;
+                const TaskState state = child ? item.state : task.state;
+                const double progress = child ? item.progress : task.progress;
                 if (selectedTask_ == task.id)
-                    fillRound(dc, {l.queue.x+s(10), y+s(2), l.queue.width-s(20), rowH-s(4)}, c.accentSoft, c.accentSoft, 7);
+                    fillRound(
+                        dc,
+                        {l.queue.x + s(10), y + s(2),
+                         l.queue.width - s(20), rowHeight - s(4)},
+                        c.accentSoft, c.accentSoft, 7);
                 const std::wstring stateText=wide(taskStateName(state));
                 const COLORREF stateColor =
                     state == TaskState::Failed
@@ -1018,14 +1109,32 @@ private:
         }
 
         drawCard(dc,l.overallCard,c);
-        drawText(dc,{l.overallCard.x+s(22),l.overallCard.y+s(18),l.overallCard.width-s(44),s(28)},L"批量处理进度",c.text,heading);
-        drawText(dc,{l.overallCard.x+s(22),l.overallCard.y+s(54),l.overallCard.width-s(44),s(24)},wide(snap.status),c.text,normal);
-        drawText(dc,{l.overallCard.x+s(22),l.overallCard.y+s(82),l.overallCard.width-s(44),s(22)},wide(snap.detail),c.muted,smallFont);
+        drawText(
+            dc,
+            {l.overallCard.x + s(22), l.overallCard.y + s(18),
+             l.overallCard.width - s(44), s(28)},
+            L"批量处理进度", c.text, heading);
+        drawText(
+            dc,
+            {l.overallCard.x + s(22), l.overallCard.y + s(54),
+             l.overallCard.width - s(44), s(24)},
+            wide(snap.status), c.text, normal);
+        drawText(
+            dc,
+            {l.overallCard.x + s(22), l.overallCard.y + s(82),
+             l.overallCard.width - s(44), s(22)},
+            wide(snap.detail), c.muted, smallFont);
         drawProgress(dc,l.overallTrack,snap.overallProgress,c);
         wchar_t percent[24]{}; swprintf_s(percent,L"%.1f%%",snap.overallProgress*100.0);
         drawText(dc,{l.overallCard.x+s(22),l.overallCard.y+s(144),s(100),s(26)},percent,c.accent,heading);
-        drawText(dc,{l.overallCard.x+s(130),l.overallCard.y+s(145),l.overallCard.width-s(152),s(24)},
-            L"完成 "+std::to_wstring(snap.completedTasks+snap.skippedTasks)+L" / "+std::to_wstring(snap.totalTasks),c.muted,smallFont);
+        const std::wstring completedLabel =
+            L"完成 " + std::to_wstring(snap.completedTasks + snap.skippedTasks) +
+            L" / " + std::to_wstring(snap.totalTasks);
+        drawText(
+            dc,
+            {l.overallCard.x + s(130), l.overallCard.y + s(145),
+             l.overallCard.width - s(152), s(24)},
+            completedLabel, c.muted, smallFont);
         if (!snap.running) {
             drawButton(dc,l.start,L"开始批量处理",c,normal,true,
                 snap.tasks.empty() || !snap.capabilities.supports(settings_.codec,settings_.backend));
@@ -1413,7 +1522,11 @@ private:
         return DefWindowProcW(window_, message, wParam, lParam);
     }
     AppController& controller_; HWND window_{}; HINSTANCE instance_{}; BatchSettings settings_; bool dark_{false};
-    bool draggingCrf_{false}; bool editingCrf_{false}; std::wstring crfEditText_; int scrollOffset_{0}; std::uint64_t selectedTask_{0};
+    bool draggingCrf_{false};
+    bool editingCrf_{false};
+    std::wstring crfEditText_;
+    int scrollOffset_{0};
+    std::uint64_t selectedTask_{0};
 };
 
 } // namespace
