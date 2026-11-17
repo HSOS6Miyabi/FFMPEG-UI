@@ -954,6 +954,8 @@ int main(int argc, char** argv) {
     }
     std::vector<std::string> arguments;
 #ifdef _WIN32
+    (void)argc;
+    (void)argv;
     int count = 0;
     LPWSTR* wideArgs = CommandLineToArgvW(GetCommandLineW(), &count);
     if (wideArgs != nullptr) {
