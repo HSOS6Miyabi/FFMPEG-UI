@@ -1,0 +1,22 @@
+---
+Checks: >
+  -*,
+  bugprone-*,
+  performance-*,
+  readability-braces-around-statements,
+  readability-else-after-return,
+  readability-implicit-bool-conversion,
+  readability-isolate-declaration,
+  readability-misleading-indentation,
+  readability-redundant-control-flow,
+  readability-redundant-declaration,
+  readability-simplify-boolean-expr,
+  modernize-use-nullptr,
+  modernize-use-override,
+  modernize-use-emplace,
+  modernize-use-equals-default,
+  modernize-use-equals-delete
+WarningsAsErrors: ''
+HeaderFilterRegex: 'src/.*'
+FormatStyle: file
+SystemHeaders: false
