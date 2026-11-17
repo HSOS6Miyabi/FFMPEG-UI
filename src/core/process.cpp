@@ -345,6 +345,10 @@ ProcessResult runProcess(const std::vector<std::string>& arguments,
         result.exitCode = static_cast<int>(GetLastError());
         result.output = "Unable to start FFmpeg. Check the executable path.";
         CloseHandle(readHandle);
+        if (!environmentBlock.empty()) {
+            SecureZeroMemory(environmentBlock.data(),
+                             environmentBlock.size() * sizeof(environmentBlock.front()));
+        }
         return result;
     }
 

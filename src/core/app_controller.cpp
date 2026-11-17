@@ -106,25 +106,44 @@ void AppController::initialize() {
     RemoteResources remoteResources;
     std::string remoteError;
     std::string selectedRemote;
+
     {
         std::lock_guard lock(mutex_);
         selectedRemote = settings_.remoteHost;
     }
+
     if (!selectedRemote.empty()) {
         const auto remote = service_.probeRemote(selectedRemote, true);
-        if (remote.success) { capabilities = remote.capabilities; remoteResources = remote.resources; }
-        else { remoteError = remote.error; selectedRemote.clear(); }
+        if (remote.success) {
+            capabilities = remote.capabilities;
+            remoteResources = remote.resources;
+        } else {
+            remoteError = remote.error;
+            selectedRemote.clear();
+        }
     }
+
     std::lock_guard lock(mutex_);
     capabilities_ = capabilities;
     remoteResources_ = remoteResources;
     settings_.remoteHost = selectedRemote;
+
     if (!capabilities_.supports(settings_.codec, settings_.backend)) {
-        for (const auto candidate : {EncoderBackend::CPU, EncoderBackend::NVENC, EncoderBackend::QSV, EncoderBackend::AMF}) {
-            if (capabilities_.supports(settings_.codec, candidate)) { settings_.backend = candidate; break; }
+        for (const auto candidate : {
+                 EncoderBackend::CPU,
+                 EncoderBackend::NVENC,
+                 EncoderBackend::QSV,
+                 EncoderBackend::AMF
+             }) {
+            if (capabilities_.supports(settings_.codec, candidate)) {
+                settings_.backend = candidate;
+                break;
+            }
         }
     }
+
     saveSettingsLocked();
+
     if (!remoteError.empty()) {
         status_ = "远程服务器暂时不可用";
         error_ = "无法连接上次选择的 SSH 服务器，已切换到本机编码。" + remoteError;
@@ -136,7 +155,8 @@ void AppController::initialize() {
         error_ = "当前环境未检测到 ffprobe。请安装与 FFmpeg 配套的工具后重新启动程序。";
     } else {
         status_ = "就绪";
-        detail_ = selectedRemote.empty() ? "本机 FFmpeg 与 ffprobe 已就绪。"
+        detail_ = selectedRemote.empty()
+            ? "本机 FFmpeg 与 ffprobe 已就绪。"
             : "已连接远程服务器 " + selectedRemote + "，后续任务将使用远程算力。";
         error_.clear();
     }
@@ -146,71 +166,159 @@ std::vector<SshServer> AppController::sshServers() const {
     return service_.sshService().listServers();
 }
 
-bool AppController::saveSshServer(const SshServer& server, const std::string& password, std::string& error) {
-    { std::lock_guard lock(mutex_); if (running_) { error = "批量任务运行期间不能修改 SSH 服务器。"; return false; } }
+bool AppController::saveSshServer(const SshServer& server, const std::string& password,
+                                  std::string& error) {
+    std::lock_guard lock(mutex_);
+    if (running_) {
+        error = "批量任务运行期间不能修改 SSH 服务器。";
+        return false;
+    }
+
     return service_.sshService().saveServer(server, password, error);
 }
 
 bool AppController::removeSshServer(const std::string& alias, std::string& error) {
-    { std::lock_guard lock(mutex_); if (running_) { error = "批量任务运行期间不能删除 SSH 服务器。"; return false; } }
-    if (!service_.sshService().removeServer(alias, error)) return false;
-    bool selected = false;
-    { std::lock_guard lock(mutex_); selected = settings_.remoteHost == alias; }
-    if (selected) selectLocalEncoder();
-    error.clear();
+    const auto localCapabilities = service_.probeCapabilities(true);
+
+    std::lock_guard lock(mutex_);
+    if (running_) {
+        error = "批量任务运行期间不能删除 SSH 服务器。";
+        return false;
+    }
+
+    if (!service_.sshService().removeServer(alias, error)) {
+        return false;
+    }
+
+    if (settings_.remoteHost == alias) {
+        settings_.remoteHost.clear();
+        remoteResources_ = {};
+        capabilities_ = localCapabilities;
+
+        if (!capabilities_.supports(settings_.codec, settings_.backend)) {
+            for (const auto candidate : {
+                     EncoderBackend::CPU,
+                     EncoderBackend::NVENC,
+                     EncoderBackend::QSV,
+                     EncoderBackend::AMF
+                 }) {
+                if (capabilities_.supports(settings_.codec, candidate)) {
+                    settings_.backend = candidate;
+                    break;
+                }
+            }
+        }
+
+        refreshOutputPathsLocked();
+        saveSettingsLocked();
+        status_ = "使用本机编码";
+        detail_ = "已删除当前远程服务器，后续任务将在本机使用 FFmpeg 处理。";
+        error_.clear();
+    }
+
     return true;
 }
 
 bool AppController::testSshServer(const std::string& alias, std::string& error) const {
-    if (!service_.sshService().testConnection(alias, error)) return false;
+    if (!service_.sshService().testConnection(alias, error)) {
+        return false;
+    }
+
     const auto remote = service_.probeRemote(alias, true);
-    if (!remote.success) { error = remote.error; return false; }
+    if (!remote.success) {
+        error = remote.error;
+        return false;
+    }
+
     std::ostringstream summary;
     summary << "SSH 连接成功。远程系统：" << remote.resources.operatingSystem
             << "，逻辑 CPU：" << remote.resources.logicalCores;
-    if (remote.resources.availableMemoryBytes > 0)
-        summary << "，可用内存：" << (remote.resources.availableMemoryBytes / (1024ULL * 1024ULL)) << " MiB";
+
+    if (remote.resources.availableMemoryBytes > 0) {
+        const auto availableMemoryMiB =
+            remote.resources.availableMemoryBytes / (1024ULL * 1024ULL);
+        summary << "，可用内存：" << availableMemoryMiB << " MiB";
+    }
+
     summary << "。远程 FFmpeg 和编码器检测正常。";
     error = summary.str();
     return true;
 }
 
 bool AppController::selectRemoteServer(const std::string& alias, std::string& error) {
-    { std::lock_guard lock(mutex_); if (running_) { error = "批量任务运行期间不能切换编码设备。"; return false; } }
     const auto remote = service_.probeRemote(alias, true);
-    if (!remote.success) { error = remote.error; return false; }
-    std::lock_guard lock(mutex_);
-    if (!remote.capabilities.supports(settings_.codec, settings_.backend)) {
-        bool selected = false;
-        for (const auto candidate : {EncoderBackend::CPU, EncoderBackend::NVENC, EncoderBackend::QSV, EncoderBackend::AMF}) {
-            if (remote.capabilities.supports(settings_.codec, candidate)) { settings_.backend = candidate; selected = true; break; }
-        }
-        if (!selected) { error = "远程服务器没有可用于当前视频编码格式的编码器。"; return false; }
+    if (!remote.success) {
+        error = remote.error;
+        return false;
     }
+
+    std::lock_guard lock(mutex_);
+    if (running_) {
+        error = "批量任务运行期间不能切换编码设备。";
+        return false;
+    }
+
+    if (!remote.capabilities.supports(settings_.codec, settings_.backend)) {
+        bool foundSupportedBackend = false;
+        for (const auto candidate : {
+                 EncoderBackend::CPU,
+                 EncoderBackend::NVENC,
+                 EncoderBackend::QSV,
+                 EncoderBackend::AMF
+             }) {
+            if (remote.capabilities.supports(settings_.codec, candidate)) {
+                settings_.backend = candidate;
+                foundSupportedBackend = true;
+                break;
+            }
+        }
+
+        if (!foundSupportedBackend) {
+            error = "远程服务器没有可用于当前视频编码格式的编码器。";
+            return false;
+        }
+    }
+
     settings_.remoteHost = alias;
     capabilities_ = remote.capabilities;
     remoteResources_ = remote.resources;
     refreshOutputPathsLocked();
     saveSettingsLocked();
+
     status_ = "已选择远程服务器";
-    detail_ = "后续任务将通过 SSH 使用 " + alias + " 上的 FFmpeg，处理结果会自动下载到本机。";
+    detail_ = "后续任务将通过 SSH 使用 " + alias +
+              " 上的 FFmpeg，处理结果会自动下载到本机。";
     error_.clear();
     error.clear();
     return true;
 }
 
 void AppController::selectLocalEncoder() {
-    { std::lock_guard lock(mutex_); if (running_) return; }
-    const auto local = service_.probeCapabilities(true);
+    const auto localCapabilities = service_.probeCapabilities(true);
+
     std::lock_guard lock(mutex_);
+    if (running_) {
+        return;
+    }
+
     settings_.remoteHost.clear();
     remoteResources_ = {};
-    capabilities_ = local;
+    capabilities_ = localCapabilities;
+
     if (!capabilities_.supports(settings_.codec, settings_.backend)) {
-        for (const auto candidate : {EncoderBackend::CPU, EncoderBackend::NVENC, EncoderBackend::QSV, EncoderBackend::AMF}) {
-            if (capabilities_.supports(settings_.codec, candidate)) { settings_.backend = candidate; break; }
+        for (const auto candidate : {
+                 EncoderBackend::CPU,
+                 EncoderBackend::NVENC,
+                 EncoderBackend::QSV,
+                 EncoderBackend::AMF
+             }) {
+            if (capabilities_.supports(settings_.codec, candidate)) {
+                settings_.backend = candidate;
+                break;
+            }
         }
     }
+
     refreshOutputPathsLocked();
     saveSettingsLocked();
     status_ = "使用本机编码";

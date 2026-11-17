@@ -920,19 +920,14 @@ private:
                     focusedField == static_cast<int>(index));
             }
 
-            const Rect& passwordField = fields[6];
-            canvas->text(
-                passwordField.x, passwordField.y - scaled(10),
-                fieldLabels[6], colors.muted, 0);
             if (passwordAuthentication) {
+                const Rect& passwordField = fields[6];
+                canvas->text(
+                    passwordField.x, passwordField.y - scaled(10),
+                    fieldLabels[6], colors.muted, 0);
                 canvas->input(
                     passwordField, values[6], colors,
                     focusedField == 6, true);
-            } else {
-                canvas->text(
-                    passwordField.x + scaled(10),
-                    passwordField.y + scaled(23),
-                    "切换到密码认证后填写", colors.muted, 0);
             }
 
             canvas->text(
