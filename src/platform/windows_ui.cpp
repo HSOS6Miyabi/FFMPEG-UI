@@ -48,7 +48,7 @@ Palette palette(bool dark) {
 struct Layout {
     Rect addFiles, addFolder, addArchive, importQueue, exportQueue, removeSelected, clearDone;
     Rect outputField, outputBrowse;
-    Rect codec[3], backend[4], crfTrack, crfValue, compression[8], audio[6];
+    Rect container[2], codec[3], backend[4], crfTrack, crfValue, compression[8], audio[6];
     Rect parallel, recursive, skip, preserve, overwrite;
     Rect queue, overallCard, overallTrack, start, pause, cancel, theme;
 };
@@ -84,29 +84,32 @@ Layout makeLayout(int width, int height, double scale, int backendCount = 4) {
     const int settingsY = top + s(56);
     l.outputField = {leftX + s(20), settingsY + s(50), leftW - s(144), s(38)};
     l.outputBrowse = {leftX + leftW - s(112), settingsY + s(50), s(92), s(38)};
+    const int containerW = (leftW - s(52) - s(6)) / 2;
+    for (int i = 0; i < 2; ++i)
+        l.container[i] = {leftX + s(20) + i * (containerW + s(6)), settingsY + s(112), containerW, s(32)};
     const int codecW = (leftW - s(52)) / 3;
-    for (int i = 0; i < 3; ++i) l.codec[i] = {leftX + s(20) + i * (codecW + s(6)), settingsY + s(112), codecW, s(38)};
+    for (int i = 0; i < 3; ++i) l.codec[i] = {leftX + s(20) + i * (codecW + s(6)), settingsY + s(160), codecW, s(38)};
     backendCount = std::clamp(backendCount, 1, 4);
     const int backendW = (leftW - s(52) - s(6) * (backendCount - 1)) / backendCount;
-    for (int i = 0; i < backendCount; ++i) l.backend[i] = {leftX + s(20) + i * (backendW + s(6)), settingsY + s(162), backendW, s(34)};
-    l.crfTrack = {leftX + s(20), settingsY + s(228), leftW - s(144), s(10)};
-    l.crfValue = {leftX + leftW - s(112), settingsY + s(213), s(92), s(38)};
+    for (int i = 0; i < backendCount; ++i) l.backend[i] = {leftX + s(20) + i * (backendW + s(6)), settingsY + s(210), backendW, s(34)};
+    l.crfTrack = {leftX + s(20), settingsY + s(276), leftW - s(144), s(10)};
+    l.crfValue = {leftX + leftW - s(112), settingsY + s(261), s(92), s(38)};
     const int compW = (leftW - s(52) - s(18)) / 4;
     for (int i = 0; i < 8; ++i) {
         const int row = i / 4, col = i % 4;
-        l.compression[i] = {leftX + s(20) + col * (compW + s(6)), settingsY + s(276) + row * s(39), compW, s(32)};
+        l.compression[i] = {leftX + s(20) + col * (compW + s(6)), settingsY + s(324) + row * s(39), compW, s(32)};
     }
     const int audioW = (leftW - s(52) - s(30)) / 6;
     for (int i = 0; i < 6; ++i) l.audio[i] = {leftX + s(20) + i * (audioW + s(6)), settingsY + s(366), audioW, s(32)};
     const int optionGap = s(6);
     const int optionWidth = (leftW - s(40) - optionGap * 4) / 5;
-    const int optionY = settingsY + s(414);
+    const int optionY = settingsY + s(462);
     l.parallel = {leftX + s(20), optionY, optionWidth, s(32)};
     l.recursive = {leftX + s(20) + optionWidth + optionGap, optionY, optionWidth, s(32)};
     l.skip = {leftX + s(20) + (optionWidth + optionGap) * 2, optionY, optionWidth, s(32)};
     l.preserve = {leftX + s(20) + (optionWidth + optionGap) * 3, optionY, optionWidth, s(32)};
     l.overwrite = {leftX + s(20) + (optionWidth + optionGap) * 4, optionY, optionWidth, s(32)};
-    l.queue = {leftX, settingsY + s(462), leftW, height - (settingsY + s(462)) - pad};
+    l.queue = {leftX, settingsY + s(510), leftW, height - (settingsY + s(510)) - pad};
     l.overallCard = {rightX, top, rightW, s(270)};
     l.overallTrack = {rightX + s(22), top + s(126), rightW - s(44), s(12)};
     l.start = {rightX + s(22), top + s(206), rightW - s(44), s(44)};
@@ -147,7 +150,7 @@ void drawCard(HDC dc, const Rect& r, const Palette& c) {
 }
 
 std::wstring wide(const std::string& value) { return wideFromUtf8(value); }
-std::wstring basename(const std::string& path) { return std::filesystem::path(wide(path)).filename().wstring(); }
+std::string basename(const std::string& path) { return utf8FromWide(std::filesystem::path(wide(path)).filename().c_str()); }
 
 std::wstring formatTime(const std::optional<double>& value) {
     if (!value || *value < 0) return L"--:--:--";
@@ -369,32 +372,35 @@ private:
         drawButton(dc,l.removeSelected,L"移除选中",c,small); drawButton(dc,l.clearDone,L"清除已完成",c,small);
 
         const int leftX = s(28), top = s(168), leftW = l.queue.width;
-        drawCard(dc, {leftX, top, leftW, s(448)}, c);
+        drawCard(dc, {leftX, top, leftW, s(500)}, c);
         drawText(dc,{leftX+s(20),top+s(14),s(200),s(26)},L"编码设置",c.text,heading);
         drawText(dc,{leftX+s(20),top+s(43),s(220),s(20)},L"输出文件夹",c.muted,small);
         std::wstring output = settings_.outputDirectory.empty() ? L"默认：与每个源文件保存在同一文件夹" : wide(settings_.outputDirectory);
         drawText(dc,l.outputField,output,c.text,small);
         drawButton(dc,l.outputBrowse,L"选择目录",c,small);
-        drawText(dc,{leftX+s(20),top+s(101),s(150),s(22)},L"视频编码格式",c.muted,small);
+        drawText(dc,{leftX+s(20),top+s(98),s(150),s(20)},L"输出容器格式",c.muted,small);
+        const std::array<std::wstring,2> containers{L"MP4",L"与源文件相同"};
+        for(int i=0;i<2;++i) drawButton(dc,l.container[i],containers[i],c,small,static_cast<int>(settings_.outputContainer)==i);
+        drawText(dc,{leftX+s(20),top+s(149),s(150),s(22)},L"视频编码格式",c.muted,small);
         const std::array<std::wstring,3> codecs{L"H.264",L"H.265",L"AV1"};
         for (int i=0;i<3;++i) drawButton(dc,l.codec[i],codecs[i],c,normal,static_cast<int>(settings_.codec)==i);
-        drawText(dc,{leftX+s(20),top+s(149),s(150),s(20)},L"编码设备",c.muted,small);
+        drawText(dc,{leftX+s(20),top+s(197),s(150),s(20)},L"编码设备",c.muted,small);
         const std::array<std::wstring,4> backendLabels{L"CPU",L"NVIDIA NVENC",L"Intel QSV",L"AMD AMF"};
         for (std::size_t i=0;i<backends.size();++i) {
             const int labelIndex = backends[i] == EncoderBackend::CPU ? 0 : backends[i] == EncoderBackend::NVENC ? 1 : backends[i] == EncoderBackend::QSV ? 2 : 3;
             drawButton(dc,l.backend[i],backendLabels[labelIndex],c,small,settings_.backend==backends[i]);
         }
         if (backends.empty()) drawText(dc,{leftX+s(20),top+s(162),leftW-s(40),s(34)},L"当前 FFmpeg 环境没有可用的视频编码器",c.red,small);
-        drawText(dc,{leftX+s(20),top+s(193),s(140),s(22)},L"CRF / 目标质量",c.muted,small);
+        drawText(dc,{leftX+s(20),top+s(245),s(140),s(22)},L"CRF / 目标质量",c.muted,small);
         drawProgress(dc,{l.crfTrack.x,l.crfTrack.y,l.crfTrack.width,l.crfTrack.height},
             static_cast<double>(settings_.crf)/crfMaximum(settings_.codec),c);
         const int knobX=l.crfTrack.x+static_cast<int>(std::lround(l.crfTrack.width*static_cast<double>(settings_.crf)/crfMaximum(settings_.codec)));
         fillRound(dc,{knobX-s(7),l.crfTrack.y-s(5),s(14),s(20)},c.accent,c.accent,7);
         drawButton(dc,l.crfValue,editingCrf_ ? (crfEditText_.empty() ? L"输入" : crfEditText_) : std::to_wstring(settings_.crf),c,normal,true);
-        drawText(dc,{leftX+s(20),top+s(244),s(200),s(20)},L"压缩级别",c.muted,small);
+        drawText(dc,{leftX+s(20),top+s(296),s(200),s(20)},L"压缩级别",c.muted,small);
         const std::array<std::wstring,8> levels{L"极速",L"非常快",L"快速",L"均衡",L"慢速",L"较慢",L"很慢",L"极致压缩"};
         for(int i=0;i<8;++i) drawButton(dc,l.compression[i],levels[i],c,small,static_cast<int>(settings_.compression)==i);
-        drawText(dc,{leftX+s(20),top+s(331),s(200),s(20)},L"音频 AAC 码率",c.muted,small);
+        drawText(dc,{leftX+s(20),top+s(383),s(200),s(20)},L"音频码率",c.muted,small);
         const std::array<int,6> rates{96,128,160,192,256,320};
         for(int i=0;i<6;++i) drawButton(dc,l.audio[i],std::to_wstring(rates[i])+L" kbps",c,small,settings_.audioBitrateKbps==rates[i]);
         drawButton(dc,l.parallel,settings_.maxParallelJobs==0?L"并行：自动":L"并行："+std::to_wstring(settings_.maxParallelJobs),c,small);
@@ -459,13 +465,13 @@ private:
         const Rect info{l.overallCard.x,infoY,l.overallCard.width,height-infoY-s(28)};
         drawCard(dc,info,c);
         drawText(dc,{info.x+s(22),info.y+s(18),info.width-s(44),s(26)},L"设备与编码摘要",c.text,heading);
-        drawText(dc,{info.x+s(22),info.y+s(58),info.width-s(44),s(22)},L"格式  "+wide(codecName(settings_.codec))+L" MP4",c.text,normal);
+        drawText(dc,{info.x+s(22),info.y+s(58),info.width-s(44),s(22)},L"格式  "+wide(codecName(settings_.codec))+L" · "+wide(outputContainerName(settings_.outputContainer)),c.text,normal);
         drawText(dc,{info.x+s(22),info.y+s(88),info.width-s(44),s(22)},L"编码器  "+wide(backendName(settings_.backend)),c.text,normal);
         drawText(dc,{info.x+s(22),info.y+s(118),info.width-s(44),s(22)},L"CRF  "+std::to_wstring(settings_.crf)+L"  ·  "+wide(compressionName(settings_.compression)),c.text,normal);
-        drawText(dc,{info.x+s(22),info.y+s(148),info.width-s(44),s(22)},L"音频  AAC "+std::to_wstring(settings_.audioBitrateKbps)+L" kbps",c.text,normal);
+        drawText(dc,{info.x+s(22),info.y+s(148),info.width-s(44),s(22)},L"音频码率  "+std::to_wstring(settings_.audioBitrateKbps)+L" kbps（按容器选择编码）",c.text,normal);
         drawText(dc,{info.x+s(22),info.y+s(190),info.width-s(44),s(44)},wide(snap.resourcePlan.explanation),c.muted,small,DT_LEFT|DT_TOP|DT_WORDBREAK);
         drawText(dc,{info.x+s(22),info.y+s(248),info.width-s(44),s(70)},
-            L"支持的视频：H.264、H.265、AV1。\nZIP 与 PPTX 会保留其他文件并更新视频引用。\nAAC 音频码率可独立设置。",c.muted,small,DT_LEFT|DT_TOP|DT_WORDBREAK);
+            L"支持的视频：H.264、H.265、AV1。\nZIP 与 PPTX 会保留其他文件并更新视频引用。\n音频码率可独立设置，并按输出容器选择兼容的音频编码。",c.muted,small,DT_LEFT|DT_TOP|DT_WORDBREAK);
         if(!snap.error.empty()) drawText(dc,{info.x+s(22),info.y+info.height-s(74),info.width-s(44),s(58)},wide(snap.error),c.red,small,DT_LEFT|DT_TOP|DT_WORDBREAK);
 
         DeleteObject(title); DeleteObject(normal); DeleteObject(small); DeleteObject(heading);
@@ -489,6 +495,7 @@ private:
         if(snap.running&&contains(l.pause,x,y)){if(snap.paused)controller_.resumeBatch();else controller_.pauseBatch();return;}
         if(snap.running&&contains(l.cancel,x,y)){controller_.cancelBatch();return;}
         if(contains(l.crfValue,x,y)){editingCrf_=true;crfEditText_.clear();SetFocus(window_);return;}
+        for(int i=0;i<2;++i) if(contains(l.container[i],x,y)){settings_.outputContainer=static_cast<OutputContainer>(i);updateSettings();return;}
         for(int i=0;i<3;++i) if(contains(l.codec[i],x,y)) { settings_.codec=static_cast<VideoCodec>(i);settings_.crf=defaultCrf(settings_.codec);const auto caps=controller_.snapshot().capabilities;if(!caps.supports(settings_.codec,settings_.backend)){for(const auto candidate:{EncoderBackend::CPU,EncoderBackend::NVENC,EncoderBackend::QSV,EncoderBackend::AMF})if(caps.supports(settings_.codec,candidate)){settings_.backend=candidate;break;}}updateSettings();return; }
         for(std::size_t i=0;i<visibleBackends.size();++i) if(contains(l.backend[i],x,y)) {settings_.backend=visibleBackends[i];updateSettings();return;}
         for(int i=0;i<8;++i) if(contains(l.compression[i],x,y)){settings_.compression=static_cast<CompressionLevel>(i);updateSettings();return;}
