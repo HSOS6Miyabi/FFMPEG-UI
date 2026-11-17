@@ -89,7 +89,9 @@ private:
     std::string makeUniqueOutputPathLocked(const BatchTaskSnapshot& task,
                                            const std::vector<std::string>& reserved) const;
     void loadSettings();
+    void loadQueue();
     void saveSettingsLocked() const;
+    void saveQueueLocked() const;
     void runTask(std::size_t index, const ResourcePlan& plan, std::size_t batchTaskCount);
 
     FfmpegService service_;
