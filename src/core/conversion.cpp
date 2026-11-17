@@ -241,6 +241,31 @@ std::string expectedAudioCodecName(const std::string& encoder) {
     return encoder;
 }
 
+std::string expectedAudioCodecForSettings(AudioMode mode, const std::string& encoder) {
+    switch (mode) {
+    case AudioMode::Encode: return expectedAudioCodecName(encoder);
+    case AudioMode::Copy: return "copy";
+    case AudioMode::Remove: return "none";
+    }
+    return "none";
+}
+
+std::string outputScaleFilter(OutputResolution resolution) {
+    int maximumWidth = 0;
+    int maximumHeight = 0;
+    switch (resolution) {
+    case OutputResolution::Original: return {};
+    case OutputResolution::UHD4K: maximumWidth = 3840; maximumHeight = 2160; break;
+    case OutputResolution::QHD1440: maximumWidth = 2560; maximumHeight = 1440; break;
+    case OutputResolution::FullHD1080: maximumWidth = 1920; maximumHeight = 1080; break;
+    case OutputResolution::HD720: maximumWidth = 1280; maximumHeight = 720; break;
+    case OutputResolution::SD480: maximumWidth = 854; maximumHeight = 480; break;
+    }
+    return "scale=w='min(iw," + std::to_string(maximumWidth) +
+        ")':h='min(ih," + std::to_string(maximumHeight) +
+        ")':force_original_aspect_ratio=decrease:force_divisible_by=2";
+}
+
 std::string audioEncoderForExtension(const std::string& extension,
                                     const EncoderCapabilities& capabilities) {
     if (extension == ".webm" || extension == ".ogv") {
@@ -286,7 +311,7 @@ std::string sourceFingerprint(const std::string& inputPath) {
 
 std::string processingMarker(const ConversionSettings& settings) {
     const std::string& source = settings.markerSourcePath.empty() ? settings.inputPath : settings.markerSourcePath;
-    return "FFmpegStudio:v2:" + settingsFingerprint(settings) + ":" + sourceFingerprint(source);
+    return "VideoCompressionWorkbench:v3:" + settingsFingerprint(settings) + ":" + sourceFingerprint(source);
 }
 
 std::uint64_t availableMemory() {
@@ -365,8 +390,11 @@ bool outputDescriptionMatches(const std::string& format,
     }
 
     const bool hasAudio = format.find("codec_type=audio") != std::string::npos;
-    const bool audioMatches = !hasAudio ||
-        format.find("codec_name=" + expectedAudioCodec) != std::string::npos;
+    const bool audioMatches = expectedAudioCodec == "none"
+        ? !hasAudio
+        : expectedAudioCodec == "copy" ||
+            !hasAudio ||
+            format.find("codec_name=" + expectedAudioCodec) != std::string::npos;
     const bool markerMatches = format.find(marker) != std::string::npos;
 
     return hasVideo && hasExpectedContainer && audioMatches && markerMatches;
@@ -484,6 +512,27 @@ std::string compressionName(CompressionLevel level) {
     return "均衡";
 }
 
+std::string audioModeName(AudioMode mode) {
+    switch (mode) {
+    case AudioMode::Encode: return "自动编码";
+    case AudioMode::Copy: return "保留原音频";
+    case AudioMode::Remove: return "移除音频";
+    }
+    return "自动编码";
+}
+
+std::string outputResolutionName(OutputResolution resolution) {
+    switch (resolution) {
+    case OutputResolution::Original: return "原始尺寸";
+    case OutputResolution::UHD4K: return "最高 2160p";
+    case OutputResolution::QHD1440: return "最高 1440p";
+    case OutputResolution::FullHD1080: return "最高 1080p";
+    case OutputResolution::HD720: return "最高 720p";
+    case OutputResolution::SD480: return "最高 480p";
+    }
+    return "原始尺寸";
+}
+
 std::string taskKindName(TaskKind kind) {
     switch (kind) {
     case TaskKind::Video: return "视频";
@@ -524,7 +573,9 @@ std::string settingsFingerprint(const ConversionSettings& settings) {
           << ";backend=" << backendShortName(settings.backend)
           << ";quality=" << settings.crf
           << ";compression=" << static_cast<int>(settings.compression)
+          << ";audio_mode=" << static_cast<int>(settings.audioMode)
           << ";audio=" << settings.audioBitrateKbps
+          << ";resolution=" << static_cast<int>(settings.outputResolution)
           << ";container=" << (settings.outputContainer == OutputContainer::MP4
                 ? "mp4" : "source:" + outputVideoExtension(settings.outputContainer, source));
     return value.str();
@@ -533,10 +584,35 @@ std::string settingsFingerprint(const ConversionSettings& settings) {
 std::string outputSuffix(const ConversionSettings& settings) {
     const std::string qualityType = settings.backend == EncoderBackend::CPU ? "CR" : "CQ";
     const std::string container = settings.outputContainer == OutputContainer::SameAsSource ? "_SRC" : "";
+    const std::string audio = settings.audioMode == AudioMode::Encode
+        ? "_A" + std::to_string(settings.audioBitrateKbps)
+        : settings.audioMode == AudioMode::Copy ? "_ACOPY" : "_ANOAUDIO";
+    const std::string resolution = settings.outputResolution == OutputResolution::Original
+        ? "" : "_R" + std::to_string(static_cast<int>(settings.outputResolution));
     return "_" + codecShortName(settings.codec) + "_" + backendShortName(settings.backend) +
            "_" + qualityType + std::to_string(settings.crf) + "_" +
-           compressionName(settings.compression) + "_A" + std::to_string(settings.audioBitrateKbps) + container;
+           compressionName(settings.compression) + audio + resolution + container;
 }
+
+namespace {
+std::string legacySettingsFingerprint(const ConversionSettings& settings) {
+    std::ostringstream value;
+    const std::string& source = settings.markerSourcePath.empty() ? settings.inputPath : settings.markerSourcePath;
+    value << "codec=" << codecShortName(settings.codec)
+          << ";backend=" << backendShortName(settings.backend)
+          << ";quality=" << settings.crf
+          << ";compression=" << static_cast<int>(settings.compression)
+          << ";audio=" << settings.audioBitrateKbps
+          << ";container=" << (settings.outputContainer == OutputContainer::MP4
+                ? "mp4" : "source:" + outputVideoExtension(settings.outputContainer, source));
+    return value.str();
+}
+
+bool supportsLegacyMarker(const ConversionSettings& settings) {
+    return settings.audioMode == AudioMode::Encode &&
+        settings.outputResolution == OutputResolution::Original;
+}
+} // namespace
 
 ResourcePlan recommendResourcePlan(std::size_t taskCount, EncoderBackend backend,
                                    VideoCodec codec, int userLimit,
@@ -610,23 +686,29 @@ std::vector<std::string> buildFfmpegCommand(const ConversionSettings& settings,
         throw std::invalid_argument("当前 FFmpeg 环境不支持所选编码器。");
     if (settings.crf < 0 || settings.crf > crfMaximum(settings.codec))
         throw std::invalid_argument("CRF 数值超出当前编码格式的范围。");
-    if (settings.audioBitrateKbps < 64 || settings.audioBitrateKbps > 320)
+    if (settings.audioMode == AudioMode::Encode &&
+        (settings.audioBitrateKbps < 64 || settings.audioBitrateKbps > 320)) {
         throw std::invalid_argument("音频码率必须介于 64 到 320 kbps 之间。");
+    }
 
     const std::string encoder = encoderFor(settings.codec, settings.backend, capabilities);
     const std::string outputExtension = lower(pathToUtf8(pathFromUtf8(actualOutputPath).extension()));
     if (!containerSupportsVideoCodec(outputExtension, settings.codec))
         throw std::invalid_argument("所选视频编码格式与目标容器不兼容。请更换编码格式或选择 MP4 输出。");
-    const std::string audioEncoder = audioEncoderForExtension(outputExtension, capabilities);
-    if (audioEncoder.empty())
+    const std::string audioEncoder = settings.audioMode == AudioMode::Encode
+        ? audioEncoderForExtension(outputExtension, capabilities) : std::string{};
+    if (settings.audioMode == AudioMode::Encode && audioEncoder.empty())
         throw std::invalid_argument("当前 FFmpeg 未提供该容器所需的音频编码器。");
     const bool useSvtAv1 = encoder == "libsvtav1";
     std::vector<std::string> command{
         ffmpegPath, "-hide_banner", "-nostdin", "-loglevel", "error", "-y",
         "-i", settings.inputPath,
-        "-map", "0:v:0", "-map", "0:a?", "-map_metadata", "0", "-map_chapters", "0",
-        "-c:v", encoder
+        "-map", "0:v:0"
     };
+    if (settings.audioMode != AudioMode::Remove) {
+        command.insert(command.end(), {"-map", "0:a?"});
+    }
+    command.insert(command.end(), {"-map_metadata", "0", "-map_chapters", "0", "-c:v", encoder});
 
     switch (settings.backend) {
     case EncoderBackend::CPU:
@@ -661,8 +743,18 @@ std::vector<std::string> buildFfmpegCommand(const ConversionSettings& settings,
         command.insert(command.end(), {"-threads:v", std::to_string(settings.threadsPerJob)});
 
     const std::string marker = processingMarker(settings);
-    command.insert(command.end(), {"-pix_fmt", "yuv420p", "-c:a", audioEncoder, "-b:a",
-        std::to_string(settings.audioBitrateKbps) + "k", "-metadata", "comment=" + marker});
+    const std::string scaleFilter = outputScaleFilter(settings.outputResolution);
+    if (!scaleFilter.empty()) {
+        command.insert(command.end(), {"-vf", scaleFilter});
+    }
+    command.insert(command.end(), {"-pix_fmt", "yuv420p"});
+    if (settings.audioMode == AudioMode::Encode) {
+        command.insert(command.end(), {
+            "-c:a", audioEncoder, "-b:a", std::to_string(settings.audioBitrateKbps) + "k"});
+    } else if (settings.audioMode == AudioMode::Copy) {
+        command.insert(command.end(), {"-c:a", "copy"});
+    }
+    command.insert(command.end(), {"-metadata", "comment=" + marker});
     const bool movFamily = outputExtension == ".mp4" || outputExtension == ".m4v" ||
         outputExtension == ".mov" || outputExtension == ".3gp";
     if (movFamily && settings.codec == VideoCodec::H265) command.insert(command.end(), {"-tag:v", "hvc1"});
@@ -853,10 +945,14 @@ bool FfmpegService::isAlreadyProcessed(const std::string& inputPath,
     const ProcessResult result = runProcess({ffprobePath_, "-v", "error", "-show_entries",
         "format_tags=comment", "-of", "default=noprint_wrappers=1", inputPath});
     if (result.exitCode != 0) return false;
-    const std::string currentPrefix = "FFmpegStudio:v2:" + settingsFingerprint(settings) + ":";
-    const std::string legacyMarker = "FFmpegStudio:v1:" + settingsFingerprint(settings);
+    const std::string currentPrefix = "VideoCompressionWorkbench:v3:" + settingsFingerprint(settings) + ":";
+    const std::string legacyV2Prefix = supportsLegacyMarker(settings)
+        ? "FFmpegStudio:v2:" + legacySettingsFingerprint(settings) + ":" : std::string{};
+    const std::string legacyV1Marker = supportsLegacyMarker(settings)
+        ? "FFmpegStudio:v1:" + legacySettingsFingerprint(settings) : std::string{};
     return result.output.find(currentPrefix) != std::string::npos ||
-           result.output.find(legacyMarker) != std::string::npos;
+           (!legacyV2Prefix.empty() && result.output.find(legacyV2Prefix) != std::string::npos) ||
+           (!legacyV1Marker.empty() && result.output.find(legacyV1Marker) != std::string::npos);
 }
 
 bool FfmpegService::isOutputForSourceAlreadyProcessed(const std::string& outputPath,
@@ -867,7 +963,12 @@ bool FfmpegService::isOutputForSourceAlreadyProcessed(const std::string& outputP
     const ProcessResult result = runProcess({ffprobePath_, "-v", "error", "-show_entries",
         "format_tags=comment", "-of", "default=noprint_wrappers=1", outputPath});
     if (result.exitCode != 0) return false;
-    return result.output.find(processingMarker(settings)) != std::string::npos;
+    if (result.output.find(processingMarker(settings)) != std::string::npos) return true;
+    if (!supportsLegacyMarker(settings)) return false;
+    const std::string legacyMarker = "FFmpegStudio:v2:" +
+        legacySettingsFingerprint(settings) + ":" + sourceFingerprint(settings.markerSourcePath.empty()
+            ? settings.inputPath : settings.markerSourcePath);
+    return result.output.find(legacyMarker) != std::string::npos;
 }
 
 bool FfmpegService::verifyOutput(const std::string& path, VideoCodec codec,
@@ -894,7 +995,11 @@ bool FfmpegService::verifyOutput(const std::string& path, VideoCodec codec,
         expectedContainer = format.find("mpeg") != std::string::npos;
     else if (extension == ".ogv") expectedContainer = format.find("ogg") != std::string::npos;
     const bool hasAudio = format.find("codec_type=audio") != std::string::npos;
-    const bool audioMatches = !hasAudio || format.find("codec_name=" + expectedAudioCodec) != std::string::npos;
+    const bool audioMatches = expectedAudioCodec == "none"
+        ? !hasAudio
+        : expectedAudioCodec == "copy" ||
+            !hasAudio ||
+            format.find("codec_name=" + expectedAudioCodec) != std::string::npos;
     const bool hasMarker = format.find(expectedMarker) != std::string::npos;
     return hasVideo && expectedContainer && audioMatches && hasMarker;
 }
@@ -935,9 +1040,9 @@ ConversionResult FfmpegService::convertRemote(
         return result;
     }
 
-    const std::string audioEncoder =
-        audioEncoderForExtension(outputExtension, capabilities);
-    if (audioEncoder.empty()) {
+    const std::string audioEncoder = settings.audioMode == AudioMode::Encode
+        ? audioEncoderForExtension(outputExtension, capabilities) : std::string{};
+    if (settings.audioMode == AudioMode::Encode && audioEncoder.empty()) {
         result.message = "远程 FFmpeg 缺少该容器所需的音频编码器。";
         return result;
     }
@@ -1255,7 +1360,7 @@ ConversionResult FfmpegService::convertRemote(
     const auto probe = runRemote(probeCommand);
     if (probe.exitCode != 0 ||
         !outputDescriptionMatches(probe.output, remoteOutput, settings.codec, marker,
-                                  expectedAudioCodecName(audioEncoder))) {
+                                  expectedAudioCodecForSettings(settings.audioMode, audioEncoder))) {
         result.message = "远程输出未通过容器格式、视频编码、音频编码或处理标记检查。";
         return result;
     }
@@ -1354,8 +1459,9 @@ ConversionResult FfmpegService::convert(const ConversionSettings& settings,
         result.message = "所选视频编码格式与目标容器不兼容。请更换编码格式或选择 MP4 输出。";
         return result;
     }
-    const std::string expectedAudioCodec = audioEncoderForExtension(outputExtension, capabilities);
-    if (expectedAudioCodec.empty()) {
+    const std::string expectedAudioCodec = settings.audioMode == AudioMode::Encode
+        ? audioEncoderForExtension(outputExtension, capabilities) : std::string{};
+    if (settings.audioMode == AudioMode::Encode && expectedAudioCodec.empty()) {
         result.message = "当前 FFmpeg 未提供该容器所需的音频编码器。";
         return result;
     }
@@ -1367,7 +1473,8 @@ ConversionResult FfmpegService::convert(const ConversionSettings& settings,
         result.message = "CRF 数值超出当前编码格式的范围。";
         return result;
     }
-    if (settings.audioBitrateKbps < 64 || settings.audioBitrateKbps > 320) {
+    if (settings.audioMode == AudioMode::Encode &&
+        (settings.audioBitrateKbps < 64 || settings.audioBitrateKbps > 320)) {
         result.message = "音频码率必须介于 64 到 320 kbps 之间。";
         return result;
     }
@@ -1513,7 +1620,8 @@ ConversionResult FfmpegService::convert(const ConversionSettings& settings,
         result.message = processErrorSummary(process.output);
         return result;
     }
-    if (!verifyOutput(pathToUtf8(temporaryPath), settings.codec, marker, expectedAudioCodecName(expectedAudioCodec))) {
+    if (!verifyOutput(pathToUtf8(temporaryPath), settings.codec, marker,
+                      expectedAudioCodecForSettings(settings.audioMode, expectedAudioCodec))) {
         fs::remove(temporaryPath, filesystemError);
         result.message = "FFmpeg 已结束，但输出文件未通过容器格式、视频编码、音频编码或处理标记检查。";
         return result;
