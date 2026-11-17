@@ -58,8 +58,8 @@ ffmpegui::FfmpegService makeService() {
 }
 
 void printUsage() {
-    std::cout << "FFmpeg Studio\n"
-              << "Usage: ffmpeg-ui [options] [files or folders...]\n\n"
+    std::cout << "视频压缩工作台\n"
+              << "Usage: video-compression-workbench [options] [files or folders...]\n\n"
               << "Options:\n"
               << "  --help, -h       Show this help\n"
               << "  --encoders       List available CPU and hardware encoders\n"
