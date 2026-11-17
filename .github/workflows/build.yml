@@ -31,7 +31,7 @@ jobs:
         run: cmake --build --preset linux-release --parallel
 
       - name: Run unit tests
-        run: ctest --test-dir build/linux-release --output-on-failure
+        run: ctest --preset linux-release
 
       - name: Run FFmpeg conversion, ZIP and PPTX tests
         run: ./build/linux-release/ffmpeg-ui --self-test
@@ -58,6 +58,11 @@ jobs:
       - name: Check out source
         uses: actions/checkout@v4
 
+      - name: Set up MSVC environment
+        uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64
+
       - name: Install libarchive
         shell: pwsh
         run: vcpkg install --triplet x64-windows-static
@@ -73,19 +78,19 @@ jobs:
           -DVCPKG_TARGET_TRIPLET=x64-windows-static
 
       - name: Build
-        run: cmake --build --preset windows-release --config Release --parallel
+        run: cmake --build --preset windows-release --parallel
 
       - name: Run unit tests
-        run: ctest --test-dir build/windows-release -C Release --output-on-failure
+        run: ctest --preset windows-release
 
       - name: Run FFmpeg conversion, ZIP and PPTX tests
-        run: .\build\windows-release\Release\ffmpeg-ui.exe --self-test
+        run: .\build\windows-release\ffmpeg-ui.exe --self-test
 
       - name: Package Windows application
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Force dist\windows | Out-Null
-          Copy-Item build\windows-release\Release\ffmpeg-ui.exe dist\windows\
+          Copy-Item build\windows-release\ffmpeg-ui.exe dist\windows\
           Copy-Item README.md dist\windows\
           Copy-Item docs dist\windows\ -Recurse
           Compress-Archive -Path dist\windows\* -DestinationPath ffmpeg-studio-windows-x86_64.zip -Force
