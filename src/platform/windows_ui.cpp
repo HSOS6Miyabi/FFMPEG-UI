@@ -1123,13 +1123,13 @@ private:
                     DT_RIGHT | DT_VCENTER | DT_SINGLELINE);
                 HPEN separatorPen = CreatePen(PS_SOLID, 1, c.border);
                 HGDIOBJ previousPen = SelectObject(dc, separatorPen);
-                MoveToEx(dc, l.queue.x + s(18), y + rowH - s(2), nullptr);
-                LineTo(dc, l.queue.x + l.queue.width - s(18), y + rowH - s(2));
+                MoveToEx(dc, l.queue.x + s(18), y + rowHeight - s(2), nullptr);
+                LineTo(dc, l.queue.x + l.queue.width - s(18), y + rowHeight - s(2));
                 SelectObject(dc, previousPen);
                 DeleteObject(separatorPen);
             }
         }
-        if (rows.size() > static_cast<std::size_t>(visible)) {
+        if (rows.size() > static_cast<std::size_t>(visibleRowsCount)) {
             drawText(
                 dc,
                 {l.queue.x + l.queue.width - s(130),
