@@ -285,7 +285,8 @@ std::string sourceFingerprint(const std::string& inputPath) {
 }
 
 std::string processingMarker(const ConversionSettings& settings) {
-    return "FFmpegStudio:v2:" + settingsFingerprint(settings) + ":" + sourceFingerprint(settings.inputPath);
+    const std::string& source = settings.markerSourcePath.empty() ? settings.inputPath : settings.markerSourcePath;
+    return "FFmpegStudio:v2:" + settingsFingerprint(settings) + ":" + sourceFingerprint(source);
 }
 
 std::uint64_t availableMemory() {
@@ -457,13 +458,14 @@ int defaultCrf(VideoCodec codec) {
 
 std::string settingsFingerprint(const ConversionSettings& settings) {
     std::ostringstream value;
+    const std::string& source = settings.markerSourcePath.empty() ? settings.inputPath : settings.markerSourcePath;
     value << "codec=" << codecShortName(settings.codec)
           << ";backend=" << backendShortName(settings.backend)
           << ";quality=" << settings.crf
           << ";compression=" << static_cast<int>(settings.compression)
           << ";audio=" << settings.audioBitrateKbps
           << ";container=" << (settings.outputContainer == OutputContainer::MP4
-                ? "mp4" : "source:" + outputVideoExtension(settings.outputContainer, settings.inputPath));
+                ? "mp4" : "source:" + outputVideoExtension(settings.outputContainer, source));
     return value.str();
 }
 
@@ -603,7 +605,11 @@ std::vector<std::string> buildFfmpegCommand(const ConversionSettings& settings,
 }
 
 FfmpegService::FfmpegService(std::string ffmpegPath, std::string ffprobePath)
-    : ffmpegPath_(std::move(ffmpegPath)), ffprobePath_(std::move(ffprobePath)) {}
+    : ffmpegPath_(std::move(ffmpegPath)), ffprobePath_(std::move(ffprobePath)),
+      sshService_(std::make_shared<SshService>()) {}
+
+SshService& FfmpegService::sshService() { return *sshService_; }
+const SshService& FfmpegService::sshService() const { return *sshService_; }
 
 EncoderCapabilities FfmpegService::probeCapabilities(bool testHardware) const {
     EncoderCapabilities capabilities;
