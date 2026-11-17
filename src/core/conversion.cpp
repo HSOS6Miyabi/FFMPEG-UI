@@ -587,8 +587,15 @@ std::string outputSuffix(const ConversionSettings& settings) {
     const std::string audio = settings.audioMode == AudioMode::Encode
         ? "_A" + std::to_string(settings.audioBitrateKbps)
         : settings.audioMode == AudioMode::Copy ? "_ACOPY" : "_ANOAUDIO";
-    const std::string resolution = settings.outputResolution == OutputResolution::Original
-        ? "" : "_R" + std::to_string(static_cast<int>(settings.outputResolution));
+    std::string resolution;
+    switch (settings.outputResolution) {
+    case OutputResolution::Original: break;
+    case OutputResolution::UHD4K: resolution = "_R4K"; break;
+    case OutputResolution::QHD1440: resolution = "_R1440"; break;
+    case OutputResolution::FullHD1080: resolution = "_R1080"; break;
+    case OutputResolution::HD720: resolution = "_R720"; break;
+    case OutputResolution::SD480: resolution = "_R480"; break;
+    }
     return "_" + codecShortName(settings.codec) + "_" + backendShortName(settings.backend) +
            "_" + qualityType + std::to_string(settings.crf) + "_" +
            compressionName(settings.compression) + audio + resolution + container;
