@@ -259,17 +259,36 @@ private:
         identity_=control(L"EDIT",L"",ES_AUTOHSCROLL,350,208,610,32,IdentityId,WS_EX_CLIENTEDGE);
         label(L"跳转服务器（可选，填写 SSH config 中的 Host 别名）",350,264,610);
         proxy_=control(L"EDIT",L"",ES_AUTOHSCROLL,350,288,610,32,ProxyId,WS_EX_CLIENTEDGE);
-        label(L"认证方式",350,344,250);label(L"密码（仅密码认证时填写）",660,344,300);
-        auth_=control(L"COMBOBOX",L"",CBS_DROPDOWNLIST|WS_VSCROLL,350,368,280,32,AuthId);
-        SendMessageW(auth_,CB_ADDSTRING,0,reinterpret_cast<LPARAM>(L"SSH 私钥 / Agent 认证"));
-        SendMessageW(auth_,CB_ADDSTRING,0,reinterpret_cast<LPARAM>(L"密码认证"));SendMessageW(auth_,CB_SETCURSEL,0,0);
-        password_=control(L"EDIT",L"",ES_AUTOHSCROLL|ES_PASSWORD,660,368,300,32,PasswordId,WS_EX_CLIENTEDGE);
+        label(L"认证方式",350,344,250);
+        passwordLabel_ = control(L"STATIC", L"密码（仅密码认证时填写）", SS_LEFT,
+                                 660, 344, 300, 20, 0);
+        auth_ = control(L"COMBOBOX", L"", CBS_DROPDOWNLIST | WS_VSCROLL,
+                        350, 368, 280, 32, AuthId);
+        SendMessageW(auth_, CB_ADDSTRING, 0,
+                     reinterpret_cast<LPARAM>(L"SSH 私钥 / Agent 认证"));
+        SendMessageW(auth_, CB_ADDSTRING, 0,
+                     reinterpret_cast<LPARAM>(L"密码认证"));
+        SendMessageW(auth_, CB_SETCURSEL, 0, 0);
+        password_ = control(L"EDIT", L"", ES_AUTOHSCROLL | ES_PASSWORD,
+                            660, 368, 300, 32, PasswordId, WS_EX_CLIENTEDGE);
+        updatePasswordVisibility();
         status_=control(L"STATIC",L"服务器列表来自本机 SSH 配置文件。",SS_LEFT,20,592,940,32,StatusId);
         const auto button=[&](const wchar_t* label,int id,int x,int w=112){return control(L"BUTTON",label,BS_PUSHBUTTON,x,642,w,42,id);};
         button(L"新增",AddId,20);button(L"保存并同步",SaveId,140,132);button(L"测试连接",TestId,280);
         button(L"使用此服务器",UseId,400,132);button(L"删除",RemoveId,540);button(L"本机编码",LocalId,660);button(L"关闭",CloseId,780);
         refreshList();
     }
+    void updatePasswordVisibility() {
+        const bool passwordAuthentication =
+            SendMessageW(auth_, CB_GETCURSEL, 0, 0) == 1;
+        const int visibility = passwordAuthentication ? SW_SHOW : SW_HIDE;
+        ShowWindow(passwordLabel_, visibility);
+        ShowWindow(password_, visibility);
+        if (!passwordAuthentication) {
+            SetWindowTextW(password_, L"");
+        }
+    }
+
     void status(const std::string& value){SetWindowTextW(status_,wide(value).c_str());}
     void refreshList(){
         servers_=controller_->sshServers();SendMessageW(list_,LB_RESETCONTENT,0,0);
@@ -281,7 +300,9 @@ private:
     void clearFields(){
         SetWindowTextW(alias_,L"");SetWindowTextW(host_,L"");SetWindowTextW(user_,L"");SetWindowTextW(port_,L"22");
         SetWindowTextW(identity_,L"");SetWindowTextW(proxy_,L"");SetWindowTextW(password_,L"");
-        SendMessageW(auth_,CB_SETCURSEL,0,0);SendMessageW(list_,LB_SETCURSEL,static_cast<WPARAM>(-1),0);
+        SendMessageW(auth_, CB_SETCURSEL, 0, 0);
+        updatePasswordVisibility();
+        SendMessageW(list_, LB_SETCURSEL, static_cast<WPARAM>(-1), 0);
     }
     void populate(int index){
         if(index<0||index>=static_cast<int>(servers_.size()))return;
@@ -289,7 +310,10 @@ private:
         SetWindowTextW(alias_,wide(v.alias).c_str());SetWindowTextW(host_,wide(v.hostName).c_str());
         SetWindowTextW(user_,wide(v.user).c_str());SetWindowTextW(port_,std::to_wstring(v.port).c_str());
         SetWindowTextW(identity_,wide(v.identityFile).c_str());SetWindowTextW(proxy_,wide(v.proxyJump).c_str());
-        SetWindowTextW(password_,L"");SendMessageW(auth_,CB_SETCURSEL,v.authMethod==SshAuthMethod::Password?1:0,0);
+        SetWindowTextW(password_, L"");
+        SendMessageW(auth_, CB_SETCURSEL,
+                     v.authMethod == SshAuthMethod::Password ? 1 : 0, 0);
+        updatePasswordVisibility();
     }
     bool saveFields(){
         SshServer v;v.alias=text(alias_);v.hostName=text(host_);v.user=text(user_);
@@ -311,6 +335,10 @@ private:
         case WM_COMMAND:{
             const int id=LOWORD(wParam),notify=HIWORD(wParam);
             if(id==ListId&&notify==LBN_SELCHANGE){populate(static_cast<int>(SendMessageW(list_,LB_GETCURSEL,0,0)));return 0;}
+            if (id == AuthId && notify == CBN_SELCHANGE) {
+                updatePasswordVisibility();
+                return 0;
+            }
             if(id==AddId){clearFields();status("填写服务器信息，然后保存。");return 0;}
             if(id==SaveId){saveFields();return 0;}
             if(id==TestId){
@@ -335,7 +363,9 @@ private:
         return DefWindowProcW(hwnd_,message,wParam,lParam);
     }
     HINSTANCE instance_{};HWND owner_{};HWND hwnd_{};AppController* controller_{};double scale_{1.0};
-    HFONT font_{};HWND list_{},alias_{},host_{},user_{},port_{},identity_{},proxy_{},auth_{},password_{},status_{};
+    HFONT font_{};
+    HWND list_{}, alias_{}, host_{}, user_{}, port_{}, identity_{}, proxy_{};
+    HWND auth_{}, passwordLabel_{}, password_{}, status_{};
     std::vector<SshServer> servers_;
 };
 

@@ -249,7 +249,22 @@ private:
                 canvas->text(row.x+ss(10),row.y+ss(37),servers[i].user+"@"+servers[i].hostName,colors.muted,0);
             }
             const std::array<std::string,7> labels{"服务器别名","主机名或 IP 地址","用户名","SSH 端口","私钥文件（可留空以使用 SSH Agent）","跳转服务器（可选）","密码（仅密码认证时填写）"};
-            for(int i=0;i<7;++i){const auto& r=fields[static_cast<std::size_t>(i)];canvas->text(r.x,r.y-ss(10),labels[static_cast<std::size_t>(i)],colors.muted,0);canvas->input(r,values[static_cast<std::size_t>(i)],colors,focused==i,i==6);}
+            for (int i = 0; i < 6; ++i) {
+                const auto& field = fields[static_cast<std::size_t>(i)];
+                canvas->text(field.x, field.y - ss(10),
+                             labels[static_cast<std::size_t>(i)], colors.muted, 0);
+                canvas->input(field, values[static_cast<std::size_t>(i)],
+                              colors, focused == i);
+            }
+            const auto& passwordField = fields[6];
+            canvas->text(passwordField.x, passwordField.y - ss(10),
+                         labels[6], colors.muted, 0);
+            if (passwordAuth) {
+                canvas->input(passwordField, values[6], colors, focused == 6, true);
+            } else {
+                canvas->text(passwordField.x + ss(10), passwordField.y + ss(23),
+                             "切换到密码认证后填写", colors.muted, 0);
+            }
             canvas->text(authButton.x,authButton.y-ss(10),"认证方式",colors.muted,0);
             canvas->button(authButton,passwordAuth?"密码认证":"SSH 私钥 / Agent 认证",colors,passwordAuth);
             const int y=ss(590),bw=ss(112),gap=ss(8);
