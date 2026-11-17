@@ -1,0 +1,239 @@
+#include "core/conversion.hpp"
+#include "core/process.hpp"
+
+#include <algorithm>
+#include <atomic>
+#include <chrono>
+#include <cstdlib>
+#include <iostream>
+#include <stdexcept>
+#include <string>
+#include <thread>
+#include <vector>
+
+namespace {
+
+void require(bool condition, const std::string& message) {
+    if (!condition) throw std::runtime_error(message);
+}
+
+bool containsPair(const std::vector<std::string>& command,
+                  const std::string& option, const std::string& value) {
+    for (std::size_t index = 0; index + 1 < command.size(); ++index) {
+        if (command[index] == option && command[index + 1] == value) return true;
+    }
+    return false;
+}
+
+} // namespace
+
+int main() {
+    try {
+        using namespace ffmpegui;
+        EncoderCapabilities capabilities;
+        capabilities.libx264 = true;
+        capabilities.libx265 = true;
+        capabilities.libsvtav1 = true;
+        capabilities.libaomAv1 = true;
+        capabilities.h264Nvenc = true;
+        capabilities.hevcNvenc = true;
+        capabilities.av1Nvenc = true;
+        capabilities.h264Qsv = true;
+        capabilities.hevcQsv = true;
+        capabilities.av1Qsv = true;
+        capabilities.h264Amf = true;
+        capabilities.hevcAmf = true;
+        capabilities.av1Amf = true;
+
+        require(compressionLevelCount() == 8, "The interface must expose eight compression levels.");
+        const std::vector<std::string> expectedX264{
+            "ultrafast", "veryfast", "fast", "medium", "slow", "slower", "veryslow", "placebo"};
+        const std::vector<std::string> expectedSvt{"13", "11", "10", "8", "6", "4", "2", "0"};
+        const std::vector<std::string> expectedAom{"8", "7", "6", "4", "3", "2", "1", "0"};
+        const std::vector<std::string> expectedNvenc{"p1", "p2", "p3", "p4", "p5", "p6", "p7", "p7"};
+        const std::vector<std::string> expectedQsv{"veryfast", "faster", "fast", "medium", "slow", "slower", "veryslow", "veryslow"};
+
+        ConversionSettings settings;
+        settings.inputPath = "input file.mov";
+        settings.outputPath = "output.mp4";
+        settings.codec = VideoCodec::H264;
+        settings.backend = EncoderBackend::CPU;
+        settings.crf = 23;
+        settings.compression = CompressionLevel::Balanced;
+        settings.audioBitrateKbps = 192;
+        auto command = buildFfmpegCommand(settings, capabilities, "ffmpeg", "temporary.mp4");
+        require(containsPair(command, "-c:v", "libx264"), "H.264 must use libx264 on CPU.");
+        require(containsPair(command, "-crf", "23"), "H.264 CRF must be passed to FFmpeg.");
+        require(containsPair(command, "-preset", "medium"), "Balanced H.264 must use medium preset.");
+        require(containsPair(command, "-map", "0:a?"), "Optional audio streams must be mapped.");
+        require(containsPair(command, "-c:a", "aac"), "Audio must be encoded as AAC.");
+        require(containsPair(command, "-b:a", "192k"), "The selected audio bitrate must be passed to FFmpeg.");
+        require(containsPair(command, "-threads:v", "0") == false, "An unset thread limit must not add an invalid thread option.");
+        require(std::any_of(command.begin(), command.end(), [](const std::string& arg) { return arg.find("FFmpegStudio:v2:") != std::string::npos; }),
+                "The output must carry a parameter marker for repeat-processing detection.");
+
+        for (int index = 0; index < compressionLevelCount(); ++index) {
+            settings.codec = VideoCodec::H264;
+            settings.backend = EncoderBackend::CPU;
+            settings.compression = static_cast<CompressionLevel>(index);
+            command = buildFfmpegCommand(settings, capabilities, "ffmpeg", "temporary.mp4");
+            require(containsPair(command, "-preset", expectedX264[static_cast<std::size_t>(index)]),
+                    "Each H.264 compression level must select its corresponding CPU preset.");
+
+            settings.codec = VideoCodec::H265;
+            settings.compression = static_cast<CompressionLevel>(index);
+            command = buildFfmpegCommand(settings, capabilities, "ffmpeg", "temporary.mp4");
+            require(containsPair(command, "-preset", expectedX264[static_cast<std::size_t>(index)]),
+                    "Each H.265 compression level must select its corresponding CPU preset.");
+
+            settings.codec = VideoCodec::AV1;
+            settings.compression = static_cast<CompressionLevel>(index);
+            command = buildFfmpegCommand(settings, capabilities, "ffmpeg", "temporary.mp4");
+            require(containsPair(command, "-preset", expectedSvt[static_cast<std::size_t>(index)]),
+                    "Each SVT-AV1 compression level must select its corresponding preset.");
+        }
+
+        settings.codec = VideoCodec::AV1;
+        settings.compression = CompressionLevel::Extreme;
+        capabilities.libsvtav1 = false;
+        command = buildFfmpegCommand(settings, capabilities, "ffmpeg", "temporary.mp4");
+        require(containsPair(command, "-c:v", "libaom-av1"), "libaom-av1 must be used as AV1 fallback.");
+        require(containsPair(command, "-cpu-used", expectedAom.back()), "Extreme libaom AV1 must use cpu-used 0.");
+        require(!containsPair(command, "-preset", "0"), "libaom AV1 must not receive an unsupported preset option.");
+
+        capabilities.libsvtav1 = true;
+        for (int index = 0; index < compressionLevelCount(); ++index) {
+            settings.codec = VideoCodec::AV1;
+            settings.backend = EncoderBackend::CPU;
+            settings.compression = static_cast<CompressionLevel>(index);
+            capabilities.libsvtav1 = false;
+            command = buildFfmpegCommand(settings, capabilities, "ffmpeg", "temporary.mp4");
+            require(containsPair(command, "-cpu-used", expectedAom[static_cast<std::size_t>(index)]),
+                    "Each libaom AV1 compression level must select its corresponding cpu-used value.");
+        }
+        capabilities.libsvtav1 = true;
+
+        for (int index = 0; index < compressionLevelCount(); ++index) {
+            settings.codec = VideoCodec::H264;
+            settings.backend = EncoderBackend::NVENC;
+            settings.compression = static_cast<CompressionLevel>(index);
+            settings.crf = 23;
+            command = buildFfmpegCommand(settings, capabilities, "ffmpeg", "temporary.mp4");
+            require(containsPair(command, "-c:v", "h264_nvenc"), "NVENC must select the H.264 hardware encoder.");
+            require(containsPair(command, "-preset", expectedNvenc[static_cast<std::size_t>(index)]),
+                    "Each NVENC compression level must select its corresponding preset.");
+            require(containsPair(command, "-cq", "23"), "NVENC must receive the selected quality value.");
+            require(containsPair(command, "-multipass", "fullres") == (index == 7),
+                    "Only the extreme NVENC level must enable full-resolution multipass.");
+        }
+
+        for (int index = 0; index < compressionLevelCount(); ++index) {
+            settings.codec = VideoCodec::H264;
+            settings.backend = EncoderBackend::QSV;
+            settings.compression = static_cast<CompressionLevel>(index);
+            settings.threadsPerJob = 4;
+            command = buildFfmpegCommand(settings, capabilities, "ffmpeg", "temporary.mp4");
+            require(containsPair(command, "-c:v", "h264_qsv"), "Intel Quick Sync must select h264_qsv.");
+            require(containsPair(command, "-preset", expectedQsv[static_cast<std::size_t>(index)]),
+                    "Each Quick Sync compression level must map to its encoder preset.");
+            require(containsPair(command, "-global_quality", "23"), "Quick Sync must receive the selected quality value.");
+            require(containsPair(command, "-threads:v", "4"), "The scheduler thread budget must reach FFmpeg.");
+
+            settings.backend = EncoderBackend::AMF;
+            command = buildFfmpegCommand(settings, capabilities, "ffmpeg", "temporary.mp4");
+            require(containsPair(command, "-c:v", "h264_amf"), "AMD AMF must select h264_amf.");
+            require(containsPair(command, "-rc", "cqp"), "AMD AMF must use constant-QP rate control.");
+            require(containsPair(command, "-qp_i", "23") && containsPair(command, "-qp_p", "23"),
+                    "AMD AMF must receive the selected QP value for I and P frames.");
+        }
+
+        settings.backend = EncoderBackend::QSV;
+        settings.codec = VideoCodec::H265;
+        command = buildFfmpegCommand(settings, capabilities, "ffmpeg", "temporary.mp4");
+        require(containsPair(command, "-c:v", "hevc_qsv"), "Quick Sync H.265 must select hevc_qsv.");
+        settings.codec = VideoCodec::AV1;
+        command = buildFfmpegCommand(settings, capabilities, "ffmpeg", "temporary.mp4");
+        require(containsPair(command, "-c:v", "av1_qsv"), "Quick Sync AV1 must select av1_qsv.");
+        settings.backend = EncoderBackend::AMF;
+        command = buildFfmpegCommand(settings, capabilities, "ffmpeg", "temporary.mp4");
+        require(containsPair(command, "-c:v", "av1_amf"), "AMD AMF AV1 must select av1_amf.");
+        require(backendName(EncoderBackend::QSV) == "Intel Quick Sync", "Quick Sync must have a clear UI name.");
+        require(backendName(EncoderBackend::AMF) == "AMD AMF", "AMF must have a clear UI name.");
+
+        settings.backend = EncoderBackend::NVENC;
+        settings.codec = VideoCodec::H265;
+        command = buildFfmpegCommand(settings, capabilities, "ffmpeg", "temporary.mp4");
+        require(containsPair(command, "-c:v", "hevc_nvenc"), "H.265 NVENC must select hevc_nvenc.");
+        require(containsPair(command, "-tag:v", "hvc1"), "H.265 MP4 must use the hvc1 sample entry.");
+
+        settings.codec = VideoCodec::AV1;
+        settings.crf = 63;
+        command = buildFfmpegCommand(settings, capabilities, "ffmpeg", "temporary.mp4");
+        require(containsPair(command, "-c:v", "av1_nvenc"), "AV1 NVENC must select av1_nvenc.");
+        require(containsPair(command, "-cq", "63"), "NVENC AV1 must accept quality values up to 63.");
+        require(containsPair(command, "-tag:v", "av01"), "AV1 MP4 must use the av01 sample entry.");
+
+        settings.audioBitrateKbps = 320;
+        command = buildFfmpegCommand(settings, capabilities, "ffmpeg", "temporary.mp4");
+        require(containsPair(command, "-b:a", "320k"), "The highest audio bitrate must be supported.");
+        settings.audioBitrateKbps = 48;
+        bool rejectedAudioBitrate = false;
+        try {
+            (void)buildFfmpegCommand(settings, capabilities, "ffmpeg", "temporary.mp4");
+        } catch (const std::invalid_argument&) {
+            rejectedAudioBitrate = true;
+        }
+        require(rejectedAudioBitrate, "Out-of-range audio bitrates must be rejected.");
+
+        require(isVideoFile("sample.mov") && isVideoFile("clip.MP4"), "Common video extensions must be recognized case-insensitively.");
+        require(isSupportedArchiveFile("media.zip") && isSupportedArchiveFile("slides.pptx"), "ZIP and PPTX must be recognized as batch inputs.");
+        require(!isSupportedArchiveFile("document.docx"), "Non-video document archives must not be treated as supported input.");
+        ConversionSettings fingerprintSettings = settings;
+        fingerprintSettings.codec = VideoCodec::H264;
+        fingerprintSettings.backend = EncoderBackend::CPU;
+        fingerprintSettings.compression = CompressionLevel::Balanced;
+        fingerprintSettings.crf = 23;
+        fingerprintSettings.audioBitrateKbps = 192;
+        const auto fingerprint = settingsFingerprint(fingerprintSettings);
+        auto changedFingerprint = fingerprintSettings;
+        changedFingerprint.audioBitrateKbps = 256;
+        require(fingerprint != settingsFingerprint(changedFingerprint), "The repeat-processing marker must include audio settings.");
+        require(outputSuffix(fingerprintSettings).find("H264") != std::string::npos, "Output suffixes must identify the selected video codec.");
+        require(outputSuffix(fingerprintSettings).find("A192") != std::string::npos, "Output suffixes must identify the selected audio bitrate.");
+        const auto automaticPlan = recommendResourcePlan(12, EncoderBackend::CPU, VideoCodec::H264, 0);
+        require(automaticPlan.parallelJobs >= 1 && automaticPlan.threadsPerJob >= 1,
+                "Automatic scheduling must always allocate at least one worker and one thread.");
+        require(automaticPlan.parallelJobs * automaticPlan.threadsPerJob >= automaticPlan.logicalCores,
+                "Automatic CPU scheduling must allocate enough encoding threads to use all logical cores.");
+        const auto limitedPlan = recommendResourcePlan(12, EncoderBackend::CPU, VideoCodec::H264, 2);
+        require(limitedPlan.parallelJobs <= 2, "A manual parallel-task limit must be respected.");
+        const auto hardwarePlan = recommendResourcePlan(12, EncoderBackend::NVENC, VideoCodec::H264, 0);
+        require(hardwarePlan.parallelJobs <= 2, "Hardware encoders must use a bounded concurrent session count.");
+        require(!EncoderCapabilities{}.supports(VideoCodec::H264, EncoderBackend::QSV),
+                "Unavailable hardware encoders must remain hidden from the interface.");
+
+        require(crfMaximum(VideoCodec::H264) == 51, "H.264 CRF range must end at 51.");
+        require(crfMaximum(VideoCodec::H265) == 51, "H.265 CRF range must end at 51.");
+        require(crfMaximum(VideoCodec::AV1) == 63, "AV1 CRF range must end at 63.");
+
+#ifndef _WIN32
+        std::atomic_bool cancelProcess{false};
+        std::thread cancelThread([&cancelProcess]() {
+            std::this_thread::sleep_for(std::chrono::milliseconds(120));
+            cancelProcess.store(true);
+        });
+        const auto cancelStart = std::chrono::steady_clock::now();
+        const auto processResult = runProcess({"/usr/bin/sleep", "5"}, &cancelProcess);
+        cancelThread.join();
+        const auto cancelElapsed = std::chrono::steady_clock::now() - cancelStart;
+        require(processResult.cancelled, "The process runner must report cancellation.");
+        require(cancelElapsed < std::chrono::seconds(2), "The process runner must stop a cancelled process promptly.");
+#endif
+
+        std::cout << "All core tests passed.\n";
+        return EXIT_SUCCESS;
+    } catch (const std::exception& exception) {
+        std::cerr << "Test failed: " << exception.what() << '\n';
+        return EXIT_FAILURE;
+    }
+}
