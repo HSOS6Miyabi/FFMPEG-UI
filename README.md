@@ -1,6 +1,6 @@
-# FFmpeg Studio
+# 视频压缩工作台
 
-FFmpeg Studio 是一款面向 Windows 和 Linux 的本地视频压缩工具，支持单文件、批量文件、文件夹、ZIP 压缩包和 PowerPoint 演示文稿。可以统一输出 MP4，也可以让每个视频沿用源文件的容器格式；支持 H.264、H.265 或 AV1，并通过 CRF 数值和压缩级别控制画质与文件大小。
+视频压缩工作台 是一款面向 Windows 和 Linux 的本地视频压缩工具，支持单文件、批量文件、文件夹、ZIP 压缩包和 PowerPoint 演示文稿。可以统一输出 MP4，也可以让每个视频沿用源文件的容器格式；支持 H.264、H.265 或 AV1，并通过 CRF 数值和压缩级别控制画质与文件大小。
 
 程序使用 C++20 编写。Windows 界面使用 Win32 API 和 GDI，Linux 界面使用 X11 和 Xft。程序通过 FFmpeg 和 ffprobe 完成视频编码，通过 libarchive 读取和生成 ZIP 文件。项目不使用 Qt、GTK、MFC、Electron 等桌面界面框架。默认在本机处理视频；选择 SSH 服务器后，程序只会临时传输当前任务所需的视频，完成后自动将结果下载到本机。
 
@@ -135,7 +135,7 @@ ctest --preset linux-release
 启动程序：
 
 ```bash
-./build/linux-release/ffmpeg-ui
+./build/linux-release/video-compression-workbench
 ```
 
 ### Windows
@@ -151,7 +151,7 @@ cmake --build --preset windows-release --parallel
 ctest --preset windows-release
 ```
 
-生成的程序位于 `build\windows-release\ffmpeg-ui.exe`。
+生成的程序位于 `build\windows-release\video-compression-workbench.exe`。
 
 ## 任务清单
 
@@ -162,16 +162,16 @@ ctest --preset windows-release
 可以直接把多个文件或文件夹路径传给程序。程序启动后会自动把它们加入任务列表：
 
 ```powershell
-ffmpeg-ui.exe "D:\Videos\clip 01.mov" "D:\Videos\clip 02.mkv" "D:\Projects\Slides.pptx"
-ffmpeg-ui.exe "D:\Videos\ToConvert" --output-dir "D:\Converted"
+video-compression-workbench.exe "D:\Videos\clip 01.mov" "D:\Videos\clip 02.mkv" "D:\Projects\Slides.pptx"
+video-compression-workbench.exe "D:\Videos\ToConvert" --output-dir "D:\Converted"
 ```
 
-也可以在 Windows 资源管理器中打开 `shell:sendto`，把 `ffmpeg-ui.exe` 的快捷方式放入该文件夹。之后选中一个或多个视频、ZIP 或 PPTX，使用右键菜单中的“发送到”即可自动打开程序并加入任务。
+也可以在 Windows 资源管理器中打开 `shell:sendto`，把 `video-compression-workbench.exe` 的快捷方式放入该文件夹。之后选中一个或多个视频、ZIP 或 PPTX，使用右键菜单中的“发送到”即可自动打开程序并加入任务。
 
 Linux 可以通过终端传入路径：
 
 ```bash
-./ffmpeg-ui "/home/user/Videos" "/home/user/Slides.pptx" --output-dir "/home/user/Converted"
+./video-compression-workbench "/home/user/Videos" "/home/user/Slides.pptx" --output-dir "/home/user/Converted"
 ```
 
 ## SSH 远程编码
@@ -211,19 +211,19 @@ $env:FFPROBE_PATH = 'C:\Tools\ffmpeg\bin\ffprobe.exe'
 列出当前 FFmpeg 构建中可用的编码器：
 
 ```bash
-ffmpeg-ui --encoders
+video-compression-workbench --encoders
 ```
 
 运行本地转换、AAC 音频、参数标记、ZIP、PPTX、并行调度和进程暂停恢复测试：
 
 ```bash
-ffmpeg-ui --self-test
+video-compression-workbench --self-test
 ```
 
 演示模式会保留生成的测试文件：
 
 ```bash
-ffmpeg-ui --demo
+video-compression-workbench --demo
 ```
 
 `--self-test` 会在系统临时目录中创建短视频和压缩包测试文件，并在结束时清理。测试会检查当前 FFmpeg 实际提供的 CPU 编码器；未安装的 H.264、H.265 或 AV1 编码器会跳过。ZIP、PPTX 和批量视频测试会在 H.264 CPU 编码器可用时运行。
@@ -241,7 +241,7 @@ GitHub Actions 会在提交到 `main`、创建 Pull Request 或手动触发时�
 ```bash
 cmake --build build --parallel
 ctest --test-dir build --output-on-failure
-./build/ffmpeg-ui --self-test
+./build/video-compression-workbench --self-test
 ```
 
 项目决策和后续维护要求记录在 [`docs/decision-log.md`](docs/decision-log.md)。
