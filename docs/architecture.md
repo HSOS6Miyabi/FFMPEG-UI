@@ -42,7 +42,7 @@
 - 每个独立视频作为一个任务；ZIP 和 PPTX 作为一个容器任务，并在展开后建立内部视频项目列表。
 - 每个任务保存输入路径、输出路径、相对目录、状态、进度、输入大小、输出大小和错误信息。
 - 任务清单使用 UTF-8 的 `.ffq` 文件，每行记录一个输入路径。导入时复用同一套路径去重和文件夹扫描逻辑。
-- 用户的编码参数和输出目录保存在系统用户配置目录中。Windows 使用 `%APPDATA%\FFmpeg Studio\settings.ini`，Linux 使用 `$XDG_CONFIG_HOME/ffmpeg-studio/settings.ini` 或 `$HOME/.config/ffmpeg-studio/settings.ini`。
+- 用户的编码参数和输出目录保存在系统用户配置目录中。Windows 使用 `%APPDATA%\视频压缩工作台\settings.ini`，Linux 使用 `$XDG_CONFIG_HOME/ffmpeg-studio/settings.ini` 或 `$HOME/.config/ffmpeg-studio/settings.ini`。
 
 ## 资源调度
 
