@@ -103,13 +103,13 @@ Layout makeLayout(int width, int height, double scale, int backendCount = 4) {
     for (int i = 0; i < 6; ++i) l.audio[i] = {leftX + s(20) + i * (audioW + s(6)), settingsY + s(366), audioW, s(32)};
     const int optionGap = s(6);
     const int optionWidth = (leftW - s(40) - optionGap * 4) / 5;
-    const int optionY = settingsY + s(462);
+    const int optionY = settingsY + s(482);
     l.parallel = {leftX + s(20), optionY, optionWidth, s(32)};
     l.recursive = {leftX + s(20) + optionWidth + optionGap, optionY, optionWidth, s(32)};
     l.skip = {leftX + s(20) + (optionWidth + optionGap) * 2, optionY, optionWidth, s(32)};
     l.preserve = {leftX + s(20) + (optionWidth + optionGap) * 3, optionY, optionWidth, s(32)};
     l.overwrite = {leftX + s(20) + (optionWidth + optionGap) * 4, optionY, optionWidth, s(32)};
-    l.queue = {leftX, settingsY + s(510), leftW, height - (settingsY + s(510)) - pad};
+    l.queue = {leftX, settingsY + s(530), leftW, height - (settingsY + s(530)) - pad};
     l.overallCard = {rightX, top, rightW, s(270)};
     l.overallTrack = {rightX + s(22), top + s(126), rightW - s(44), s(12)};
     l.start = {rightX + s(22), top + s(206), rightW - s(44), s(44)};
@@ -554,7 +554,7 @@ private:
         drawButton(dc,l.removeSelected,L"移除选中",c,smallFont); drawButton(dc,l.clearDone,L"清除已完成",c,smallFont);
 
         const int leftX = s(28), top = s(168), leftW = l.queue.width;
-        drawCard(dc, {leftX, top, leftW, s(500)}, c);
+        drawCard(dc, {leftX, top, leftW, s(520)}, c);
         drawText(dc,{leftX+s(20),top+s(14),s(200),s(26)},L"编码设置",c.text,heading);
         drawText(dc,{leftX+s(20),top+s(43),s(220),s(20)},L"输出文件夹",c.muted,smallFont);
         std::wstring output = settings_.outputDirectory.empty() ? L"默认：与每个源文件保存在同一文件夹" : wide(settings_.outputDirectory);
