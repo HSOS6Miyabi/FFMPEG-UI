@@ -84,7 +84,7 @@ Layout makeLayout(int width, int height, double scale, int backendCount = 4) {
     l.removeSelected={secondaryStart+(secondaryBase+toolbarGap)*2,top,secondaryBase,s(42)};
     l.clearDone={secondaryStart+(secondaryBase+toolbarGap)*3,top,secondaryWidth-(secondaryBase+toolbarGap)*3,s(42)};
     const int sy=top+s(56);
-    l.outputField={leftX+s(20),sy+s(50),leftW-s(144),s(38)}; l.outputBrowse={leftX+leftW-s(112),sy+s(50),s(92),s(38)};
+    l.outputField={leftX+s(20),sy+s(70),leftW-s(144),s(38)}; l.outputBrowse={leftX+leftW-s(112),sy+s(70),s(92),s(38)};
     const int controlX=leftX+s(152);
     const int controlW=leftW-s(172);
     const int containerW=(controlW-s(6))/2;
@@ -1258,75 +1258,82 @@ private:
             outputDirectory, colors.text, 0);
         canvas_->button(layout.outputBrowse, "选择目录", colors);
 
-        canvas_->text(left + s(20), top + s(98), "输出容器格式", colors.muted, 0);
-        const std::array<std::string, 2> containers{"MP4", "与源文件相同"};
-        for (std::size_t index = 0; index < containers.size(); ++index) {
-            canvas_->button(
-                layout.container[index], containers[index], colors,
-                static_cast<int>(settings_.outputContainer) == static_cast<int>(index));
+        const int labelX=left+s(20);
+        canvas_->text(labelX,top+s(134),"输出容器",colors.muted,0);
+        const std::array<std::string,2> containers{"MP4","与源文件相同"};
+        for(std::size_t index=0;index<containers.size();++index) {
+            canvas_->button(layout.container[index],containers[index],colors,
+                static_cast<int>(settings_.outputContainer)==static_cast<int>(index));
         }
-
-        canvas_->text(left + s(20), top + s(149), "视频编码格式", colors.muted, 0);
-        const std::array<std::string, 3> codecs{"H.264", "H.265", "AV1"};
-        for (std::size_t index = 0; index < codecs.size(); ++index) {
-            canvas_->button(
-                layout.codec[index], codecs[index], colors,
-                static_cast<int>(settings_.codec) == static_cast<int>(index));
+        canvas_->text(labelX,top+s(175),"视频编码",colors.muted,0);
+        const std::array<std::string,3> codecs{"H.264","H.265","AV1"};
+        for(std::size_t index=0;index<codecs.size();++index) {
+            canvas_->button(layout.codec[index],codecs[index],colors,
+                static_cast<int>(settings_.codec)==static_cast<int>(index));
         }
-
-        canvas_->text(left + s(20), top + s(197), "编码设备", colors.muted, 0);
-        const std::array<std::string, 4> backendNames{
-            "CPU", "NVIDIA NVENC", "Intel QSV", "AMD AMF"
-        };
-        for (std::size_t index = 0; index < backends.size(); ++index) {
-            std::size_t labelIndex = 0;
-            switch (backends[index]) {
-            case EncoderBackend::CPU: labelIndex = 0; break;
-            case EncoderBackend::NVENC: labelIndex = 1; break;
-            case EncoderBackend::QSV: labelIndex = 2; break;
-            case EncoderBackend::AMF: labelIndex = 3; break;
+        canvas_->text(labelX,top+s(216),"编码设备",colors.muted,0);
+        const std::array<std::string,4> backendNames{"CPU","NVIDIA NVENC","Intel QSV","AMD AMF"};
+        for(std::size_t index=0;index<backends.size();++index) {
+            std::size_t labelIndex=0;
+            switch(backends[index]) {
+            case EncoderBackend::CPU: labelIndex=0; break;
+            case EncoderBackend::NVENC: labelIndex=1; break;
+            case EncoderBackend::QSV: labelIndex=2; break;
+            case EncoderBackend::AMF: labelIndex=3; break;
             }
-            canvas_->button(
-                layout.backend[index], backendNames[labelIndex], colors,
-                settings_.backend == backends[index]);
+            canvas_->button(layout.backend[index],backendNames[labelIndex],colors,
+                settings_.backend==backends[index]);
         }
-        if (backends.empty()) {
-            canvas_->text(
-                left + s(20), top + s(181),
-                "当前 FFmpeg 环境没有可用的视频编码器", colors.red, 0);
+        if(backends.empty()) {
+            canvas_->text(layout.backend[0].x,top+s(216),
+                "当前 FFmpeg 环境没有可用的编码器",colors.red,0);
         }
 
-        canvas_->text(left + s(20), top + s(245), "CRF / 目标质量", colors.muted, 0);
-        const int maximumCrf = crfMaximum(settings_.codec);
-        const double crfFraction =
-            static_cast<double>(settings_.crf) / static_cast<double>(maximumCrf);
-        canvas_->progress(layout.crfTrack, crfFraction, colors);
-        const int knobPosition = layout.crfTrack.x +
-            static_cast<int>(std::lround(layout.crfTrack.width * crfFraction));
-        canvas_->rounded(
-            {knobPosition - s(7), layout.crfTrack.y - s(5), s(14), s(20)},
-            colors.accent, 7);
-        const std::string crfLabel = editingCrf_
-            ? (crfEditText_.empty() ? "输入" : crfEditText_)
+        canvas_->text(labelX,top+s(251),"目标质量",colors.muted,0);
+        const int maximumCrf=crfMaximum(settings_.codec);
+        const double crfFraction=static_cast<double>(settings_.crf)/maximumCrf;
+        canvas_->progress(layout.crfTrack,crfFraction,colors);
+        const int knobPosition=layout.crfTrack.x+
+            static_cast<int>(std::lround(layout.crfTrack.width*crfFraction));
+        canvas_->rounded({knobPosition-s(7),layout.crfTrack.y-s(5),s(14),s(20)},colors.accent,7);
+        const std::string crfLabel=editingCrf_
+            ? (crfEditText_.empty()?"输入":crfEditText_)
             : std::to_string(settings_.crf);
-        canvas_->button(layout.crfValue, crfLabel, colors, true);
+        canvas_->button(layout.crfValue,crfLabel,colors,true);
 
-        canvas_->text(left + s(20), top + s(296), "压缩级别", colors.muted, 0);
-        const std::array<std::string, 8> compressionLevels{
-            "极速", "非常快", "快速", "均衡", "慢速", "较慢", "很慢", "极致压缩"
+        canvas_->text(labelX,top+s(314),"压缩级别",colors.muted,0);
+        const std::array<std::string,8> compressionLevels{
+            "极速","非常快","快速","均衡","慢速","较慢","很慢","极致压缩"
         };
-        for (std::size_t index = 0; index < compressionLevels.size(); ++index) {
-            canvas_->button(
-                layout.compression[index], compressionLevels[index], colors,
-                static_cast<int>(settings_.compression) == static_cast<int>(index));
+        for(std::size_t index=0;index<compressionLevels.size();++index) {
+            canvas_->button(layout.compression[index],compressionLevels[index],colors,
+                static_cast<int>(settings_.compression)==static_cast<int>(index));
         }
 
-        canvas_->text(left + s(20), top + s(419), "音频码率", colors.muted, 0);
-        const std::array<int, 6> audioRates{96, 128, 160, 192, 256, 320};
-        for (std::size_t index = 0; index < audioRates.size(); ++index) {
-            canvas_->button(
-                layout.audio[index], std::to_string(audioRates[index]) + " kbps",
-                colors, settings_.audioBitrateKbps == audioRates[index]);
+        canvas_->text(labelX,top+s(373),"音频码率",colors.muted,0);
+        const std::array<int,6> audioRates{96,128,160,192,256,320};
+        for(std::size_t index=0;index<audioRates.size();++index) {
+            canvas_->button(layout.audio[index],std::to_string(audioRates[index])+" kbps",colors,
+                settings_.audioBitrateKbps==audioRates[index],
+                settings_.audioMode!=AudioMode::Encode);
+        }
+
+        canvas_->text(labelX,top+s(411),"输出分辨率",colors.muted,0);
+        const std::array<std::string,6> resolutionLabels{
+            "原始尺寸","2160p","1440p","1080p","720p","480p"
+        };
+        for(std::size_t index=0;index<resolutionLabels.size();++index) {
+            canvas_->button(layout.resolution[index],resolutionLabels[index],colors,
+                static_cast<int>(settings_.outputResolution)==static_cast<int>(index));
+        }
+
+        canvas_->text(labelX,top+s(449),"音频处理",colors.muted,0);
+        const std::array<std::string,3> audioModes{
+            "自动编码","保留原音频","移除音频"
+        };
+        for(std::size_t index=0;index<audioModes.size();++index) {
+            canvas_->button(layout.audioMode[index],audioModes[index],colors,
+                static_cast<int>(settings_.audioMode)==static_cast<int>(index));
         }
 
         canvas_->button(
