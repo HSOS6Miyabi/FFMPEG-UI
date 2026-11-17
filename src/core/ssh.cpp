@@ -293,14 +293,6 @@ void eraseSecret(std::string& secret) {
     secret.clear();
 }
 
-void clearPasswordFromEnvironment(ProcessEnvironment& environment) {
-    const auto password = environment.find("FFMPEG_STUDIO_SSH_PASSWORD");
-    if (password != environment.end()) {
-        eraseSecret(password->second);
-        environment.erase(password);
-    }
-}
-
 } // namespace
 
 SshService::SshService() {
@@ -708,9 +700,19 @@ std::optional<std::string> SshService::readPassword(const std::string& alias) co
         return std::nullopt;
     }
 
-    std::string password(reinterpret_cast<const char*>(credential->CredentialBlob),
-                         credential->CredentialBlobSize);
+    std::string password;
+    if (credential->CredentialBlob != nullptr && credential->CredentialBlobSize > 0) {
+        password.assign(
+            reinterpret_cast<const char*>(credential->CredentialBlob),
+            credential->CredentialBlobSize);
+        SecureZeroMemory(
+            credential->CredentialBlob,
+            credential->CredentialBlobSize);
+    }
     CredFree(credential);
+    if (password.empty()) {
+        return std::nullopt;
+    }
     return password;
 #else
     std::lock_guard lock(passwordMutex);
