@@ -248,7 +248,7 @@ public:
         WNDCLASSW windowClass{};
         windowClass.lpfnWndProc = &SshManagerDialog::windowProc;
         windowClass.hInstance = instance;
-        windowClass.lpszClassName = L"FFmpegStudioSshManager";
+        windowClass.lpszClassName = L"VideoCompressionWorkbenchSshManager";
         windowClass.hCursor = LoadCursorW(nullptr, IDC_ARROW);
         windowClass.hbrBackground = reinterpret_cast<HBRUSH>(COLOR_WINDOW + 1);
         RegisterClassW(&windowClass);
@@ -739,11 +739,11 @@ public:
     int run(HINSTANCE instance) {
         instance_ = instance;
         WNDCLASSW wc{}; wc.lpfnWndProc = &WindowsWindow::windowProc; wc.hInstance = instance;
-        wc.lpszClassName = L"FFmpegStudioBatchWindow"; wc.hCursor = LoadCursorW(nullptr, IDC_ARROW);
+        wc.lpszClassName = L"VideoCompressionWorkbenchWindow"; wc.hCursor = LoadCursorW(nullptr, IDC_ARROW);
         wc.hbrBackground = nullptr; RegisterClassW(&wc);
         const DWORD style = WS_OVERLAPPEDWINDOW | WS_CLIPCHILDREN;
         RECT rect{0, 0, 1500, 1020}; AdjustWindowRect(&rect, style, FALSE);
-        window_ = CreateWindowExW(0, wc.lpszClassName, L"FFmpeg Studio", style,
+        window_ = CreateWindowExW(0, wc.lpszClassName, L"视频压缩工作台", style,
             CW_USEDEFAULT, CW_USEDEFAULT, rect.right - rect.left, rect.bottom - rect.top,
             nullptr, nullptr, instance, this);
         if (!window_) return 1;
@@ -829,7 +829,7 @@ private:
     }
     void importQueueDialog() {
         std::array<wchar_t,32768> path{};
-        const wchar_t filter[]=L"FFmpeg Studio 任务清单\0*.ffq;*.txt\0所有文件\0*.*\0\0";
+        const wchar_t filter[]=L"视频压缩工作台 任务清单\0*.ffq;*.txt\0所有文件\0*.*\0\0";
         OPENFILENAMEW dialog{};dialog.lStructSize=sizeof(dialog);dialog.hwndOwner=window_;dialog.lpstrFilter=filter;
         dialog.lpstrFile=path.data();dialog.nMaxFile=static_cast<DWORD>(path.size());
         dialog.Flags=OFN_EXPLORER|OFN_FILEMUSTEXIST|OFN_NOCHANGEDIR;dialog.lpstrTitle=L"导入任务清单";
@@ -840,7 +840,7 @@ private:
     }
     void exportQueueDialog() {
         std::array<wchar_t,32768> path{};
-        const wchar_t filter[]=L"FFmpeg Studio 任务清单\0*.ffq\0文本文件\0*.txt\0\0";
+        const wchar_t filter[]=L"视频压缩工作台 任务清单\0*.ffq\0文本文件\0*.txt\0\0";
         OPENFILENAMEW dialog{};dialog.lStructSize=sizeof(dialog);dialog.hwndOwner=window_;dialog.lpstrFilter=filter;
         dialog.lpstrFile=path.data();dialog.nMaxFile=static_cast<DWORD>(path.size());
         dialog.lpstrDefExt=L"ffq";dialog.Flags=OFN_EXPLORER|OFN_OVERWRITEPROMPT|OFN_PATHMUSTEXIST|OFN_NOCHANGEDIR;
@@ -935,7 +935,7 @@ private:
         FillRect(dc, &fullRectangle, backgroundBrush);
         DeleteObject(backgroundBrush);
         HFONT title = font(25, FW_BOLD), normal = font(14), smallFont = font(12), heading = font(16, FW_SEMIBOLD);
-        drawText(dc, {s(30),s(22),s(420),s(38)}, L"FFmpeg Studio", c.text, title);
+        drawText(dc, {s(30),s(22),s(420),s(38)}, L"视频压缩工作台", c.text, title);
         drawText(dc, {s(31),s(60),s(700),s(24)}, L"批量视频压缩 · ZIP / PPTX 媒体处理 · CPU 与硬件编码", c.muted, smallFont);
         drawButton(dc, l.ssh, L"SSH 服务器", c, smallFont, !settings_.remoteHost.empty());
         drawButton(dc, l.theme, dark_ ? L"浅色外观" : L"深色外观", c, smallFont);
