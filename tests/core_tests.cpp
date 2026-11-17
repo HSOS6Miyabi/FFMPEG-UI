@@ -1,3 +1,4 @@
+#include "core/app_controller.hpp"
 #include "core/conversion.hpp"
 #include "core/process.hpp"
 
@@ -99,7 +100,7 @@ int main() {
             std::any_of(
                 command.begin(), command.end(),
                 [](const std::string& argument) {
-                    return argument.find("FFmpegStudio:v2:") != std::string::npos;
+                    return argument.find("VideoCompressionWorkbench:v3:") != std::string::npos;
                 }),
                 "The output must carry a parameter marker for repeat-processing detection.");
 
@@ -218,6 +219,40 @@ int main() {
         }
         require(rejectedAudioBitrate, "Out-of-range audio bitrates must be rejected.");
 
+        settings.audioBitrateKbps = 48;
+        settings.audioMode = AudioMode::Copy;
+        settings.outputResolution = OutputResolution::FullHD1080;
+        command = buildFfmpegCommand(settings, capabilities, "ffmpeg", "temporary.mp4");
+        const std::string fullHdFilter =
+            "scale=w='min(iw,1920)':h='min(ih,1080)':"
+            "force_original_aspect_ratio=decrease:force_divisible_by=2";
+        require(containsPair(command, "-vf", fullHdFilter),
+                "Resolution presets must apply a no-upscale aspect-ratio-preserving scale filter.");
+        require(containsPair(command, "-c:a", "copy"),
+                "Copy audio mode must preserve the source audio stream.");
+        require(!containsPair(command, "-b:a", "48k"),
+                "Copy audio mode must not apply an audio re-encoding bitrate.");
+        require(containsPair(command, "-map", "0:a?"),
+                "Copy audio mode must map optional source audio streams.");
+        require(audioModeName(AudioMode::Copy) == "保留原音频",
+                "The UI must name the audio copy mode clearly.");
+        require(outputResolutionName(OutputResolution::FullHD1080) == "最高 1080p",
+                "The UI must name the output resolution preset clearly.");
+
+        settings.audioMode = AudioMode::Remove;
+        command = buildFfmpegCommand(settings, capabilities, "ffmpeg", "temporary.mp4");
+        require(!containsPair(command, "-map", "0:a?"),
+                "Remove audio mode must omit source audio streams.");
+        require(!containsPair(command, "-c:a", "copy") &&
+                !containsPair(command, "-c:a", "aac"),
+                "Remove audio mode must not configure an audio encoder.");
+        require(audioModeName(AudioMode::Remove) == "移除音频",
+                "The UI must name the audio removal mode clearly.");
+
+        settings.audioMode = AudioMode::Encode;
+        settings.audioBitrateKbps = 192;
+        settings.outputResolution = OutputResolution::Original;
+
         require(
             isVideoFile("sample.mov") && isVideoFile("clip.MP4"),
             "Common video extensions must be recognized case-insensitively.");
@@ -239,12 +274,34 @@ int main() {
         require(
             fingerprint != settingsFingerprint(changedFingerprint),
             "The repeat-processing marker must include audio settings.");
+        changedFingerprint = fingerprintSettings;
+        changedFingerprint.audioMode = AudioMode::Copy;
+        require(
+            fingerprint != settingsFingerprint(changedFingerprint),
+            "The repeat-processing marker must include the audio handling mode.");
+        changedFingerprint = fingerprintSettings;
+        changedFingerprint.outputResolution = OutputResolution::HD720;
+        require(
+            fingerprint != settingsFingerprint(changedFingerprint),
+            "The repeat-processing marker must include the output resolution.");
         require(
             outputSuffix(fingerprintSettings).find("H264") != std::string::npos,
             "Output suffixes must identify the selected video codec.");
         require(
             outputSuffix(fingerprintSettings).find("A192") != std::string::npos,
             "Output suffixes must identify the selected audio bitrate.");
+        auto copyAudioSuffix = fingerprintSettings;
+        copyAudioSuffix.audioMode = AudioMode::Copy;
+        require(outputSuffix(copyAudioSuffix).ends_with("_ACOPY"),
+                "Output suffixes must identify copied audio.");
+        auto mutedAudioSuffix = fingerprintSettings;
+        mutedAudioSuffix.audioMode = AudioMode::Remove;
+        require(outputSuffix(mutedAudioSuffix).ends_with("_ANOAUDIO"),
+                "Output suffixes must identify removed audio.");
+        auto scaledSuffix = fingerprintSettings;
+        scaledSuffix.outputResolution = OutputResolution::FullHD1080;
+        require(outputSuffix(scaledSuffix).ends_with("_A192_R3"),
+                "Output suffixes must identify the selected resolution.");
         require(outputVideoExtension(OutputContainer::MP4, "sample.mov") == ".mp4",
                 "MP4 mode must use the MP4 extension for every source container.");
         require(outputVideoExtension(OutputContainer::SameAsSource, "sample.MOV") == ".mov",
