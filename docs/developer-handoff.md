@@ -36,7 +36,7 @@
 | `docs/decision-log.md` | 重要设计决策和维护约束 |
 | `docs/encoding.md` | 编码质量、预设、音频和进度参数 |
 | `docs/ssh-remote-processing.md` | SSH 远程处理、认证、安全和测试要求 |
-| `.clang-format`、`scripts/` | C++ 格式规范和本地 clang-tidy 检查脚本 |
+| `.clang-format`、`.clang-tidy`、`scripts/` | C++ 格式规范、静态检查规则和本地检查脚本 |
 
 ## 构建环境
 
@@ -117,11 +117,11 @@ Windows 与 Linux 的完整构建和测试由 GitHub Actions 执行。开发机�
 
 ## 本地代码质量检查
 
-C++ 格式规则保存在 `.clang-format`。在开发机安装 LLVM `clang-format` 和 `clang-tidy` 后，使用以下命令进行检查：
+C++ 格式规则保存在 `.clang-format`。 本地配置文件 `.clang-format` 和 `.clang-tidy` 分别规定代码格式与静态检查项目。CMake 的 Linux 和 Windows 构建预设都会生成 `compile_commands.json`，可直接供 clang-tidy 使用。在开发机安装 LLVM `clang-format` 和 `clang-tidy` 后，使用以下命令进行检查：
 
 ```bash
 scripts/format-cpp.sh --check
-cmake --preset linux-release -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
+cmake --preset linux-release
 scripts/lint-cpp.sh build/linux-release
 ```
 
