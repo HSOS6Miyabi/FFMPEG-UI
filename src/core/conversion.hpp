@@ -124,7 +124,10 @@ int defaultCrf(VideoCodec codec);
 std::string settingsFingerprint(const ConversionSettings& settings);
 std::string outputSuffix(const ConversionSettings& settings);
 ResourcePlan recommendResourcePlan(std::size_t taskCount, EncoderBackend backend,
-                                   VideoCodec codec, int userLimit = 0);
+                                   VideoCodec codec, int userLimit = 0,
+                                   unsigned int logicalCoresOverride = 0,
+                                   std::uint64_t availableMemoryOverride = 0,
+                                   std::string_view resourceLabel = "本机");
 bool isSupportedInputFile(const std::string& path);
 bool isSupportedArchiveFile(const std::string& path);
 bool isVideoFile(const std::string& path);

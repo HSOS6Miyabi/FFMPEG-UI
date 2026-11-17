@@ -330,6 +330,35 @@ std::string backendShortName(EncoderBackend backend) {
     return "AUTO";
 }
 
+
+bool outputDescriptionMatches(const std::string& format,const std::string& path,VideoCodec codec,
+                              const std::string& marker,const std::string& expectedAudioCodec){
+    const std::string extension=lower(pathToUtf8(pathFromUtf8(path).extension()));
+    const bool hasVideo=format.find("codec_name="+expectedStreamCodec(codec))!=std::string::npos;
+    bool container=false;
+    if(extension==".mp4"||extension==".m4v"||extension==".mov"||extension==".3gp")
+        container=format.find("mov,")!=std::string::npos||format.find("mp4")!=std::string::npos;
+    else if(extension==".mkv")container=format.find("matroska")!=std::string::npos;
+    else if(extension==".webm")container=format.find("webm")!=std::string::npos;
+    else if(extension==".avi")container=format.find("avi")!=std::string::npos;
+    else if(extension==".wmv")container=format.find("asf")!=std::string::npos;
+    else if(extension==".flv")container=format.find("flv")!=std::string::npos;
+    else if(extension==".ts"||extension==".m2ts"||extension==".mts")container=format.find("mpegts")!=std::string::npos;
+    else if(extension==".mpg"||extension==".mpeg"||extension==".vob")container=format.find("mpeg")!=std::string::npos;
+    else if(extension==".ogv")container=format.find("ogg")!=std::string::npos;
+    const bool hasAudio=format.find("codec_type=audio")!=std::string::npos;
+    const bool audioMatches=!hasAudio||format.find("codec_name="+expectedAudioCodec)!=std::string::npos;
+    return hasVideo&&container&&audioMatches&&format.find(marker)!=std::string::npos;
+}
+std::string joinRemoteArguments(const std::vector<std::string>& arguments){
+    std::string result;
+    for(const auto& argument:arguments){if(!result.empty())result.push_back(' ');result+=SshService::shellQuote(argument);}
+    return result;
+}
+std::uint64_t parseRemoteSize(const std::string& value){
+    try{return static_cast<std::uint64_t>(std::stoull(trim(value)));}catch(...){return 0;}
+}
+
 } // namespace
 
 bool EncoderCapabilities::supports(VideoCodec codec, EncoderBackend backend) const {
@@ -478,10 +507,13 @@ std::string outputSuffix(const ConversionSettings& settings) {
 }
 
 ResourcePlan recommendResourcePlan(std::size_t taskCount, EncoderBackend backend,
-                                   VideoCodec codec, int userLimit) {
+                                   VideoCodec codec, int userLimit,
+                                   unsigned int logicalCoresOverride,
+                                   std::uint64_t availableMemoryOverride,
+                                   std::string_view resourceLabel) {
     ResourcePlan plan;
-    plan.logicalCores = std::max(1U, std::thread::hardware_concurrency());
-    plan.availableMemoryBytes = availableMemory();
+    plan.logicalCores = std::max(1U, logicalCoresOverride == 0 ? std::thread::hardware_concurrency() : logicalCoresOverride);
+    plan.availableMemoryBytes = availableMemoryOverride == 0 ? availableMemory() : availableMemoryOverride;
     if (taskCount == 0) {
         plan.parallelJobs = 0;
         plan.threadsPerJob = plan.logicalCores;
@@ -505,7 +537,7 @@ ResourcePlan recommendResourcePlan(std::size_t taskCount, EncoderBackend backend
     if (hardware) plan.threadsPerJob = std::max(1U, (plan.threadsPerJob + 1U) / 2U);
 
     std::ostringstream explanation;
-    explanation << "自动调度：" << plan.parallelJobs << " 个并行任务，每个任务分配 "
+    explanation << resourceLabel << "自动调度：" << plan.parallelJobs << " 个并行任务，每个任务分配 "
                 << plan.threadsPerJob << " 个编码线程；按可用内存限制任务数量，尽量使用全部 CPU 核心。检测到 " << plan.logicalCores
                 << " 个逻辑 CPU 核心";
     if (plan.availableMemoryBytes > 0) {
