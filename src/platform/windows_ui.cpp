@@ -427,7 +427,11 @@ private:
     }
     void addFiles(bool archiveOnly = false) {
         std::vector<wchar_t> buffer(65536);
-        const wchar_t mediaFilter[] = L"支持的媒体文件\0*.mp4;*.m4v;*.mov;*.mkv;*.avi;*.webm;*.wmv;*.flv;*.mpg;*.mpeg;*.3gp;*.ts;*.m2ts;*.mts;*.zip;*.pptx\0所有文件\0*.*\0\0";
+        const wchar_t mediaFilter[] =
+            L"支持的媒体文件\0"
+            L"*.mp4;*.m4v;*.mov;*.mkv;*.avi;*.webm;*.wmv;*.flv;"
+            L"*.mpg;*.mpeg;*.3gp;*.ts;*.m2ts;*.mts;*.zip;*.pptx\0"
+            L"所有文件\0*.*\0\0";
         const wchar_t archiveFilter[] = L"ZIP 和 PowerPoint 文件\0*.zip;*.pptx\0所有文件\0*.*\0\0";
         OPENFILENAMEW dialog{}; dialog.lStructSize = sizeof(dialog); dialog.hwndOwner = window_;
         dialog.lpstrFilter = archiveOnly ? archiveFilter : mediaFilter;
@@ -569,8 +573,24 @@ private:
         drawText(dc,{leftX+s(20),top+s(197),s(150),s(20)},L"编码设备",c.muted,smallFont);
         const std::array<std::wstring,4> backendLabels{L"CPU",L"NVIDIA NVENC",L"Intel QSV",L"AMD AMF"};
         for (std::size_t i=0;i<backends.size();++i) {
-            const int labelIndex = backends[i] == EncoderBackend::CPU ? 0 : backends[i] == EncoderBackend::NVENC ? 1 : backends[i] == EncoderBackend::QSV ? 2 : 3;
-            drawButton(dc,l.backend[i],backendLabels[labelIndex],c,smallFont,settings_.backend==backends[i]);
+            int labelIndex = 0;
+            switch (backends[i]) {
+            case EncoderBackend::CPU:
+                labelIndex = 0;
+                break;
+            case EncoderBackend::NVENC:
+                labelIndex = 1;
+                break;
+            case EncoderBackend::QSV:
+                labelIndex = 2;
+                break;
+            case EncoderBackend::AMF:
+                labelIndex = 3;
+                break;
+            }
+            drawButton(
+                dc, l.backend[i], backendLabels[static_cast<std::size_t>(labelIndex)],
+                c, smallFont, settings_.backend == backends[i]);
         }
         if (backends.empty()) drawText(dc,{leftX+s(20),top+s(162),leftW-s(40),s(34)},L"当前 FFmpeg 环境没有可用的视频编码器",c.red,smallFont);
         drawText(dc,{leftX+s(20),top+s(245),s(140),s(22)},L"CRF / 目标质量",c.muted,smallFont);
@@ -593,9 +613,16 @@ private:
 
         drawCard(dc,l.queue,c);
         drawText(dc,{l.queue.x+s(20),l.queue.y+s(14),s(280),s(26)},L"处理队列",c.text,heading);
-        drawText(dc,{l.queue.x+l.queue.width-s(340),l.queue.y+s(16),s(320),s(22)},
-            L"总计 "+std::to_wstring(snap.totalTasks)+L"  ·  运行 "+std::to_wstring(snap.runningTasks)+
-            L"  ·  完成 "+std::to_wstring(snap.completedTasks)+L"  ·  失败 "+std::to_wstring(snap.failedTasks),c.muted,smallFont,DT_RIGHT|DT_VCENTER|DT_SINGLELINE);
+        const std::wstring queueSummary =
+            L"总计 " + std::to_wstring(snap.totalTasks) +
+            L"  ·  运行 " + std::to_wstring(snap.runningTasks) +
+            L"  ·  完成 " + std::to_wstring(snap.completedTasks) +
+            L"  ·  失败 " + std::to_wstring(snap.failedTasks);
+        drawText(
+            dc,
+            {l.queue.x + l.queue.width - s(340), l.queue.y + s(16), s(320), s(22)},
+            queueSummary, c.muted, smallFont,
+            DT_RIGHT | DT_VCENTER | DT_SINGLELINE);
         auto rows=visibleRows(snap); const int rowH=s(68); const int listTop=l.queue.y+s(54); const int visible=std::max(1,(l.queue.height-s(68))/rowH);
         const int maxScroll=std::max(0,static_cast<int>(rows.size())-visible); scrollOffset_=std::clamp(scrollOffset_,0,maxScroll);
         if(rows.empty()) {
@@ -605,21 +632,55 @@ private:
             for(int i=0;i<visible && i+scrollOffset_<static_cast<int>(rows.size());++i) {
                 const auto& [task,item]=rows[static_cast<std::size_t>(i+scrollOffset_)];
                 const int y=listTop+i*rowH; const bool child=task.kind!=TaskKind::Video && item.name!=basename(task.inputPath);
-                if(child) drawText(dc,{l.queue.x+s(38),y+s(4),l.queue.width-s(58),s(20)},L"↳ "+wide(item.name),c.muted,smallFont);
-                else drawText(dc,{l.queue.x+s(20),y+s(5),l.queue.width-s(40),s(22)},wide(item.name)+L"   ·   "+wide(taskKindName(task.kind)),c.text,normal);
+                if (child) {
+                    drawText(
+                        dc,
+                        {l.queue.x + s(38), y + s(4), l.queue.width - s(58), s(20)},
+                        L"↳ " + wide(item.name), c.muted, smallFont);
+                } else {
+                    drawText(
+                        dc,
+                        {l.queue.x + s(20), y + s(5), l.queue.width - s(40), s(22)},
+                        wide(item.name) + L"   ·   " + wide(taskKindName(task.kind)),
+                        c.text, normal);
+                }
                 const TaskState state=child?item.state:task.state; const double progress=child?item.progress:task.progress;
                 if (selectedTask_ == task.id)
                     fillRound(dc, {l.queue.x+s(10), y+s(2), l.queue.width-s(20), rowH-s(4)}, c.accentSoft, c.accentSoft, 7);
                 const std::wstring stateText=wide(taskStateName(state));
-                drawText(dc,{l.queue.x+l.queue.width-s(160),y+s(5),s(140),s(20)},stateText,
-                    state==TaskState::Failed?c.red:state==TaskState::Completed||state==TaskState::Skipped?c.green:c.muted,smallFont,DT_RIGHT|DT_VCENTER|DT_SINGLELINE);
+                const COLORREF stateColor =
+                    state == TaskState::Failed
+                        ? c.red
+                        : (state == TaskState::Completed || state == TaskState::Skipped)
+                            ? c.green
+                            : c.muted;
+                drawText(
+                    dc,
+                    {l.queue.x + l.queue.width - s(160), y + s(5), s(140), s(20)},
+                    stateText, stateColor, smallFont,
+                    DT_RIGHT | DT_VCENTER | DT_SINGLELINE);
                 drawProgress(dc,{l.queue.x+s(20),y+s(36),l.queue.width-s(180),s(7)},progress,c);
-                std::wstring detail=child?formatProgressLine(item.progressInfo,item.detail):
-                    (task.kind==TaskKind::Video&&!task.items.empty()?formatProgressLine(task.items[0].progressInfo,task.detail):wide(task.detail));
-                const auto sizeLine = child ? formatTaskSize(item.inputSizeBytes,item.outputSizeBytes) :
-                    formatTaskSize(task.inputSizeBytes,task.outputSizeBytes);
-                if (!sizeLine.empty() && (state==TaskState::Completed || state==TaskState::Skipped)) detail=sizeLine;
-                drawText(dc,{l.queue.x+l.queue.width-s(148),y+s(27),s(128),s(22)},detail,c.muted,smallFont,DT_RIGHT|DT_VCENTER|DT_SINGLELINE);
+                std::wstring detail;
+                if (child) {
+                    detail = formatProgressLine(item.progressInfo, item.detail);
+                } else if (task.kind == TaskKind::Video && !task.items.empty()) {
+                    detail = formatProgressLine(
+                        task.items.front().progressInfo, task.detail);
+                } else {
+                    detail = wide(task.detail);
+                }
+                const std::string sizeLine = child
+                    ? formatTaskSize(item.inputSizeBytes, item.outputSizeBytes)
+                    : formatTaskSize(task.inputSizeBytes, task.outputSizeBytes);
+                if (!sizeLine.empty() &&
+                    (state == TaskState::Completed || state == TaskState::Skipped)) {
+                    detail = wide(sizeLine);
+                }
+                drawText(
+                    dc,
+                    {l.queue.x + l.queue.width - s(148), y + s(27), s(128), s(22)},
+                    detail, c.muted, smallFont,
+                    DT_RIGHT | DT_VCENTER | DT_SINGLELINE);
                 HPEN separatorPen = CreatePen(PS_SOLID, 1, c.border);
                 HGDIOBJ previousPen = SelectObject(dc, separatorPen);
                 MoveToEx(dc, l.queue.x + s(18), y + rowH - s(2), nullptr);
@@ -628,8 +689,14 @@ private:
                 DeleteObject(separatorPen);
             }
         }
-        if(rows.size()>static_cast<std::size_t>(visible)) drawText(dc,{l.queue.x+l.queue.width-s(130),l.queue.y+l.queue.height-s(24),s(110),s(18)},
-            L"滚动查看其余任务",c.muted,smallFont,DT_RIGHT|DT_VCENTER|DT_SINGLELINE);
+        if (rows.size() > static_cast<std::size_t>(visible)) {
+            drawText(
+                dc,
+                {l.queue.x + l.queue.width - s(130),
+                 l.queue.y + l.queue.height - s(24), s(110), s(18)},
+                L"滚动查看其余任务", c.muted, smallFont,
+                DT_RIGHT | DT_VCENTER | DT_SINGLELINE);
+        }
 
         drawCard(dc,l.overallCard,c);
         drawText(dc,{l.overallCard.x+s(22),l.overallCard.y+s(18),l.overallCard.width-s(44),s(28)},L"批量处理进度",c.text,heading);
@@ -652,18 +719,48 @@ private:
         const Rect info{l.overallCard.x,infoY,l.overallCard.width,height-infoY-s(28)};
         drawCard(dc,info,c);
         drawText(dc,{info.x+s(22),info.y+s(18),info.width-s(44),s(26)},L"设备与编码摘要",c.text,heading);
-        drawText(dc,{info.x+s(22),info.y+s(58),info.width-s(44),s(22)},L"格式  "+wide(codecName(settings_.codec))+L" · "+wide(outputContainerName(settings_.outputContainer)),c.text,normal);
-        drawText(dc,{info.x+s(22),info.y+s(88),info.width-s(44),s(22)},L"编码器  "+wide(backendName(settings_.backend)),c.text,normal);
-        drawText(dc,{info.x+s(22),info.y+s(118),info.width-s(44),s(22)},L"CRF  "+std::to_wstring(settings_.crf)+L"  ·  "+wide(compressionName(settings_.compression)),c.text,normal);
-        drawText(dc,{info.x+s(22),info.y+s(148),info.width-s(44),s(22)},L"音频码率  "+std::to_wstring(settings_.audioBitrateKbps)+L" kbps（按容器选择编码）",c.text,normal);
-        drawText(dc,{info.x+s(22),info.y+s(178),info.width-s(44),s(22)},settings_.remoteHost.empty()?L"计算设备  本机":L"计算设备  远程 · "+wide(settings_.remoteHost),c.text,normal);
+        drawText(
+            dc, {info.x + s(22), info.y + s(58), info.width - s(44), s(22)},
+            L"格式  " + wide(codecName(settings_.codec)) +
+                L" · " + wide(outputContainerName(settings_.outputContainer)),
+            c.text, normal);
+        drawText(
+            dc, {info.x + s(22), info.y + s(88), info.width - s(44), s(22)},
+            L"编码器  " + wide(backendName(settings_.backend)), c.text, normal);
+        drawText(
+            dc, {info.x + s(22), info.y + s(118), info.width - s(44), s(22)},
+            L"CRF  " + std::to_wstring(settings_.crf) +
+                L"  ·  " + wide(compressionName(settings_.compression)),
+            c.text, normal);
+        drawText(
+            dc, {info.x + s(22), info.y + s(148), info.width - s(44), s(22)},
+            L"音频码率  " + std::to_wstring(settings_.audioBitrateKbps) +
+                L" kbps（按容器选择编码）",
+            c.text, normal);
+        const std::wstring computeTarget = settings_.remoteHost.empty()
+            ? L"计算设备  本机"
+            : L"计算设备  远程 · " + wide(settings_.remoteHost);
+        drawText(
+            dc, {info.x + s(22), info.y + s(178), info.width - s(44), s(22)},
+            computeTarget, c.text, normal);
         drawText(dc,{info.x+s(22),info.y+s(212),info.width-s(44),s(44)},wide(snap.resourcePlan.explanation),c.muted,smallFont,DT_LEFT|DT_TOP|DT_WORDBREAK);
         drawText(dc,{info.x+s(22),info.y+s(270),info.width-s(44),s(70)},
             L"支持的视频：H.264、H.265、AV1。\nZIP 与 PPTX 会保留其他文件并更新视频引用。\n音频码率可独立设置，并按输出容器选择兼容的音频编码。",c.muted,smallFont,DT_LEFT|DT_TOP|DT_WORDBREAK);
-        if(!snap.error.empty()) drawText(dc,{info.x+s(22),info.y+info.height-s(74),info.width-s(44),s(58)},wide(snap.error),c.red,smallFont,DT_LEFT|DT_TOP|DT_WORDBREAK);
+        if (!snap.error.empty()) {
+            drawText(
+                dc,
+                {info.x + s(22), info.y + info.height - s(74),
+                 info.width - s(44), s(58)},
+                wide(snap.error), c.red, smallFont,
+                DT_LEFT | DT_TOP | DT_WORDBREAK);
+        }
 
         DeleteObject(title); DeleteObject(normal); DeleteObject(smallFont); DeleteObject(heading);
-        BitBlt(target,0,0,width,height,dc,0,0,SRCCOPY); SelectObject(dc,oldBitmap); DeleteObject(bitmap); DeleteDC(dc); ReleaseDC(window_,target);
+        BitBlt(target, 0, 0, width, height, dc, 0, 0, SRCCOPY);
+        SelectObject(dc, oldBitmap);
+        DeleteObject(bitmap);
+        DeleteDC(dc);
+        ReleaseDC(window_, target);
     }
     void handleClick(int x, int y) {
         RECT clientRectangle{};
