@@ -573,9 +573,11 @@ std::string settingsFingerprint(const ConversionSettings& settings) {
           << ";backend=" << backendShortName(settings.backend)
           << ";quality=" << settings.crf
           << ";compression=" << static_cast<int>(settings.compression)
-          << ";audio_mode=" << static_cast<int>(settings.audioMode)
-          << ";audio=" << settings.audioBitrateKbps
-          << ";resolution=" << static_cast<int>(settings.outputResolution)
+          << ";audio_mode=" << static_cast<int>(settings.audioMode);
+    if (settings.audioMode == AudioMode::Encode) {
+        value << ";audio=" << settings.audioBitrateKbps;
+    }
+    value << ";resolution=" << static_cast<int>(settings.outputResolution)
           << ";container=" << (settings.outputContainer == OutputContainer::MP4
                 ? "mp4" : "source:" + outputVideoExtension(settings.outputContainer, source));
     return value.str();
