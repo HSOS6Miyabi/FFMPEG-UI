@@ -11,10 +11,11 @@
 - 主要语言：C++20。
 - 界面：Windows 原生 Win32/GDI；Linux X11/Xft。
 - 视频处理：通过 FFmpeg 和 ffprobe 命令行程序完成。
+- 输出容器：支持统一输出 MP4，也支持每个视频沿用源文件的容器格式。
 - ZIP/PPTX：通过 libarchive 读取和生成。
 - 项目不使用 Qt、GTK、MFC 或 Electron 等桌面界面框架。
 
-当前版本包含独立视频、文件夹、ZIP 和 PPTX 批量处理；H.264、H.265、AV1；CPU、NVIDIA NVENC、Intel Quick Sync 和 AMD AMF 编码器探测；八档压缩级别；AAC 码率设置；任务进度、暂停、继续和取消；自适应并行调度；重复处理检查；任务清单导入导出；Windows 命令行文件参数和文件拖放。
+当前版本包含独立视频、文件夹、ZIP 和 PPTX 批量处理，以及 MP4 和源文件容器两种输出模式；H.264、H.265、AV1；CPU、NVIDIA NVENC、Intel Quick Sync 和 AMD AMF 编码器探测；八档压缩级别；AAC 码率设置；任务进度、暂停、继续和取消；自适应并行调度；重复处理检查；任务清单导入导出；Windows 命令行文件参数和文件拖放。
 
 ## 目录说明
 
@@ -66,8 +67,8 @@ cmake --preset windows-release `
   -DCMAKE_TOOLCHAIN_FILE="$env:VCPKG_INSTALLATION_ROOT/scripts/buildsystems/vcpkg.cmake" `
   -DVCPKG_TARGET_TRIPLET=x64-windows-static
 cmake --build --preset windows-release --parallel
-ctest --test-dir build/windows-release -C Release --output-on-failure
-.\build\windows-release\Release\ffmpeg-ui.exe --self-test
+ctest --preset windows-release
+.\build\windows-release\ffmpeg-ui.exe --self-test
 ```
 
 vcpkg 依赖由 `vcpkg.json` 声明。FFmpeg/ffprobe 由用户或运行环境安装，当前发布包不包含 FFmpeg 二进制文件。
@@ -86,7 +87,7 @@ Windows 文件关联或“发送到”菜单可以直接把一个或多个路径
 ## 重要实现约束
 
 1. **不要通过 shell 拼接 FFmpeg 命令。** 所有路径和选项必须作为独立参数传给 `ProcessRunner`，避免空格、Unicode 路径和命令注入问题。
-2. **修改编码参数时同步更新三处内容。** 检查 `src/core/conversion.cpp`、`tests/core_tests.cpp` 和 `docs/encoding.md`。硬件编码器的参数不能直接套用 CPU 编码器的 CRF 参数。
+2. **修改编码参数或容器规则时同步更新测试和说明。** 检查 `src/core/conversion.cpp`、`src/core/conversion.hpp`、`tests/core_tests.cpp` 和 `docs/encoding.md`。硬件编码器的参数不能直接套用 CPU 编码器的 CRF 参数；输出容器必须与视频和音频编码兼容。
 3. **编码器必须按格式和设备分别探测。** 某个设备支持 H.264，不代表它也支持 H.265 或 AV1。界面只显示当前 FFmpeg 构建和驱动实际探测成功的选项。
 4. **不要直接覆盖输入文件。** 视频和归档文件必须先写入临时文件，完成格式及完整性检查后才保存到最终路径。
 5. **修改 ZIP/PPTX 时同步更新媒体引用。** 视频扩展名变更后，检查文本资源引用、PPTX `.rels` 的 `Target` 和 `[Content_Types].xml`。任何内部视频失败都应放弃当前临时归档，并保留原始文件。
@@ -106,7 +107,7 @@ ctest --test-dir build --output-on-failure
 ./build/ffmpeg-ui --self-test
 ```
 
-`--self-test` 应覆盖 CPU H.264/H.265/AV1、AAC 音频、进度解析、重复处理标记、ZIP/PPTX 替换、归档安全、并行调度和进程暂停恢复。硬件编码器需要真实设备和驱动；没有设备时，验证对应选项不会出现在界面中。
+`--self-test` 应覆盖 CPU H.264/H.265/AV1、AAC/Opus 等容器兼容音频、MP4 和源容器输出、进度解析、重复处理标记、ZIP/PPTX 替换、归档安全、并行调度和进程暂停恢复。硬件编码器需要真实设备和驱动；没有设备时，验证对应选项不会出现在界面中。
 
 Windows 与 Linux 的完整构建和测试由 GitHub Actions 执行。开发机器缺少某类硬件时，不要把硬件编码器测试描述为已通过。
 
