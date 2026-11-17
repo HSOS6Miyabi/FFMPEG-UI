@@ -15,6 +15,7 @@
 #include <filesystem>
 #include <fstream>
 #include <iostream>
+#include <optional>
 #include <sstream>
 #include <thread>
 #include <vector>
@@ -26,6 +27,7 @@
 #include <windows.h>
 #include <shellapi.h>
 #else
+#include <sys/stat.h>
 #include <unistd.h>
 #endif
 
@@ -291,6 +293,174 @@ int runSelfTest(bool keepFiles) {
                 fs::file_size(pathFromUtf8(repeated.outputPath)) == fs::file_size(pathFromUtf8(result.outputPath)));
         }
     }
+
+#ifndef _WIN32
+    {
+        const auto originalSshPath = ffmpegui::environmentVariable("FFMPEG_STUDIO_SSH_PATH");
+        const auto originalScpPath = ffmpegui::environmentVariable("FFMPEG_STUDIO_SCP_PATH");
+        const auto originalConfigPath = ffmpegui::environmentVariable("FFMPEG_STUDIO_SSH_CONFIG");
+
+        const fs::path mockSsh = work / "mock-ssh";
+        const fs::path mockScp = work / "mock-scp";
+        const fs::path sshConfig = work / "ssh-config";
+
+        {
+            std::ofstream script(mockSsh, std::ios::binary);
+            script << "#!/bin/sh\n"
+                   << "set -eu\n"
+                   << "while [ \"$#\" -gt 0 ]; do\n"
+                   << "  case \"$1\" in\n"
+                   << "    -T) shift ;;\n"
+                   << "    -o) shift 2 ;;\n"
+                   << "    *) break ;;\n"
+                   << "  esac\n"
+                   << "done\n"
+                   << "[ \"$#\" -eq 2 ] || exit 64\n"
+                   << "remote_command=\"$2\"\n"
+                   << "exec /bin/sh -c \"$remote_command\"\n";
+        }
+
+        {
+            std::ofstream script(mockScp, std::ios::binary);
+            script << "#!/bin/sh\n"
+                   << "set -eu\n"
+                   << "while [ \"$#\" -gt 0 ]; do\n"
+                   << "  case \"$1\" in\n"
+                   << "    -q) shift ;;\n"
+                   << "    -o) shift 2 ;;\n"
+                   << "    *) break ;;\n"
+                   << "  esac\n"
+                   << "done\n"
+                   << "[ \"$#\" -eq 2 ] || exit 64\n"
+                   << "source_path=\"$1\"\n"
+                   << "destination_path=\"$2\"\n"
+                   << "case \"$source_path\" in\n"
+                   << "  *:*) remote_path=$(printf '%s\\n' \"$source_path\" | sed 's/^[^:]*://'); "
+                      "cp -- \"$remote_path\" \"$destination_path\" ;;\n"
+                   << "  *) case \"$destination_path\" in\n"
+                   << "       *:*) remote_path=$(printf '%s\\n' \"$destination_path\" | sed 's/^[^:]*://'); "
+                      "cp -- \"$source_path\" \"$remote_path\" ;;\n"
+                   << "       *) exit 64 ;;\n"
+                   << "     esac ;;\n"
+                   << "esac\n";
+        }
+
+        const bool scriptsWritten =
+            fs::is_regular_file(mockSsh) && fs::is_regular_file(mockScp);
+        const bool scriptsExecutable =
+            scriptsWritten &&
+            ::chmod(mockSsh.c_str(), S_IRUSR | S_IWUSR | S_IXUSR) == 0 &&
+            ::chmod(mockScp.c_str(), S_IRUSR | S_IWUSR | S_IXUSR) == 0;
+
+        setenv("FFMPEG_STUDIO_SSH_PATH", pathToUtf8(mockSsh).c_str(), 1);
+        setenv("FFMPEG_STUDIO_SCP_PATH", pathToUtf8(mockScp).c_str(), 1);
+        setenv("FFMPEG_STUDIO_SSH_CONFIG", pathToUtf8(sshConfig).c_str(), 1);
+
+        const auto remoteTemporaryDirectories = []() {
+            std::vector<fs::path> paths;
+            std::error_code iteratorError;
+            for (const auto& entry : fs::directory_iterator("/tmp", iteratorError)) {
+                if (iteratorError) {
+                    break;
+                }
+                if (entry.path().filename().string().starts_with("ffmpeg-studio-")) {
+                    paths.push_back(entry.path());
+                }
+            }
+            std::sort(paths.begin(), paths.end());
+            return paths;
+        };
+
+        const auto temporaryDirectoriesBefore = remoteTemporaryDirectories();
+        bool remoteProgressReported = false;
+        bool remoteOutputVerified = false;
+
+        if (scriptsExecutable) {
+            ffmpegui::FfmpegService remoteService;
+            ffmpegui::SshServer remoteServer;
+            remoteServer.alias = "ffmpeg-studio-self-test";
+            remoteServer.hostName = "localhost";
+            remoteServer.user = "self-test";
+            remoteServer.authMethod = ffmpegui::SshAuthMethod::PublicKey;
+
+            std::string sshError;
+            const bool saved =
+                remoteService.sshService().saveServer(remoteServer, {}, sshError);
+            const bool connected = saved &&
+                remoteService.sshService().testConnection(remoteServer.alias, sshError);
+            const auto remoteProbe = connected
+                ? remoteService.probeRemote(remoteServer.alias, false)
+                : ffmpegui::RemoteProbeResult{};
+
+            check("SSH mock server configuration", saved);
+            check("SSH mock connection", connected);
+            check("SSH remote FFmpeg capability probe", remoteProbe.success);
+
+            if (remoteProbe.success &&
+                remoteProbe.capabilities.supports(
+                    ffmpegui::VideoCodec::H264, ffmpegui::EncoderBackend::CPU)) {
+                ffmpegui::ConversionSettings remoteSettings;
+                remoteSettings.inputPath = pathToUtf8(source);
+                remoteSettings.outputPath = pathToUtf8(work / "remote-encoded.mp4");
+                remoteSettings.remoteHost = remoteServer.alias;
+                remoteSettings.codec = ffmpegui::VideoCodec::H264;
+                remoteSettings.backend = ffmpegui::EncoderBackend::CPU;
+                remoteSettings.compression = ffmpegui::CompressionLevel::Fastest;
+                remoteSettings.crf = 25;
+                remoteSettings.audioBitrateKbps = 128;
+                remoteSettings.threadsPerJob = 2;
+
+                const auto remoteResult = remoteService.convert(
+                    remoteSettings,
+                    remoteProbe.capabilities,
+                    [&](const ffmpegui::ConversionProgress& progress) {
+                        remoteProgressReported |= progress.status == "正在远程编码";
+                    },
+                    nullptr,
+                    nullptr);
+
+                check("SSH remote video conversion", remoteResult.success);
+                check("SSH remote progress reporting", remoteProgressReported);
+
+                if (remoteResult.success) {
+                    const auto verification = ffmpegui::runProcess({
+                        service.ffprobePath(),
+                        "-v", "error",
+                        "-show_entries", "stream=codec_name",
+                        "-of", "default=noprint_wrappers=1:nokey=1",
+                        remoteResult.outputPath
+                    });
+                    remoteOutputVerified =
+                        verification.exitCode == 0 &&
+                        verification.output.find("h264") != std::string::npos;
+                }
+                check("SSH remote output download and verification", remoteOutputVerified);
+            } else {
+                std::cout << "SKIP SSH remote conversion: remote CPU H.264 encoder is unavailable\n";
+            }
+
+            (void)remoteService.sshService().removeServer(remoteServer.alias, sshError);
+        } else {
+            check("SSH mock command wrappers", false);
+        }
+
+        const auto temporaryDirectoriesAfter = remoteTemporaryDirectories();
+        check("SSH remote temporary-directory cleanup",
+              temporaryDirectoriesAfter == temporaryDirectoriesBefore);
+
+        const auto restoreEnvironment = [](
+            const char* name, const std::optional<std::string>& previousValue) {
+            if (previousValue) {
+                setenv(name, previousValue->c_str(), 1);
+            } else {
+                unsetenv(name);
+            }
+        };
+        restoreEnvironment("FFMPEG_STUDIO_SSH_PATH", originalSshPath);
+        restoreEnvironment("FFMPEG_STUDIO_SCP_PATH", originalScpPath);
+        restoreEnvironment("FFMPEG_STUDIO_SSH_CONFIG", originalConfigPath);
+    }
+#endif
 
     {
         std::atomic_bool pauseRequested{false};
