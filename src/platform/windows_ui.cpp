@@ -84,8 +84,8 @@ Layout makeLayout(int width, int height, double scale, int backendCount = 4) {
     l.clearDone = {secondaryStart + (secondaryBase + toolbarGap) * 3, top,
                    secondaryWidth - (secondaryBase + toolbarGap) * 3, s(42)};
     const int settingsY = top + s(56);
-    l.outputField = {leftX + s(20), settingsY + s(50), leftW - s(144), s(38)};
-    l.outputBrowse = {leftX + leftW - s(112), settingsY + s(50), s(92), s(38)};
+    l.outputField = {leftX + s(20), settingsY + s(70), leftW - s(144), s(38)};
+    l.outputBrowse = {leftX + leftW - s(112), settingsY + s(70), s(92), s(38)};
     const int controlX = leftX + s(152);
     const int controlW = leftW - s(172);
     const int containerW = (controlW - s(6)) / 2;
@@ -954,75 +954,70 @@ private:
             : wide(settings_.outputDirectory);
         drawText(dc,l.outputField,output,c.text,smallFont);
         drawButton(dc,l.outputBrowse,L"选择目录",c,smallFont);
-        drawText(dc,{leftX+s(20),top+s(98),s(150),s(20)},L"输出容器格式",c.muted,smallFont);
+        const Rect labelColumn{leftX + s(20), 0, s(120), s(32)};
+        drawText(dc,{labelColumn.x,top+s(112),labelColumn.width,labelColumn.height},L"输出容器",c.muted,smallFont);
         const std::array<std::wstring,2> containers{L"MP4",L"与源文件相同"};
         for (int index = 0; index < 2; ++index) {
-            const bool selected =
-                static_cast<int>(settings_.outputContainer) == index;
-            drawButton(
-                dc, l.container[index], containers[index], c, smallFont, selected);
+            drawButton(dc,l.container[index],containers[index],c,smallFont,
+                static_cast<int>(settings_.outputContainer)==index);
         }
-        drawText(dc,{leftX+s(20),top+s(149),s(150),s(22)},L"视频编码格式",c.muted,smallFont);
+        drawText(dc,{labelColumn.x,top+s(153),labelColumn.width,s(32)},L"视频编码",c.muted,smallFont);
         const std::array<std::wstring,3> codecs{L"H.264",L"H.265",L"AV1"};
-        for (int i=0;i<3;++i) drawButton(dc,l.codec[i],codecs[i],c,normal,static_cast<int>(settings_.codec)==i);
-        drawText(dc,{leftX+s(20),top+s(197),s(150),s(20)},L"编码设备",c.muted,smallFont);
+        for (int index=0;index<3;++index) {
+            drawButton(dc,l.codec[index],codecs[index],c,normal,
+                static_cast<int>(settings_.codec)==index);
+        }
+        drawText(dc,{labelColumn.x,top+s(194),labelColumn.width,s(32)},L"编码设备",c.muted,smallFont);
         const std::array<std::wstring,4> backendLabels{L"CPU",L"NVIDIA NVENC",L"Intel QSV",L"AMD AMF"};
-        for (std::size_t i=0;i<backends.size();++i) {
-            int labelIndex = 0;
-            switch (backends[i]) {
-            case EncoderBackend::CPU:
-                labelIndex = 0;
-                break;
-            case EncoderBackend::NVENC:
-                labelIndex = 1;
-                break;
-            case EncoderBackend::QSV:
-                labelIndex = 2;
-                break;
-            case EncoderBackend::AMF:
-                labelIndex = 3;
-                break;
+        for (std::size_t index=0;index<backends.size();++index) {
+            std::size_t labelIndex=0;
+            switch(backends[index]) {
+            case EncoderBackend::CPU: labelIndex=0; break;
+            case EncoderBackend::NVENC: labelIndex=1; break;
+            case EncoderBackend::QSV: labelIndex=2; break;
+            case EncoderBackend::AMF: labelIndex=3; break;
             }
-            drawButton(
-                dc, l.backend[i], backendLabels[static_cast<std::size_t>(labelIndex)],
-                c, smallFont, settings_.backend == backends[i]);
+            drawButton(dc,l.backend[index],backendLabels[labelIndex],c,smallFont,
+                settings_.backend==backends[index]);
         }
         if (backends.empty()) {
-            drawText(
-                dc,
-                {leftX + s(20), top + s(162), leftW - s(40), s(34)},
-                L"当前 FFmpeg 环境没有可用的视频编码器",
-                c.red,
-                smallFont);
+            drawText(dc,{l.backend[0].x,top+s(194),l.backend[0].width,s(32)},
+                L"当前 FFmpeg 环境没有可用的编码器",c.red,smallFont);
         }
-        drawText(dc,{leftX+s(20),top+s(245),s(140),s(22)},L"CRF / 目标质量",c.muted,smallFont);
+        drawText(dc,{labelColumn.x,top+s(229),labelColumn.width,s(32)},L"目标质量",c.muted,smallFont);
         drawProgress(dc,{l.crfTrack.x,l.crfTrack.y,l.crfTrack.width,l.crfTrack.height},
             static_cast<double>(settings_.crf)/crfMaximum(settings_.codec),c);
-        const double crfFraction =
-            static_cast<double>(settings_.crf) / crfMaximum(settings_.codec);
-        const int knobX = l.crfTrack.x +
-            static_cast<int>(std::lround(l.crfTrack.width * crfFraction));
+        const double crfFraction=static_cast<double>(settings_.crf)/crfMaximum(settings_.codec);
+        const int knobX=l.crfTrack.x+static_cast<int>(std::lround(l.crfTrack.width*crfFraction));
         fillRound(dc,{knobX-s(7),l.crfTrack.y-s(5),s(14),s(20)},c.accent,c.accent,7);
-        const std::wstring crfValue = editingCrf_
-            ? (crfEditText_.empty() ? L"输入" : crfEditText_)
+        const std::wstring crfValue=editingCrf_
+            ? (crfEditText_.empty()?L"输入":crfEditText_)
             : std::to_wstring(settings_.crf);
-        drawButton(dc, l.crfValue, crfValue, c, normal, true);
-        drawText(dc,{leftX+s(20),top+s(296),s(200),s(20)},L"压缩级别",c.muted,smallFont);
+        drawButton(dc,l.crfValue,crfValue,c,normal,true);
+        drawText(dc,{labelColumn.x,top+s(280),labelColumn.width,s(65)},L"压缩级别",c.muted,smallFont);
         const std::array<std::wstring,8> levels{L"极速",L"非常快",L"快速",L"均衡",L"慢速",L"较慢",L"很慢",L"极致压缩"};
-        for (int index = 0; index < 8; ++index) {
-            const bool selected =
-                static_cast<int>(settings_.compression) == index;
-            drawButton(
-                dc, l.compression[index], levels[index], c, smallFont, selected);
+        for(int index=0;index<8;++index) {
+            drawButton(dc,l.compression[index],levels[index],c,smallFont,
+                static_cast<int>(settings_.compression)==index);
         }
-        drawText(dc,{leftX+s(20),top+s(419),s(200),s(20)},L"音频码率",c.muted,smallFont);
+        drawText(dc,{labelColumn.x,top+s(351),labelColumn.width,s(30)},L"音频码率",c.muted,smallFont);
         const std::array<int,6> rates{96,128,160,192,256,320};
-        for (int index = 0; index < 6; ++index) {
-            const bool selected = settings_.audioBitrateKbps == rates[index];
-            drawButton(
-                dc, l.audio[index],
-                std::to_wstring(rates[index]) + L" kbps",
-                c, smallFont, selected);
+        for(int index=0;index<6;++index) {
+            drawButton(dc,l.audio[index],std::to_wstring(rates[index])+L" kbps",c,smallFont,
+                settings_.audioBitrateKbps==rates[index],
+                settings_.audioMode!=AudioMode::Encode);
+        }
+        drawText(dc,{labelColumn.x,top+s(389),labelColumn.width,s(30)},L"输出分辨率",c.muted,smallFont);
+        const std::array<std::wstring,6> resolutionLabels{L"原始尺寸",L"2160p",L"1440p",L"1080p",L"720p",L"480p"};
+        for(int index=0;index<6;++index) {
+            drawButton(dc,l.resolution[index],resolutionLabels[index],c,smallFont,
+                static_cast<int>(settings_.outputResolution)==index);
+        }
+        drawText(dc,{labelColumn.x,top+s(427),labelColumn.width,s(30)},L"音频处理",c.muted,smallFont);
+        const std::array<std::wstring,3> audioModes{L"自动编码",L"保留原音频",L"移除音频"};
+        for(int index=0;index<3;++index) {
+            drawButton(dc,l.audioMode[index],audioModes[index],c,smallFont,
+                static_cast<int>(settings_.audioMode)==index);
         }
         const std::wstring parallelLabel = settings_.maxParallelJobs == 0
             ? L"并行：自动"
