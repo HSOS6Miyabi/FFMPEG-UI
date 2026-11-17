@@ -394,7 +394,8 @@ bool outputDescriptionMatches(const std::string& format,
                               const std::string& path,
                               VideoCodec codec,
                               const std::string& marker,
-                              const std::string& expectedAudioCodec) {
+                              const std::string& expectedAudioCodec,
+                              OutputResolution resolution) {
     const std::string extension = lower(pathToUtf8(pathFromUtf8(path).extension()));
     const std::string expectedVideoCodec = "codec_name=" + expectedStreamCodec(codec);
     const bool hasVideo = format.find(expectedVideoCodec) != std::string::npos;
@@ -430,8 +431,10 @@ bool outputDescriptionMatches(const std::string& format,
             !hasAudio ||
             format.find("codec_name=" + expectedAudioCodec) != std::string::npos;
     const bool markerMatches = format.find(marker) != std::string::npos;
+    const bool resolutionMatches = outputResolutionMatches(format, resolution);
 
-    return hasVideo && hasExpectedContainer && audioMatches && markerMatches;
+    return hasVideo && hasExpectedContainer && audioMatches &&
+        markerMatches && resolutionMatches;
 }
 
 std::string joinRemoteArguments(const std::vector<std::string>& arguments) {
@@ -1016,7 +1019,8 @@ bool FfmpegService::isOutputForSourceAlreadyProcessed(const std::string& outputP
 
 bool FfmpegService::verifyOutput(const std::string& path, VideoCodec codec,
                                  const std::string& expectedMarker,
-                                 const std::string& expectedAudioCodec) const {
+                                 const std::string& expectedAudioCodec,
+                                 OutputResolution resolution) const {
     const ProcessResult result = runProcess({ffprobePath_, "-v", "error", "-show_entries",
         "format=format_name:format_tags=comment:stream=codec_type,codec_name",
         "-of", "default=noprint_wrappers=1", path});
@@ -1044,7 +1048,8 @@ bool FfmpegService::verifyOutput(const std::string& path, VideoCodec codec,
             !hasAudio ||
             format.find("codec_name=" + expectedAudioCodec) != std::string::npos;
     const bool hasMarker = format.find(expectedMarker) != std::string::npos;
-    return hasVideo && expectedContainer && audioMatches && hasMarker;
+    const bool resolutionMatches = outputResolutionMatches(format, resolution);
+    return hasVideo && expectedContainer && audioMatches && hasMarker && resolutionMatches;
 }
 
 ConversionResult FfmpegService::convertRemote(
