@@ -604,7 +604,12 @@ void AppController::saveQueueLocked() const {
     std::ofstream output(path, std::ios::binary | std::ios::trunc);
     if (!output) return;
     output << "FFmpegStudioQueue/1\n";
-    for (const auto& task : tasks_) output << task.inputPath << '\n';
+    for (const auto& task : tasks_) {
+        if (task.state == TaskState::Completed || task.state == TaskState::Skipped) {
+            continue;
+        }
+        output << task.inputPath << '\n';
+    }
 }
 
 void AppController::saveSettingsLocked() const {
@@ -884,6 +889,7 @@ void AppController::runTask(std::size_t index, const ResourcePlan& plan, std::si
                 current.items[0].detail = result.message;
             }
         }
+        saveQueueLocked();
         return;
     }
 
@@ -929,6 +935,7 @@ void AppController::runTask(std::size_t index, const ResourcePlan& plan, std::si
         current.progress = 1.0;
         current.detail = result.message;
     }
+    saveQueueLocked();
 }
 
 void AppController::pauseBatch() {
