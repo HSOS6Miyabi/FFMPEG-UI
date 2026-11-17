@@ -1532,7 +1532,7 @@ private:
             snapshot.resourcePlan.explanation, colors.muted, 0);
         canvas_->text(
             information.x + s(22), information.y + s(288),
-            "支持 H.264、H.265 和 AV1。ZIP 与 PPTX 会保留其他文件并更新视频引用。",
+            "H.264 / H.265 / AV1 · ZIP / PPTX 批量处理",
             colors.muted, 0);
 
         if (!snapshot.error.empty()) {
