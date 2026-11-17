@@ -604,6 +604,30 @@ void AppController::saveQueueLocked() const {
     for (const auto& task : tasks_) output << task.inputPath << '\n';
 }
 
+void AppController::saveSettingsLocked() const {
+    const auto path = settingsFilePath();
+    std::error_code error;
+    std::filesystem::create_directories(path.parent_path(), error);
+    if (error) return;
+    std::ofstream output(path, std::ios::binary | std::ios::trunc);
+    if (!output) return;
+    output << "outputContainer=" << static_cast<int>(settings_.outputContainer) << '\n'
+           << "codec=" << static_cast<int>(settings_.codec) << '\n'
+           << "backend=" << static_cast<int>(settings_.backend) << '\n'
+           << "compression=" << static_cast<int>(settings_.compression) << '\n'
+           << "crf=" << settings_.crf << '\n'
+           << "audioBitrateKbps=" << settings_.audioBitrateKbps << '\n'
+           << "audioMode=" << static_cast<int>(settings_.audioMode) << '\n'
+           << "outputResolution=" << static_cast<int>(settings_.outputResolution) << '\n'
+           << "maxParallelJobs=" << settings_.maxParallelJobs << '\n'
+           << "recursive=" << (settings_.recursive ? 1 : 0) << '\n'
+           << "preserveDirectoryStructure=" << (settings_.preserveDirectoryStructure ? 1 : 0) << '\n'
+           << "skipAlreadyProcessed=" << (settings_.skipAlreadyProcessed ? 1 : 0) << '\n'
+           << "overwrite=" << (settings_.overwrite ? 1 : 0) << '\n'
+           << "outputDirectory=" << settings_.outputDirectory << '\n'
+           << "remoteHost=" << settings_.remoteHost << '\n';
+}
+
 std::size_t AppController::importQueue(const std::string& path, std::string& error) {
     std::ifstream input(pathFromUtf8(path), std::ios::binary);
     if (!input) { error = "无法读取任务清单。"; return 0; }
