@@ -87,21 +87,21 @@ jobs:
         run: ctest --preset linux-release
 
       - name: Run FFmpeg conversion, ZIP, PPTX and SSH integration tests
-        run: ./build/linux-release/ffmpeg-ui --self-test
+        run: ./build/linux-release/video-compression-workbench --self-test
 
       - name: Package Linux application
         run: |
           mkdir -p dist/linux
-          cp build/linux-release/ffmpeg-ui dist/linux/
+          cp build/linux-release/video-compression-workbench dist/linux/
           cp README.md dist/linux/
           cp -r docs dist/linux/
-          tar -czf ffmpeg-studio-linux-x86_64.tar.gz -C dist/linux .
+          tar -czf video-compression-workbench-linux-x86_64.tar.gz -C dist/linux .
 
       - name: Upload Linux release asset
         uses: actions/upload-artifact@v4
         with:
-          name: ffmpeg-studio-linux-x86_64
-          path: ffmpeg-studio-linux-x86_64.tar.gz
+          name: video-compression-workbench-linux-x86_64
+          path: video-compression-workbench-linux-x86_64.tar.gz
           if-no-files-found: error
 
   windows:
@@ -137,22 +137,22 @@ jobs:
         run: ctest --preset windows-release
 
       - name: Run FFmpeg conversion, ZIP and PPTX tests
-        run: .\build\windows-release\ffmpeg-ui.exe --self-test
+        run: .\build\windows-release\video-compression-workbench.exe --self-test
 
       - name: Package Windows application
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Force dist\windows | Out-Null
-          Copy-Item build\windows-release\ffmpeg-ui.exe dist\windows\
+          Copy-Item build\windows-release\video-compression-workbench.exe dist\windows\
           Copy-Item README.md dist\windows\
           Copy-Item docs dist\windows\ -Recurse
-          Compress-Archive -Path dist\windows\* -DestinationPath ffmpeg-studio-windows-x86_64.zip -Force
+          Compress-Archive -Path dist\windows\* -DestinationPath video-compression-workbench-windows-x86_64.zip -Force
 
       - name: Upload Windows release asset
         uses: actions/upload-artifact@v4
         with:
-          name: ffmpeg-studio-windows-x86_64
-          path: ffmpeg-studio-windows-x86_64.zip
+          name: video-compression-workbench-windows-x86_64
+          path: video-compression-workbench-windows-x86_64.zip
           if-no-files-found: error
 
   release:
@@ -166,13 +166,13 @@ jobs:
       - name: Download Linux package
         uses: actions/download-artifact@v4
         with:
-          name: ffmpeg-studio-linux-x86_64
+          name: video-compression-workbench-linux-x86_64
           path: dist
 
       - name: Download Windows package
         uses: actions/download-artifact@v4
         with:
-          name: ffmpeg-studio-windows-x86_64
+          name: video-compression-workbench-windows-x86_64
           path: dist
 
       - name: Publish release and attach packages
@@ -180,5 +180,5 @@ jobs:
         with:
           generate_release_notes: true
           files: |
-            dist/ffmpeg-studio-linux-x86_64.tar.gz
-            dist/ffmpeg-studio-windows-x86_64.zip
+            dist/video-compression-workbench-linux-x86_64.tar.gz
+            dist/video-compression-workbench-windows-x86_64.zip
