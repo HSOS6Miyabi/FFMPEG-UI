@@ -26,7 +26,7 @@ jobs:
       - name: Install build and media dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y build-essential cmake ninja-build libx11-dev libxft-dev libfontconfig1 libarchive-dev ffmpeg fonts-noto-cjk openssh-server
+          sudo apt-get install -y build-essential cmake ninja-build libx11-dev libxft-dev libfontconfig1 libarchive-dev ffmpeg fonts-noto-cjk openssh-server xvfb xdotool imagemagick
 
       - name: Start disposable SSH test server
         shell: bash
@@ -88,6 +88,39 @@ jobs:
 
       - name: Run FFmpeg conversion, ZIP, PPTX and SSH integration tests
         run: ./build/linux-release/video-compression-workbench --self-test
+
+      - name: Capture Linux desktop interface
+        shell: bash
+        run: |
+          mkdir -p artifacts/ui
+          xvfb-run -a -s "-screen 0 1600x1100x24" bash -c '
+            ./build/linux-release/video-compression-workbench > /tmp/video-compression-workbench-ui.log 2>&1 &
+            app_pid=$!
+            trap "kill $app_pid 2>/dev/null || true" EXIT
+            window=""
+            for attempt in $(seq 1 30); do
+              window=$(xdotool search --name "视频压缩工作台" 2>/dev/null | head -n 1 || true)
+              if [ -n "$window" ]; then break; fi
+              sleep 1
+            done
+            if [ -z "$window" ]; then
+              cat /tmp/video-compression-workbench-ui.log
+              exit 1
+            fi
+            sleep 2
+            xdotool mousemove --window "$window" 650 572 click 1
+            sleep 1
+            xdotool mousemove --window "$window" 580 610 click 1
+            sleep 1
+            import -window "$window" artifacts/ui/video-compression-workbench-linux.png
+          '
+
+      - name: Upload Linux interface screenshot
+        uses: actions/upload-artifact@v4
+        with:
+          name: video-compression-workbench-ui-linux
+          path: artifacts/ui/video-compression-workbench-linux.png
+          if-no-files-found: error
 
       - name: Package Linux application
         run: |
