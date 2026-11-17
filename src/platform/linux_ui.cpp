@@ -688,7 +688,7 @@ private:
     void exportQueueDialog() {
         ProcessResult result = runProcess({
             "zenity", "--file-selection", "--save", "--confirm-overwrite",
-            "--title=导出任务清单", "--file-filter=FFmpeg Studio Queue | *.ffq"
+            "--title=导出任务清单", "--file-filter=视频压缩工作台任务清单 | *.ffq"
         });
         if (result.exitCode != 0) {
             result = runProcess({
