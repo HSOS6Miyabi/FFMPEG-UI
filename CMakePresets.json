@@ -14,10 +14,10 @@
     {
       "name": "windows-release",
       "displayName": "Windows Release",
-      "generator": "Visual Studio 17 2022",
-      "architecture": "x64",
+      "generator": "Ninja",
       "binaryDir": "${sourceDir}/build/windows-release",
       "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
         "BUILD_TESTING": "ON"
       }
     }
@@ -29,8 +29,7 @@
     },
     {
       "name": "windows-release",
-      "configurePreset": "windows-release",
-      "configuration": "Release"
+      "configurePreset": "windows-release"
     }
   ],
   "testPresets": [
@@ -42,7 +41,6 @@
     {
       "name": "windows-release",
       "configurePreset": "windows-release",
-      "configuration": "Release",
       "output": { "outputOnFailure": true }
     }
   ]
