@@ -19,6 +19,7 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <exception>
 #include <filesystem>
 #include <string>
 #include <vector>
@@ -333,12 +334,15 @@ private:
         int width,
         int height,
         int controlId,
-        DWORD extendedStyle = 0) {
+        DWORD extendedStyle = 0,
+        bool tabStop = true) {
+        const DWORD windowStyle =
+            WS_CHILD | WS_VISIBLE | style | (tabStop ? WS_TABSTOP : 0);
         HWND result = CreateWindowExW(
             extendedStyle,
             type,
             label,
-            WS_CHILD | WS_VISIBLE | style,
+            windowStyle,
             scaled(x), scaled(y), scaled(width), scaled(height),
             hwnd_,
             reinterpret_cast<HMENU>(static_cast<INT_PTR>(controlId)),
@@ -361,7 +365,7 @@ private:
 
         createControl(
             L"STATIC", L"本机 SSH 配置", SS_LEFT,
-            20, 20, 280, 26, 0);
+            20, 20, 280, 26, 0, 0, false);
         list_ = createControl(
             L"LISTBOX", L"",
             LBS_NOTIFY | LBS_NOINTEGRALHEIGHT | WS_VSCROLL | WS_BORDER,
@@ -371,7 +375,7 @@ private:
             const wchar_t* label, int x, int y, int width) {
             createControl(
                 L"STATIC", label, SS_LEFT,
-                x, y, width, 20, 0);
+                x, y, width, 20, 0, 0, false);
         };
 
         addLabel(L"服务器别名", 350, 24, 270);
@@ -406,7 +410,7 @@ private:
         addLabel(L"认证方式", 350, 344, 250);
         passwordLabel_ = createControl(
             L"STATIC", L"密码（仅密码认证时填写）", SS_LEFT,
-            660, 344, 300, 20, 0);
+            660, 344, 300, 20, 0, 0, false);
         auth_ = createControl(
             L"COMBOBOX", L"", CBS_DROPDOWNLIST | WS_VSCROLL,
             350, 368, 280, 32, AuthId);
@@ -425,7 +429,7 @@ private:
 
         status_ = createControl(
             L"STATIC", L"服务器列表来自本机 SSH 配置文件。", SS_LEFT,
-            20, 592, 940, 32, StatusId);
+            20, 592, 940, 32, StatusId, 0, false);
 
         const auto addButton = [this](
             const wchar_t* label, int id, int x, int width = 112) {
