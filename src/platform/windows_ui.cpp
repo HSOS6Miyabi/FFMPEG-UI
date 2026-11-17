@@ -108,7 +108,7 @@ Layout makeLayout(int width, int height, double scale, int backendCount = 4) {
         l.compression[i] = {leftX + s(20) + col * (compW + s(6)), settingsY + s(324) + row * s(39), compW, s(32)};
     }
     const int audioW = (leftW - s(52) - s(30)) / 6;
-    for (int i = 0; i < 6; ++i) l.audio[i] = {leftX + s(20) + i * (audioW + s(6)), settingsY + s(366), audioW, s(32)};
+    for (int i = 0; i < 6; ++i) l.audio[i] = {leftX + s(20) + i * (audioW + s(6)), settingsY + s(414), audioW, s(32)};
     const int optionGap = s(6);
     const int optionWidth = (leftW - s(40) - optionGap * 4) / 5;
     const int optionY = settingsY + s(482);
@@ -984,7 +984,7 @@ private:
             drawButton(
                 dc, l.compression[index], levels[index], c, smallFont, selected);
         }
-        drawText(dc,{leftX+s(20),top+s(383),s(200),s(20)},L"音频码率",c.muted,smallFont);
+        drawText(dc,{leftX+s(20),top+s(431),s(200),s(20)},L"音频码率",c.muted,smallFont);
         const std::array<int,6> rates{96,128,160,192,256,320};
         for (int index = 0; index < 6; ++index) {
             const bool selected = settings_.audioBitrateKbps == rates[index];
