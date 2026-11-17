@@ -33,13 +33,16 @@ jobs:
         run: |
           test_user=ffmpeg-studio-ci
           test_password=ffmpeg-studio-ci-test-password
-          sudo useradd --create-home --shell /bin/bash "$test_user"
+          sudo useradd --user-group --create-home --shell /bin/bash "$test_user"
           echo "$test_user:$test_password" | sudo chpasswd
           ssh-keygen -q -t ed25519 -N "" -f "$RUNNER_TEMP/ffmpeg-studio-ci"
           sudo install -d -o "$test_user" -g "$test_user" -m 700 "/home/$test_user/.ssh"
           sudo install -o "$test_user" -g "$test_user" -m 600 \
             "$RUNNER_TEMP/ffmpeg-studio-ci.pub" "/home/$test_user/.ssh/authorized_keys"
           sudo ssh-keygen -A
+          sudo mkdir -p /run/sshd
+          mkdir -p "$HOME/.ssh"
+          chmod 700 "$HOME/.ssh"
           cat > "$RUNNER_TEMP/sshd_config" <<EOF
           Port 2222
           ListenAddress 127.0.0.1
