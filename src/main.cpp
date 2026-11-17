@@ -200,6 +200,59 @@ int runSelfTest(bool keepFiles) {
     const std::array<ffmpegui::VideoCodec, 3> codecs{
         ffmpegui::VideoCodec::H264, ffmpegui::VideoCodec::H265, ffmpegui::VideoCodec::AV1};
     if (capabilities.supports(ffmpegui::VideoCodec::H264, ffmpegui::EncoderBackend::CPU)) {
+        const fs::path resolutionSource = work / "resolution-source.mp4";
+        const auto resolutionSourceGenerated = ffmpegui::runProcess({
+            service.ffmpegPath(), "-hide_banner", "-loglevel", "error", "-y",
+            "-f", "lavfi", "-i", "testsrc2=size=1280x720:rate=24:duration=1",
+            "-f", "lavfi", "-i", "sine=frequency=440:sample_rate=48000:duration=1",
+            "-map", "0:v:0", "-map", "1:a:0",
+            "-c:v", "mpeg4", "-q:v", "5", "-c:a", "aac", "-shortest",
+            pathToUtf8(resolutionSource)
+        });
+        ffmpegui::ConversionSettings scaledSettings;
+        scaledSettings.inputPath = pathToUtf8(resolutionSource);
+        scaledSettings.outputPath = pathToUtf8(work / "scaled-480p.mp4");
+        scaledSettings.codec = ffmpegui::VideoCodec::H264;
+        scaledSettings.backend = ffmpegui::EncoderBackend::CPU;
+        scaledSettings.compression = ffmpegui::CompressionLevel::Fastest;
+        scaledSettings.crf = 25;
+        scaledSettings.audioBitrateKbps = 192;
+        scaledSettings.audioMode = ffmpegui::AudioMode::Copy;
+        scaledSettings.outputResolution = ffmpegui::OutputResolution::SD480;
+        const auto scaledResult = resolutionSourceGenerated.exitCode == 0
+            ? service.convert(scaledSettings, capabilities, {}, nullptr)
+            : ffmpegui::ConversionResult{};
+        const auto scaledProbe = scaledResult.success
+            ? ffmpegui::runProcess({
+                service.ffprobePath(), "-v", "error",
+                "-show_entries", "stream=codec_type,width,height,codec_name",
+                "-of", "default=noprint_wrappers=1", scaledResult.outputPath
+            })
+            : ffmpegui::ProcessResult{};
+        check("480p output resolution and original audio copy",
+            scaledResult.success &&
+            scaledProbe.output.find("width=854") != std::string::npos &&
+            scaledProbe.output.find("height=480") != std::string::npos &&
+            scaledProbe.output.find("codec_name=aac") != std::string::npos);
+
+        auto mutedSettings = scaledSettings;
+        mutedSettings.outputPath = pathToUtf8(work / "without-audio.mp4");
+        mutedSettings.audioMode = ffmpegui::AudioMode::Remove;
+        mutedSettings.outputResolution = ffmpegui::OutputResolution::Original;
+        const auto mutedResult = resolutionSourceGenerated.exitCode == 0
+            ? service.convert(mutedSettings, capabilities, {}, nullptr)
+            : ffmpegui::ConversionResult{};
+        const auto mutedProbe = mutedResult.success
+            ? ffmpegui::runProcess({
+                service.ffprobePath(), "-v", "error",
+                "-show_entries", "stream=codec_type",
+                "-of", "default=noprint_wrappers=1", mutedResult.outputPath
+            })
+            : ffmpegui::ProcessResult{};
+        check("audio removal",
+            mutedResult.success &&
+            mutedProbe.output.find("codec_type=audio") == std::string::npos);
+
         const fs::path sameContainerSource = work / "source.mkv";
         const fs::path sameContainerOutput = work / "same-container.mkv";
         const auto remux = ffmpegui::runProcess({service.ffmpegPath(), "-hide_banner", "-loglevel", "error",
