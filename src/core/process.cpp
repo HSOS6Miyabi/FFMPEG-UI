@@ -5,8 +5,6 @@
 #include <cstdint>
 #include <cstdlib>
 #include <cwchar>
-#include <codecvt>
-#include <locale>
 #include <map>
 #include <sstream>
 
