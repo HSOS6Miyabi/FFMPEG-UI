@@ -669,12 +669,12 @@ private:
                 } else {
                     detail = wide(task.detail);
                 }
-                const std::string sizeLine = child
+                const std::wstring sizeLine = child
                     ? formatTaskSize(item.inputSizeBytes, item.outputSizeBytes)
                     : formatTaskSize(task.inputSizeBytes, task.outputSizeBytes);
                 if (!sizeLine.empty() &&
                     (state == TaskState::Completed || state == TaskState::Skipped)) {
-                    detail = wide(sizeLine);
+                    detail = sizeLine;
                 }
                 drawText(
                     dc,
