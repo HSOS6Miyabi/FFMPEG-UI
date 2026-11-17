@@ -176,6 +176,12 @@ std::vector<std::string> removeAliasFromConfig(const std::vector<std::string>& l
 
     for (const auto& line : lines) {
         const auto tokens = splitConfigWords(line);
+        if (!tokens.empty() && lower(tokens.front()) == "match") {
+            // Match blocks are independent sections and must survive Host removal.
+            skipCurrentBlock = false;
+            result.push_back(line);
+            continue;
+        }
         if (!tokens.empty() && lower(tokens.front()) == "host") {
             skipCurrentBlock = false;
 
@@ -214,6 +220,10 @@ std::vector<std::string> inheritedOptionsForAlias(const std::vector<std::string>
 
     for (const auto& line : lines) {
         const auto tokens = splitConfigWords(line);
+        if (!tokens.empty() && lower(tokens.front()) == "match") {
+            active = false;
+            continue;
+        }
         if (!tokens.empty() && lower(tokens.front()) == "host") {
             active = std::find(tokens.begin() + 1, tokens.end(), alias) != tokens.end();
             continue;
@@ -283,6 +293,14 @@ void eraseSecret(std::string& secret) {
     secret.clear();
 }
 
+void clearPasswordFromEnvironment(ProcessEnvironment& environment) {
+    const auto password = environment.find("FFMPEG_STUDIO_SSH_PASSWORD");
+    if (password != environment.end()) {
+        eraseSecret(password->second);
+        environment.erase(password);
+    }
+}
+
 } // namespace
 
 SshService::SshService() {
@@ -346,6 +364,10 @@ std::vector<SshServer> SshService::listServers() const {
         }
 
         const std::string key = lower(tokens.front());
+        if (key == "match") {
+            activeAliases.clear();
+            continue;
+        }
         if (key == "host") {
             activeAliases.clear();
 

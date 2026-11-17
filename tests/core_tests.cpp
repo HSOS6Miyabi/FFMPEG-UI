@@ -278,7 +278,8 @@ int main() {
                 config << "Host *\n  ServerAliveInterval 30\n\n"
                        << "Host shared-node backup-node\n  HostName 10.0.0.5\n  User admin\n"
                        << "  Port 2222\n  Compression yes\n  IdentityFile ~/.ssh/id_ed25519\n\n"
-                       << "Host other-node\n  HostName example.invalid\n";
+                       << "Host other-node\n  HostName example.invalid\n"
+                       << "Match host *.example\n  User match-user\n";
             }
             SshService ssh;
             auto servers = ssh.listServers();
@@ -303,6 +304,9 @@ int main() {
                     keyEntry->user == "worker" && keyEntry->port == 2200 &&
                     keyEntry->identityFile == "C:/Keys/worker key_ed25519",
                     "The SSH manager must write and read server connection settings.");
+            const auto otherEntry = std::find_if(servers.begin(), servers.end(), [](const auto& item) { return item.alias == "other-node"; });
+            require(otherEntry != servers.end() && otherEntry->user.empty(),
+                    "Match blocks must not be interpreted as Host options.");
             const auto backupEntry = std::find_if(servers.begin(), servers.end(), [](const auto& item) { return item.alias == "backup-node"; });
             require(backupEntry != servers.end() && backupEntry->hostName == "10.0.0.5" &&
                     backupEntry->user == "admin",
@@ -342,6 +346,14 @@ int main() {
             require(std::none_of(servers.begin(), servers.end(), [](const auto& item) { return item.alias == "shared-node"; }) &&
                     std::any_of(servers.begin(), servers.end(), [](const auto& item) { return item.alias == "backup-node"; }),
                     "Removing one SSH alias must leave unrelated aliases intact.");
+            require(ssh.removeServer("other-node", sshError),
+                    "Removing a Host block before a Match block must succeed.");
+            std::ifstream finalConfig(configPath, std::ios::binary);
+            const std::string finalText((std::istreambuf_iterator<char>(finalConfig)), {});
+            require(finalText.find("Match host *.example") != std::string::npos &&
+                    finalText.find("User match-user") != std::string::npos,
+                    "Removing a Host block must preserve following Match sections.");
+
 #ifdef _WIN32
             _putenv_s("FFMPEG_STUDIO_SSH_CONFIG", oldConfigValue.c_str());
 #else

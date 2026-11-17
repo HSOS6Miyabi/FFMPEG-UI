@@ -1,6 +1,5 @@
 #include "app_controller.hpp"
 #include "process.hpp"
-#include "process.hpp"
 
 #include <algorithm>
 #include <cctype>

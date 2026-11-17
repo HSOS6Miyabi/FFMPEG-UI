@@ -409,6 +409,10 @@ ProcessResult runProcess(const std::vector<std::string>& arguments,
     flushPending(pending, onLine);
     CloseHandle(processInfo.hProcess);
     CloseHandle(readHandle);
+    if (!environmentBlock.empty()) {
+        SecureZeroMemory(environmentBlock.data(),
+                         environmentBlock.size() * sizeof(environmentBlock.front()));
+    }
 #else
     int pipeDescriptors[2]{};
     if (pipe(pipeDescriptors) != 0) {
@@ -489,6 +493,14 @@ ProcessResult runProcess(const std::vector<std::string>& arguments,
         result.output = std::string("Unable to start FFmpeg: ") + std::strerror(spawnError);
         close(pipeDescriptors[0]);
         close(pipeDescriptors[1]);
+        for (auto& entry : environmentStorage) {
+            if (!entry.empty()) {
+                volatile char* bytes = entry.data();
+                for (std::size_t index = 0; index < entry.size(); ++index) {
+                    bytes[index] = 0;
+                }
+            }
+        }
         return result;
     }
 
@@ -572,6 +584,14 @@ ProcessResult runProcess(const std::vector<std::string>& arguments,
     }
     flushPending(pending, onLine);
     close(pipeDescriptors[0]);
+    for (auto& entry : environmentStorage) {
+        if (!entry.empty()) {
+            volatile char* bytes = entry.data();
+            for (std::size_t index = 0; index < entry.size(); ++index) {
+                bytes[index] = 0;
+            }
+        }
+    }
 #endif
 
     return result;
