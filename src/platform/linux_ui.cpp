@@ -539,11 +539,11 @@ public:
             0, 0, static_cast<unsigned int>(width_),
             static_cast<unsigned int>(height_),
             0, BlackPixel(display_, screen_), WhitePixel(display_, screen_));
-        XStoreName(display_, window_, "FFmpeg Studio");
+        XStoreName(display_, window_, "视频压缩工作台");
 
         XClassHint classHint{};
-        classHint.res_name = const_cast<char*>("ffmpeg-studio");
-        classHint.res_class = const_cast<char*>("FFmpegStudio");
+        classHint.res_name = const_cast<char*>("video-compression-workbench");
+        classHint.res_class = const_cast<char*>("VideoCompressionWorkbench");
         XSetClassHint(display_, window_, &classHint);
 
         XSelectInput(
@@ -663,7 +663,7 @@ private:
     void importQueueDialog() {
         ProcessResult result = runProcess({
             "zenity", "--file-selection", "--title=导入任务清单",
-            "--file-filter=FFmpeg Studio Queue | *.ffq *.txt"
+            "--file-filter=视频压缩工作台任务清单 | *.ffq *.txt"
         });
         if (result.exitCode != 0) {
             result = runProcess({
@@ -1224,7 +1224,7 @@ private:
         const auto colors = palette(dark_);
 
         canvas_->fill({0, 0, width_, height_}, colors.background);
-        canvas_->text(s(30), s(50), "FFmpeg Studio", colors.text, 2);
+        canvas_->text(s(30), s(50), "视频压缩工作台", colors.text, 2);
         canvas_->text(
             s(31), s(82),
             "批量视频压缩 · ZIP / PPTX 媒体处理 · CPU 与硬件编码",
