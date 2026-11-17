@@ -10,6 +10,7 @@
 namespace ffmpegui {
 
 enum class VideoCodec { H264, H265, AV1 };
+enum class OutputContainer { MP4, SameAsSource };
 enum class EncoderBackend { CPU, NVENC, QSV, AMF };
 enum class CompressionLevel { Fastest, VeryFast, Fast, Balanced, Slow, Slower, VerySlow, Extreme };
 
@@ -19,6 +20,7 @@ enum class TaskState { Pending, Running, Completed, Skipped, Failed, Cancelled }
 struct ConversionSettings {
     std::string inputPath;
     std::string outputPath;
+    OutputContainer outputContainer{OutputContainer::MP4};
     VideoCodec codec{VideoCodec::H264};
     EncoderBackend backend{EncoderBackend::CPU};
     CompressionLevel compression{CompressionLevel::Balanced};
@@ -30,6 +32,7 @@ struct ConversionSettings {
 };
 
 struct BatchSettings {
+    OutputContainer outputContainer{OutputContainer::MP4};
     VideoCodec codec{VideoCodec::H264};
     EncoderBackend backend{EncoderBackend::CPU};
     CompressionLevel compression{CompressionLevel::Balanced};
@@ -50,6 +53,8 @@ struct EncoderCapabilities {
     bool libx265{false};
     bool libsvtav1{false};
     bool libaomAv1{false};
+    bool libopus{false};
+    bool libvorbis{false};
     bool h264Nvenc{false};
     bool hevcNvenc{false};
     bool av1Nvenc{false};
@@ -99,6 +104,8 @@ struct ResourcePlan {
 using ProgressCallback = std::function<void(const ConversionProgress&)>;
 
 std::string codecName(VideoCodec codec);
+std::string outputContainerName(OutputContainer container);
+std::string outputVideoExtension(OutputContainer container, const std::string& sourcePath);
 std::string backendName(EncoderBackend backend);
 std::string compressionName(CompressionLevel level);
 std::string taskKindName(TaskKind kind);
@@ -142,7 +149,8 @@ public:
 private:
     bool probeHardwareEncoder(const std::string& encoder) const;
     bool verifyOutput(const std::string& path, VideoCodec codec,
-                      const std::string& expectedMarker) const;
+                      const std::string& expectedMarker,
+                      const std::string& expectedAudioCodec) const;
 
     std::string ffmpegPath_;
     std::string ffprobePath_;

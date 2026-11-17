@@ -35,6 +35,8 @@ int main() {
         capabilities.libx265 = true;
         capabilities.libsvtav1 = true;
         capabilities.libaomAv1 = true;
+        capabilities.libopus = true;
+        capabilities.libvorbis = true;
         capabilities.h264Nvenc = true;
         capabilities.hevcNvenc = true;
         capabilities.av1Nvenc = true;
@@ -69,6 +71,18 @@ int main() {
         require(containsPair(command, "-c:a", "aac"), "Audio must be encoded as AAC.");
         require(containsPair(command, "-b:a", "192k"), "The selected audio bitrate must be passed to FFmpeg.");
         require(containsPair(command, "-threads:v", "0") == false, "An unset thread limit must not add an invalid thread option.");
+        settings.codec = VideoCodec::AV1;
+        command = buildFfmpegCommand(settings, capabilities, "ffmpeg", "temporary.webm");
+        require(containsPair(command, "-c:a", "libopus"), "WebM output must use Opus audio.");
+        settings.codec = VideoCodec::H264;
+        command = buildFfmpegCommand(settings, capabilities, "ffmpeg", "temporary.mpg");
+        require(containsPair(command, "-c:a", "mp2"), "MPEG program streams must use MP2 audio.");
+        command = buildFfmpegCommand(settings, capabilities, "ffmpeg", "temporary.wmv");
+        require(containsPair(command, "-c:a", "wmav2"), "ASF/WMV output must use WMA audio.");
+        bool rejectedWebmH264 = false;
+        try { (void)buildFfmpegCommand(settings, capabilities, "ffmpeg", "temporary.webm"); }
+        catch (const std::invalid_argument&) { rejectedWebmH264 = true; }
+        require(rejectedWebmH264, "WebM must reject H.264 when only H.264/H.265/AV1 choices are available.");
         require(std::any_of(command.begin(), command.end(), [](const std::string& arg) { return arg.find("FFmpegStudio:v2:") != std::string::npos; }),
                 "The output must carry a parameter marker for repeat-processing detection.");
 
@@ -200,6 +214,31 @@ int main() {
         require(fingerprint != settingsFingerprint(changedFingerprint), "The repeat-processing marker must include audio settings.");
         require(outputSuffix(fingerprintSettings).find("H264") != std::string::npos, "Output suffixes must identify the selected video codec.");
         require(outputSuffix(fingerprintSettings).find("A192") != std::string::npos, "Output suffixes must identify the selected audio bitrate.");
+        require(outputVideoExtension(OutputContainer::MP4, "sample.mov") == ".mp4",
+                "MP4 mode must use the MP4 extension for every source container.");
+        require(outputVideoExtension(OutputContainer::SameAsSource, "sample.MOV") == ".mov",
+                "Same-container mode must preserve the source file extension.");
+        require(outputContainerName(OutputContainer::SameAsSource) == "与源文件相同",
+                "The UI must name the same-container option clearly.");
+        require(outputSuffix(fingerprintSettings).ends_with("_A192"),
+                "The default MP4 output name must remain concise and compatible.");
+        auto sameContainerSuffix = fingerprintSettings;
+        sameContainerSuffix.outputContainer = OutputContainer::SameAsSource;
+        require(outputSuffix(sameContainerSuffix).ends_with("_A192_SRC"),
+                "Same-container output names must identify the source-container mode.");
+        auto sameContainer = fingerprintSettings;
+        sameContainer.outputContainer = OutputContainer::SameAsSource;
+        require(settingsFingerprint(sameContainer) != settingsFingerprint(fingerprintSettings),
+                "The repeat-processing marker must include the selected output container.");
+        command = buildFfmpegCommand(sameContainer, capabilities, "ffmpeg", "temporary.mkv");
+        require(!containsPair(command, "-movflags", "+faststart"),
+                "Matroska output must not receive MP4-only muxer options.");
+        require(!containsPair(command, "-tag:v", "hvc1"),
+                "Matroska output must not receive the MP4 H.265 sample-entry tag.");
+        sameContainer.codec = VideoCodec::H265;
+        command = buildFfmpegCommand(sameContainer, capabilities, "ffmpeg", "temporary.mp4");
+        require(containsPair(command, "-tag:v", "hvc1"),
+                "H.265 MP4 output must retain the hvc1 sample-entry tag.");
         const auto automaticPlan = recommendResourcePlan(12, EncoderBackend::CPU, VideoCodec::H264, 0);
         require(automaticPlan.parallelJobs >= 1 && automaticPlan.threadsPerJob >= 1,
                 "Automatic scheduling must always allocate at least one worker and one thread.");

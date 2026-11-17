@@ -190,6 +190,61 @@ int runSelfTest(bool keepFiles) {
     };
     const std::array<ffmpegui::VideoCodec, 3> codecs{
         ffmpegui::VideoCodec::H264, ffmpegui::VideoCodec::H265, ffmpegui::VideoCodec::AV1};
+    if (capabilities.supports(ffmpegui::VideoCodec::H264, ffmpegui::EncoderBackend::CPU)) {
+        const fs::path sameContainerSource = work / "source.mkv";
+        const fs::path sameContainerOutput = work / "same-container.mkv";
+        const auto remux = ffmpegui::runProcess({service.ffmpegPath(), "-hide_banner", "-loglevel", "error",
+            "-y", "-i", pathToUtf8(source), "-map", "0", "-c", "copy", pathToUtf8(sameContainerSource)});
+        ffmpegui::ConversionSettings sameContainerSettings;
+        sameContainerSettings.inputPath = pathToUtf8(sameContainerSource);
+        sameContainerSettings.outputPath = pathToUtf8(sameContainerOutput);
+        sameContainerSettings.outputContainer = ffmpegui::OutputContainer::SameAsSource;
+        sameContainerSettings.codec = ffmpegui::VideoCodec::H264;
+        sameContainerSettings.backend = ffmpegui::EncoderBackend::CPU;
+        sameContainerSettings.compression = ffmpegui::CompressionLevel::Fastest;
+        sameContainerSettings.crf = 25;
+        sameContainerSettings.audioBitrateKbps = 128;
+        const auto sameContainerResult = remux.exitCode == 0
+            ? service.convert(sameContainerSettings, capabilities, {}, nullptr)
+            : ffmpegui::ConversionResult{};
+        const auto sameContainerProbe = sameContainerResult.success
+            ? ffmpegui::runProcess({service.ffprobePath(), "-v", "error", "-show_entries", "format=format_name",
+                "-of", "default=noprint_wrappers=1:nokey=1", pathToUtf8(sameContainerOutput)})
+            : ffmpegui::ProcessResult{};
+        check("same-container video conversion", sameContainerResult.success &&
+            sameContainerOutput.extension() == ".mkv" && sameContainerProbe.output.find("matroska") != std::string::npos);
+
+        if (capabilities.libsvtav1 && capabilities.libopus) {
+            const fs::path webmSource = work / "source.webm";
+            const fs::path webmOutput = work / "same-container.webm";
+            const auto webmGenerated = ffmpegui::runProcess({service.ffmpegPath(), "-hide_banner", "-loglevel", "error",
+                "-y", "-f", "lavfi", "-i", "testsrc2=size=160x90:rate=12:duration=1",
+                "-f", "lavfi", "-i", "sine=frequency=440:sample_rate=48000:duration=1",
+                "-c:v", "libvpx-vp9", "-deadline", "realtime", "-cpu-used", "8",
+                "-c:a", "libopus", "-b:a", "96k", pathToUtf8(webmSource)});
+            ffmpegui::ConversionSettings webmSettings;
+            webmSettings.inputPath = pathToUtf8(webmSource);
+            webmSettings.outputPath = pathToUtf8(webmOutput);
+            webmSettings.outputContainer = ffmpegui::OutputContainer::SameAsSource;
+            webmSettings.codec = ffmpegui::VideoCodec::AV1;
+            webmSettings.backend = ffmpegui::EncoderBackend::CPU;
+            webmSettings.compression = ffmpegui::CompressionLevel::Fastest;
+            webmSettings.crf = 45;
+            webmSettings.audioBitrateKbps = 96;
+            const auto webmResult = webmGenerated.exitCode == 0
+                ? service.convert(webmSettings, capabilities, {}, nullptr)
+                : ffmpegui::ConversionResult{};
+            const auto webmProbe = webmResult.success
+                ? ffmpegui::runProcess({service.ffprobePath(), "-v", "error", "-show_entries",
+                    "format=format_name:stream=codec_type,codec_name", "-of", "default=noprint_wrappers=1",
+                    pathToUtf8(webmOutput)})
+                : ffmpegui::ProcessResult{};
+            check("same-container WebM with AV1 and Opus", webmResult.success &&
+                webmProbe.output.find("webm") != std::string::npos &&
+                webmProbe.output.find("codec_name=av1") != std::string::npos &&
+                webmProbe.output.find("codec_name=opus") != std::string::npos);
+        }
+    }
     for (const auto codec : codecs) {
         if (!capabilities.supports(codec, ffmpegui::EncoderBackend::CPU)) {
             std::cout << "SKIP " << ffmpegui::codecName(codec) << " CPU encoder is unavailable\n";

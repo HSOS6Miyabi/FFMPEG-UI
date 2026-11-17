@@ -283,7 +283,8 @@ void AppController::loadSettings() {
         const std::string key = line.substr(0, separator);
         const std::string value = line.substr(separator + 1);
         try {
-            if (key == "codec") settings_.codec = static_cast<VideoCodec>(std::clamp(std::stoi(value), 0, 2));
+            if (key == "outputContainer") settings_.outputContainer = static_cast<OutputContainer>(std::clamp(std::stoi(value), 0, 1));
+            else if (key == "codec") settings_.codec = static_cast<VideoCodec>(std::clamp(std::stoi(value), 0, 2));
             else if (key == "backend") settings_.backend = static_cast<EncoderBackend>(std::clamp(std::stoi(value), 0, 3));
             else if (key == "compression") settings_.compression = static_cast<CompressionLevel>(std::clamp(std::stoi(value), 0, 7));
             else if (key == "crf") settings_.crf = std::stoi(value);
@@ -308,7 +309,8 @@ void AppController::saveSettingsLocked() const {
     if (error) return;
     std::ofstream output(path, std::ios::binary | std::ios::trunc);
     if (!output) return;
-    output << "codec=" << static_cast<int>(settings_.codec) << '\n'
+    output << "outputContainer=" << static_cast<int>(settings_.outputContainer) << '\n'
+           << "codec=" << static_cast<int>(settings_.codec) << '\n'
            << "backend=" << static_cast<int>(settings_.backend) << '\n'
            << "compression=" << static_cast<int>(settings_.compression) << '\n'
            << "crf=" << settings_.crf << '\n'
@@ -353,6 +355,7 @@ bool AppController::exportQueue(const std::string& path, std::string& error) con
 
 std::string AppController::makeOutputPathLocked(const BatchTaskSnapshot& task) const {
     ConversionSettings encoding;
+    encoding.outputContainer = settings_.outputContainer;
     encoding.codec = settings_.codec;
     encoding.backend = settings_.backend;
     encoding.compression = settings_.compression;
@@ -367,7 +370,8 @@ std::string AppController::makeOutputPathLocked(const BatchTaskSnapshot& task) c
             directory /= pathFromUtf8(task.relativeDirectory);
     }
     const std::string extension = task.kind == TaskKind::PowerPoint ? ".pptx" :
-                                  task.kind == TaskKind::ZipArchive ? ".zip" : ".mp4";
+                                  task.kind == TaskKind::ZipArchive ? ".zip" :
+                                  outputVideoExtension(settings_.outputContainer, task.inputPath);
     const std::string fileName = pathToUtf8(input.stem()) + suffix + extension;
     return pathToUtf8(directory / pathFromUtf8(fileName));
 }
@@ -512,6 +516,7 @@ void AppController::runTask(std::size_t index, const ResourcePlan& plan, std::si
     ConversionSettings settings;
     settings.inputPath = task.inputPath;
     settings.outputPath = task.outputPath;
+    settings.outputContainer = batchSettings.outputContainer;
     settings.codec = batchSettings.codec;
     settings.backend = batchSettings.backend;
     settings.compression = batchSettings.compression;
