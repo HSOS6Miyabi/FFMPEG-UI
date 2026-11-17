@@ -158,3 +158,24 @@ ctest --test-dir build --output-on-failure
 - 增加任务清单导入导出、编码设置持久化和压缩前后大小统计。
 - 增加 Linux 与 Windows CI，以及按版本标签自动发布 GitHub Release 的工作流。
 - 增加真实 FFmpeg 进程暂停和继续测试。
+
+## SSH 远程编码
+
+- 远程服务器是视频编码的计算节点。文件选择、输出路径、ZIP/PPTX 展开与重新打包均由本机程序负责。
+- 远程服务器当前要求 Linux 或兼容 POSIX shell 的系统，并提供 FFmpeg、ffprobe 和 OpenSSH 服务端。远程 Windows 主机尚未纳入支持范围。
+- 本机使用 OpenSSH 客户端的 ssh 和 scp，不部署常驻远程服务，也不要求远程服务器安装本项目。
+- SSH 服务器列表来自当前用户的 ~/.ssh/config。管理器修改某个别名时，必须保留共享 Host 块中的其他别名和未管理指令。
+- 私钥通过 IdentityFile 或 SSH Agent 使用。密码认证通过 askpass 辅助程序获取密码；Windows 密码保存在 Windows Credential Manager，不写入 SSH 配置或命令行参数。
+- 远程任务为每个转换创建独立权限受限的临时目录。远程输入保留源文件扩展名，远程输出使用所选输出容器扩展名。
+- 远程 FFmpeg 的进度通过 SSH 标准输出回传。暂停、继续和取消通过独立 SSH 命令控制远程 FFmpeg 进程。
+- 远程输出先由 ffprobe 检查容器、视频编码、音频编码和处理标记，再下载到本机临时文件。只有下载大小检查通过后，才保存到最终输出位置。
+- 任务结束时尝试终止远程 FFmpeg 并删除临时目录。连接中断或检查失败时，本机源文件必须保持不变。
+- ZIP/PPTX 仅将内部视频送到远程转换；归档展开、媒体引用更新、重新打包和完整性检查仍在本机完成。
+- 修改 SSH 认证、远程命令、临时文件管理或取消行为时，必须测试命令参数引用、密码泄露风险、异常断线和远程残留文件。
+
+## 本地代码质量
+
+- `.clang-format` 统一 C++20 代码格式，缩进 4 个空格，行宽 100 列。
+- 开发者在本地使用 `scripts/format-cpp.sh` 执行格式检查或格式化。
+- 开发者在本地使用 `scripts/lint-cpp.sh` 和 clang-tidy 检查代码。不要将格式检查或静态分析放入 GitHub Actions。
+- 手动检查资源生命周期、线程同步、异常处理、Windows/Linux API 差异和远程命令安全。

@@ -11,18 +11,20 @@
 - 主要语言：C++20。
 - 界面：Windows 原生 Win32/GDI；Linux X11/Xft。
 - 视频处理：通过 FFmpeg 和 ffprobe 命令行程序完成。
+- 远程处理：通过本机 OpenSSH 客户端调用远程 Linux 服务器上的 FFmpeg。
 - 输出容器：支持统一输出 MP4，也支持每个视频沿用源文件的容器格式。
 - ZIP/PPTX：通过 libarchive 读取和生成。
 - 项目不使用 Qt、GTK、MFC 或 Electron 等桌面界面框架。
 
-当前版本包含独立视频、文件夹、ZIP 和 PPTX 批量处理，以及 MP4 和源文件容器两种输出模式；H.264、H.265、AV1；CPU、NVIDIA NVENC、Intel Quick Sync 和 AMD AMF 编码器探测；八档压缩级别；AAC 码率设置；任务进度、暂停、继续和取消；自适应并行调度；重复处理检查；任务清单导入导出；Windows 命令行文件参数和文件拖放。
+当前版本包含独立视频、文件夹、ZIP 和 PPTX 批量处理；MP4 和源文件容器两种输出模式；H.264、H.265、AV1；CPU、NVIDIA NVENC、Intel Quick Sync 和 AMD AMF 编码器探测；八档压缩级别；容器兼容的音频编码；SSH 远程编码；任务进度、暂停、继续和取消；自适应并行调度；重复处理检查；任务清单导入导出；Windows 命令行文件参数和文件拖放。
 
 ## 目录说明
 
 | 路径 | 用途 |
 |---|---|
 | `src/core/conversion.*` | FFmpeg 参数生成、编码器探测、视频转换、进度读取和输出验证 |
-| `src/core/process.*` | Windows/Linux 子进程启动、输出读取、暂停、继续和取消 |
+| `src/core/process.*` | Windows/Linux 子进程启动、输出读取、环境变量和暂停、继续、取消 |
+| `src/core/ssh.*` | SSH 配置读取与同步、认证凭据、远程命令和文件传输 |
 | `src/core/archive.*` | ZIP/PPTX 解包、视频替换、引用更新、重新打包和完整性检查 |
 | `src/core/app_controller.*` | 输入扫描、任务队列、并行调度、设置保存和任务状态 |
 | `src/platform/windows_ui.cpp` | Windows 原生界面 |
@@ -33,12 +35,14 @@
 | `docs/architecture.md` | 组件结构和处理流程 |
 | `docs/decision-log.md` | 重要设计决策和维护约束 |
 | `docs/encoding.md` | 编码质量、预设、音频和进度参数 |
+| `docs/ssh-remote-processing.md` | SSH 远程处理、认证、安全和测试要求 |
+| `.clang-format`、`scripts/` | C++ 格式规范和本地 clang-tidy 检查脚本 |
 
 ## 构建环境
 
 ### Linux
 
-需要 C++20 编译器、CMake 3.25 或更新版本、Ninja、X11、Xft、Fontconfig、libarchive、FFmpeg 和 ffprobe。
+需要 C++20 编译器、CMake 3.25 或更新版本、Ninja、X11、Xft、Fontconfig、libarchive、FFmpeg 和 ffprobe。远程编码还需要 OpenSSH 客户端。
 
 Ubuntu/Debian 可安装依赖：
 
@@ -58,7 +62,7 @@ ctest --preset linux-release
 
 ### Windows
 
-需要 Visual Studio 2022 C++ 桌面开发工具、Windows SDK、CMake 3.25 或更新版本、vcpkg、libarchive 和 FFmpeg/ffprobe。
+需要 Visual Studio 2022 C++ 桌面开发工具、Windows SDK、CMake 3.25 或更新版本、vcpkg、libarchive 和 FFmpeg/ffprobe。远程编码还需要 Windows OpenSSH Client。
 
 在 PowerShell 中执行：
 
@@ -107,9 +111,21 @@ ctest --test-dir build --output-on-failure
 ./build/ffmpeg-ui --self-test
 ```
 
-`--self-test` 应覆盖 CPU H.264/H.265/AV1、AAC/Opus 等容器兼容音频、MP4 和源容器输出、进度解析、重复处理标记、ZIP/PPTX 替换、归档安全、并行调度和进程暂停恢复。硬件编码器需要真实设备和驱动；没有设备时，验证对应选项不会出现在界面中。
+`--self-test` 应覆盖 CPU H.264/H.265/AV1、AAC/Opus 等容器兼容音频、MP4 和源容器输出、进度解析、重复处理标记、ZIP/PPTX 替换、归档安全、并行调度、SSH 配置解析和凭据存储。远程 SSH 处理还应在本地测试服务器上验证上传、编码、进度、取消、下载和清理。硬件编码器需要真实设备和驱动；没有设备时，验证对应选项不会出现在界面中。
 
 Windows 与 Linux 的完整构建和测试由 GitHub Actions 执行。开发机器缺少某类硬件时，不要把硬件编码器测试描述为已通过。
+
+## 本地代码质量检查
+
+C++ 格式规则保存在 `.clang-format`。在开发机安装 LLVM `clang-format` 和 `clang-tidy` 后，使用以下命令进行检查：
+
+```bash
+scripts/format-cpp.sh --check
+cmake --preset linux-release -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
+scripts/lint-cpp.sh build/linux-release
+```
+
+需要格式化代码时执行 `scripts/format-cpp.sh --write`。这些检查由开发者在本地执行，不放入 GitHub Actions。
 
 ## CI 与发布
 

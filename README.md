@@ -2,7 +2,7 @@
 
 FFmpeg Studio 是一款面向 Windows 和 Linux 的本地视频压缩工具，支持单文件、批量文件、文件夹、ZIP 压缩包和 PowerPoint 演示文稿。可以统一输出 MP4，也可以让每个视频沿用源文件的容器格式；支持 H.264、H.265 或 AV1，并通过 CRF 数值和压缩级别控制画质与文件大小。
 
-程序使用 C++20 编写。Windows 界面使用 Win32 API 和 GDI，Linux 界面使用 X11 和 Xft。程序通过 FFmpeg 和 ffprobe 完成视频编码，通过 libarchive 读取和生成 ZIP 文件。项目不使用 Qt、GTK、MFC、Electron 等桌面界面框架，视频文件也不会上传到网络。
+程序使用 C++20 编写。Windows 界面使用 Win32 API 和 GDI，Linux 界面使用 X11 和 Xft。程序通过 FFmpeg 和 ffprobe 完成视频编码，通过 libarchive 读取和生成 ZIP 文件。项目不使用 Qt、GTK、MFC、Electron 等桌面界面框架。默认在本机处理视频；选择 SSH 服务器后，程序只会临时传输当前任务所需的视频，完成后自动将结果下载到本机。
 
 ## 功能概览
 
@@ -22,6 +22,7 @@ FFmpeg Studio 是一款面向 Windows 和 Linux 的本地视频压缩工具，�
 - **记住设置：** 程序会保存上次使用的编码格式、编码器、CRF、压缩级别、音频码率、并发限制和输出文件夹。
 - **任务控制：** 任务运行期间可以暂停、继续或取消。批量任务结束后，可以重新处理失败或取消的项目，并自动跳过已完成的文件。
 - **命令行启动：** 可以把多个文件或文件夹路径直接传给程序。Windows 支持通过资源管理器的“发送到”菜单添加文件。
+- **SSH 远程编码：** 自动读取本机 SSH 配置中的服务器别名，支持私钥、SSH Agent 和密码认证。密码保存在 Windows Credential Manager。远程服务器负责运行 FFmpeg，转换结果会自动下载到本机。
 - **现代桌面外观：** Windows 使用 Segoe UI、Per-Monitor V2 DPI、DWM 圆角、系统标题栏配色和 Mica 背景（系统支持时）。Linux 使用 Xft 抗锯齿字体，并根据显示缩放调整布局。
 
 ## 支持的文件类型
@@ -32,7 +33,7 @@ FFmpeg Studio 是一款面向 Windows 和 Linux 的本地视频压缩工具，�
 
 ### ZIP 和 PPTX
 
-- ZIP：压缩包内的视频会按当前输出容器设置转换。原视频文件会由压缩后的 MP4 替换；如果扩展名发生变化，程序会同步修改常见文本文件中的路径引用。
+- ZIP：压缩包内的视频会按当前输出容器设置转换并替换原视频；如果扩展名发生变化，程序会同步修改常见文本文件中的路径引用。
 - PPTX：程序会处理 `ppt/media` 中的视频，并更新 `ppt/slides/_rels` 中对应的 `Target`。如果文档尚未声明输出媒体格式的内容类型，程序会在 `[Content_Types].xml` 中添加声明。
 - 输出文件会使用与独立视频相同的编码参数后缀，例如 `_H265_CPU_CR28_均衡_A192.pptx`。
 - 同一批次中，不同目录下的同名文件会自动添加数字后缀，避免输出文件互相覆盖。
@@ -84,7 +85,7 @@ AMD AMF 使用其支持的 speed、balanced、quality 三种编码质量预设�
 
 ### 音频压缩
 
-输入音轨会转换为 AAC 有损音频。默认码率为 192 kbit/s，界面提供 96、128、160、192、256 和 320 kbit/s 六档。没有音轨的视频不会生成额外音轨。音频码率与视频 CRF 分别设置。
+音频码率与视频 CRF 分别设置。MP4 等常见容器使用 AAC；WebM 使用 Opus；WMV/ASF 使用 WMA；MPEG 程序流使用 MP2。默认码率为 192 kbit/s，界面提供 96、128、160、192、256 和 320 kbit/s 六档。没有音轨的视频不会生成额外音轨。
 
 ### 自动并行调度
 
@@ -103,6 +104,7 @@ AMD AMF 使用其支持的 speed、balanced、quality 三种编码质量预设�
 - Windows 10 1703 或更新版本；Windows 11 可启用更多 DWM 外观效果。
 - 支持 C++20 的 MSVC 工具链和 CMake 3.25 或更新版本（仅源码构建需要）。
 - FFmpeg 和 ffprobe，并且两个程序都能从命令行访问。
+- 使用 SSH 远程编码时，需要 Windows OpenSSH Client（ssh.exe、scp.exe）并确保两个程序可从 PATH 访问。
 - 使用 NVENC、Quick Sync 或 AMF 时，需要对应的显卡、驱动和包含该编码器的 FFmpeg 构建。
 
 ### Linux
@@ -110,6 +112,7 @@ AMD AMF 使用其支持的 speed、balanced、quality 三种编码质量预设�
 - 支持 C++20 的 GCC 或 Clang、CMake 3.25 或更新版本。
 - X11、Xft、Fontconfig 和 libarchive。
 - FFmpeg 和 ffprobe。
+- 使用 SSH 远程编码时，需要安装 `openssh-client`，并确保 `ssh`、`scp` 可从 PATH 访问。
 - 图形文件选择器优先使用 `zenity`，也可以使用 `kdialog`。如果两者都未安装，仍可通过命令行传入路径。
 
 Debian 或 Ubuntu 可以安装构建依赖：
@@ -171,6 +174,18 @@ Linux 可以通过终端传入路径：
 ./ffmpeg-ui "/home/user/Videos" "/home/user/Slides.pptx" --output-dir "/home/user/Converted"
 ```
 
+## SSH 远程编码
+
+程序可以使用本机 SSH 配置连接远程 Linux 服务器，并调用服务器上的 FFmpeg。用户仍然在本机选择文件和输出目录；程序会自动上传源视频、执行转换、读取进度、下载结果并清理远程临时文件。
+
+1. 点击主界面右上角的“SSH 服务器”。
+2. 选择 SSH 配置中的服务器，或添加新的服务器。
+3. 私钥认证可以填写私钥路径，也可以留空使用 SSH Agent。密码认证会将密码保存在 Windows Credential Manager；Linux 版本在当前进程会话中使用密码。
+4. 点击“测试连接”检查 SSH、FFmpeg、ffprobe 和远程编码器。
+5. 点击“使用此服务器”。之后的视频、文件夹、ZIP 和 PPTX 任务都会使用该服务器的算力，结果自动回传本机。
+6. 选择“本机编码”即可切回本机处理。
+
+远程服务器需要运行 Linux 或兼容 POSIX shell 的系统，并安装 FFmpeg、ffprobe。远程硬件编码器需要相应驱动和 FFmpeg 编码器支持。详细要求、安全说明和故障排查见 [SSH 远程编码说明](docs/ssh-remote-processing.md)。
 ## FFmpeg 路径
 
 默认情况下，程序会从 `PATH` 环境变量中查找 `ffmpeg` 和 `ffprobe`。如果程序安装在自定义目录，可以设置环境变量：
