@@ -1396,7 +1396,7 @@ ConversionResult FfmpegService::convertRemote(
     }
 
     progress.status = "正在验证远程输出";
-    progress.detail = "正在检查容器、视频编码、音频编码和处理标记";
+    progress.detail = "正在检查容器、视频编码、音频编码、输出分辨率和处理标记";
     if (onProgress) {
         onProgress(progress);
     }
@@ -1410,7 +1410,7 @@ ConversionResult FfmpegService::convertRemote(
         !outputDescriptionMatches(probe.output, remoteOutput, settings.codec, marker,
                                   expectedAudioCodecForSettings(settings.audioMode, audioEncoder),
                                   settings.outputResolution)) {
-        result.message = "远程输出未通过容器格式、视频编码、音频编码或处理标记检查。";
+        result.message = "远程输出未通过容器格式、视频编码、音频编码、输出分辨率或处理标记检查。";
         return result;
     }
 
@@ -1673,7 +1673,7 @@ ConversionResult FfmpegService::convert(const ConversionSettings& settings,
                       expectedAudioCodecForSettings(settings.audioMode, expectedAudioCodec),
                       settings.outputResolution)) {
         fs::remove(temporaryPath, filesystemError);
-        result.message = "FFmpeg 已结束，但输出文件未通过容器格式、视频编码、音频编码或处理标记检查。";
+        result.message = "FFmpeg 已结束，但输出文件未通过容器格式、视频编码、音频编码、输出分辨率或处理标记检查。";
         return result;
     }
 
