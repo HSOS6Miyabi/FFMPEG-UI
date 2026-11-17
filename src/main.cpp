@@ -1,6 +1,7 @@
 #include "core/app_controller.hpp"
 #include "core/archive.hpp"
 #include "core/process.hpp"
+#include "core/ssh.hpp"
 #include "platform/ui.hpp"
 
 #include <archive.h>
@@ -24,6 +25,8 @@
 #endif
 #include <windows.h>
 #include <shellapi.h>
+#else
+#include <unistd.h>
 #endif
 
 namespace {
@@ -517,6 +520,31 @@ int runSelfTest(bool keepFiles) {
     return failed == 0 && passed > 0 ? 0 : 1;
 }
 
+int runSshAskpass() {
+    const char* alias = std::getenv("FFMPEG_STUDIO_SSH_ASKPASS_ALIAS");
+    if (alias == nullptr || *alias == '\0') return 1;
+    ffmpegui::SshService ssh;
+    auto password = ssh.passwordForAskpass(alias);
+    if (!password || password->empty()) return 1;
+    bool written = false;
+#ifdef _WIN32
+    const HANDLE output = GetStdHandle(STD_OUTPUT_HANDLE);
+    if (output != nullptr && output != INVALID_HANDLE_VALUE) {
+        DWORD bytes = 0;
+        written = WriteFile(output, password->data(), static_cast<DWORD>(password->size()), &bytes, nullptr) &&
+                  bytes == password->size();
+        if (written) written = WriteFile(output, "\n", 1, &bytes, nullptr) && bytes == 1;
+    }
+#else
+    const auto count = ::write(STDOUT_FILENO, password->data(), password->size());
+    written = count == static_cast<ssize_t>(password->size());
+    if (written) written = ::write(STDOUT_FILENO, "\n", 1) == 1;
+#endif
+    volatile char* secret = password->data();
+    for (std::size_t i = 0; i < password->size(); ++i) secret[i] = 0;
+    return written ? 0 : 1;
+}
+
 int appMain(const std::vector<std::string>& arguments) {
     auto service = makeService();
     if (arguments.size() > 1) {
@@ -559,6 +587,7 @@ int appMain(const std::vector<std::string>& arguments) {
 } // namespace
 
 int main(int argc, char** argv) {
+    if (std::getenv("FFMPEG_STUDIO_SSH_ASKPASS_ALIAS") != nullptr) return runSshAskpass();
     std::vector<std::string> arguments;
 #ifdef _WIN32
     int count = 0;
