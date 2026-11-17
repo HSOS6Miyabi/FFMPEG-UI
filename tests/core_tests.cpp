@@ -409,8 +409,13 @@ int main() {
                 "Removing one SSH alias must leave unrelated aliases intact.");
             require(ssh.removeServer("other-node", sshError),
                     "Removing a Host block before a Match block must succeed.");
-            std::ifstream finalConfig(configPath, std::ios::binary);
-            const std::string finalText((std::istreambuf_iterator<char>(finalConfig)), {});
+            std::string finalText;
+            {
+                std::ifstream finalConfig(configPath, std::ios::binary);
+                finalText.assign(
+                    std::istreambuf_iterator<char>(finalConfig),
+                    std::istreambuf_iterator<char>());
+            }
             require(finalText.find("Match host *.example") != std::string::npos &&
                     finalText.find("User match-user") != std::string::npos,
                     "Removing a Host block must preserve following Match sections.");
