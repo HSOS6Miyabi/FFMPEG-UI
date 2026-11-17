@@ -103,7 +103,7 @@ Layout makeLayout(int width, int height, double scale, int backendCount = 4) {
         };
     }
     const int audioW=(leftW-s(52)-s(30))/6;
-    for(int i=0;i<6;++i)l.audio[i]={leftX+s(20)+i*(audioW+s(6)),sy+s(422),audioW,s(32)};
+    for(int i=0;i<6;++i)l.audio[i]={leftX+s(20)+i*(audioW+s(6)),sy+s(432),audioW,s(32)};
     const int optionGap = s(6);
     const int optionWidth = (leftW - s(40) - optionGap * 4) / 5;
     const int optionY = sy + s(490);
@@ -1304,7 +1304,7 @@ private:
                 static_cast<int>(settings_.compression) == static_cast<int>(index));
         }
 
-        canvas_->text(left + s(20), top + s(383), "音频码率", colors.muted, 0);
+        canvas_->text(left + s(20), top + s(419), "音频码率", colors.muted, 0);
         const std::array<int, 6> audioRates{96, 128, 160, 192, 256, 320};
         for (std::size_t index = 0; index < audioRates.size(); ++index) {
             canvas_->button(
