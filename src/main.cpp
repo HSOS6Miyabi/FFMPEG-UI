@@ -309,6 +309,31 @@ int runSelfTest(bool keepFiles) {
         const auto originalSshPath = ffmpegui::environmentVariable("FFMPEG_STUDIO_SSH_PATH");
         const auto originalScpPath = ffmpegui::environmentVariable("FFMPEG_STUDIO_SCP_PATH");
         const auto originalConfigPath = ffmpegui::environmentVariable("FFMPEG_STUDIO_SSH_CONFIG");
+        const bool useRealSsh =
+            ffmpegui::environmentVariable("FFMPEG_STUDIO_SSH_TEST_REAL").value_or("") == "1";
+        const auto realSshUser =
+            ffmpegui::environmentVariable("FFMPEG_STUDIO_SSH_TEST_USER");
+        const auto realSshKey =
+            ffmpegui::environmentVariable("FFMPEG_STUDIO_SSH_TEST_KEY");
+        const auto realSshPort =
+            ffmpegui::environmentVariable("FFMPEG_STUDIO_SSH_TEST_PORT");
+        const auto realSshPassword =
+            ffmpegui::environmentVariable("FFMPEG_STUDIO_SSH_TEST_PASSWORD");
+        unsigned short realPort = 22;
+        bool realSshReady = false;
+        if (useRealSsh && realSshUser && !realSshUser->empty() &&
+            realSshKey && fs::is_regular_file(pathFromUtf8(*realSshKey)) &&
+            realSshPort && realSshPassword && !realSshPassword->empty()) {
+            try {
+                const unsigned long parsedPort = std::stoul(*realSshPort);
+                if (parsedPort >= 1 && parsedPort <= 65535) {
+                    realPort = static_cast<unsigned short>(parsedPort);
+                    realSshReady = true;
+                }
+            } catch (const std::exception&) {
+                realSshReady = false;
+            }
+        }
 
         const fs::path mockSsh = work / "mock-ssh";
         const fs::path mockScp = work / "mock-scp";
@@ -362,8 +387,13 @@ int runSelfTest(bool keepFiles) {
             ::chmod(mockSsh.c_str(), S_IRUSR | S_IWUSR | S_IXUSR) == 0 &&
             ::chmod(mockScp.c_str(), S_IRUSR | S_IWUSR | S_IXUSR) == 0;
 
-        setenv("FFMPEG_STUDIO_SSH_PATH", pathToUtf8(mockSsh).c_str(), 1);
-        setenv("FFMPEG_STUDIO_SCP_PATH", pathToUtf8(mockScp).c_str(), 1);
+        if (useRealSsh) {
+            setenv("FFMPEG_STUDIO_SSH_PATH", "ssh", 1);
+            setenv("FFMPEG_STUDIO_SCP_PATH", "scp", 1);
+        } else {
+            setenv("FFMPEG_STUDIO_SSH_PATH", pathToUtf8(mockSsh).c_str(), 1);
+            setenv("FFMPEG_STUDIO_SCP_PATH", pathToUtf8(mockScp).c_str(), 1);
+        }
         setenv("FFMPEG_STUDIO_SSH_CONFIG", pathToUtf8(sshConfig).c_str(), 1);
 
         const auto remoteTemporaryDirectories = []() {
@@ -385,12 +415,15 @@ int runSelfTest(bool keepFiles) {
         bool remoteProgressReported = false;
         bool remoteOutputVerified = false;
 
-        if (scriptsExecutable) {
+        const bool sshTestReady = useRealSsh ? realSshReady : scriptsExecutable;
+        if (sshTestReady) {
             ffmpegui::FfmpegService remoteService;
             ffmpegui::SshServer remoteServer;
             remoteServer.alias = "ffmpeg-studio-self-test";
-            remoteServer.hostName = "localhost";
-            remoteServer.user = "self-test";
+            remoteServer.hostName = useRealSsh ? "127.0.0.1" : "localhost";
+            remoteServer.user = useRealSsh ? *realSshUser : "self-test";
+            remoteServer.port = useRealSsh ? realPort : 22;
+            remoteServer.identityFile = useRealSsh ? *realSshKey : "";
             remoteServer.authMethod = ffmpegui::SshAuthMethod::PublicKey;
 
             std::string sshError;
@@ -402,8 +435,13 @@ int runSelfTest(bool keepFiles) {
                 ? remoteService.probeRemote(remoteServer.alias, false)
                 : ffmpegui::RemoteProbeResult{};
 
-            check("SSH mock server configuration", saved);
-            check("SSH mock connection", connected);
+            check(
+                useRealSsh ? "SSH integration server configuration" : "SSH mock server configuration",
+                saved);
+            check(useRealSsh ? "SSH key authentication" : "SSH mock connection", connected);
+            if (!connected && !sshError.empty()) {
+                std::cout << "SSH connection detail: " << sshError << '\\n';
+            }
             check("SSH remote FFmpeg capability probe", remoteProbe.success);
 
             if (remoteProbe.success &&
@@ -449,9 +487,56 @@ int runSelfTest(bool keepFiles) {
                 std::cout << "SKIP SSH remote conversion: remote CPU H.264 encoder is unavailable\n";
             }
 
+            if (useRealSsh) {
+                ffmpegui::SshServer passwordServer = remoteServer;
+                passwordServer.alias = "ffmpeg-studio-password-self-test";
+                passwordServer.identityFile.clear();
+                passwordServer.authMethod = ffmpegui::SshAuthMethod::Password;
+                const bool passwordSaved = remoteService.sshService().saveServer(
+                    passwordServer, *realSshPassword, sshError);
+                check("SSH password credential storage", passwordSaved);
+                const bool passwordConnected = passwordSaved &&
+                    remoteService.sshService().testConnection(passwordServer.alias, sshError);
+                if (!passwordConnected && !sshError.empty()) {
+                    std::cout << "SSH password authentication detail: " << sshError << '\\n';
+                }
+                check("SSH password authentication", passwordConnected);
+
+                if (passwordConnected) {
+                    const fs::path uploadPath = work / "ssh-password-upload.txt";
+                    const fs::path downloadPath = work / "ssh-password-download.txt";
+                    const std::string transferContent = "FFmpeg Studio SSH password transfer test";
+                    {
+                        std::ofstream output(uploadPath, std::ios::binary);
+                        output << transferContent;
+                    }
+                    const std::string remotePath =
+                        "/tmp/ffmpeg-studio-password-transfer-" +
+                        std::to_string(std::chrono::steady_clock::now()
+                            .time_since_epoch().count()) + ".txt";
+                    const auto uploadResult = remoteService.sshService().upload(
+                        passwordServer.alias, pathToUtf8(uploadPath), remotePath);
+                    const auto downloadResult = uploadResult.exitCode == 0
+                        ? remoteService.sshService().download(
+                            passwordServer.alias, remotePath, pathToUtf8(downloadPath))
+                        : ffmpegui::ProcessResult{};
+                    std::ifstream downloadedFile(downloadPath, std::ios::binary);
+                    const std::string downloadedContent(
+                        std::istreambuf_iterator<char>(downloadedFile), {});
+                    check(
+                        "SSH password-authenticated file transfer",
+                        uploadResult.exitCode == 0 && downloadResult.exitCode == 0 &&
+                            downloadedContent == transferContent);
+                    const auto cleanupResult = remoteService.sshService().runRemote(
+                        passwordServer.alias,
+                        "rm -f -- " + ffmpegui::SshService::shellQuote(remotePath));
+                    check("SSH password test-file cleanup", cleanupResult.exitCode == 0);
+                }
+                (void)remoteService.sshService().removeServer(passwordServer.alias, sshError);
+            }
             (void)remoteService.sshService().removeServer(remoteServer.alias, sshError);
         } else {
-            check("SSH mock command wrappers", false);
+            check(useRealSsh ? "SSH integration server configuration" : "SSH mock command wrappers", false);
         }
 
         const auto temporaryDirectoriesAfter = remoteTemporaryDirectories();
