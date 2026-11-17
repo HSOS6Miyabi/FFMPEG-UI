@@ -5,9 +5,10 @@
 #include <atomic>
 #include <chrono>
 #include <cstdlib>
-#include <iostream>
 #include <filesystem>
 #include <fstream>
+#include <iostream>
+#include <iterator>
 #include <stdexcept>
 #include <string>
 #include <thread>
@@ -16,13 +17,17 @@
 namespace {
 
 void require(bool condition, const std::string& message) {
-    if (!condition) throw std::runtime_error(message);
+    if (!condition) {
+        throw std::runtime_error(message);
+    }
 }
 
 bool containsPair(const std::vector<std::string>& command,
                   const std::string& option, const std::string& value) {
     for (std::size_t index = 0; index + 1 < command.size(); ++index) {
-        if (command[index] == option && command[index + 1] == value) return true;
+        if (command[index] == option && command[index + 1] == value) {
+            return true;
+        }
     }
     return false;
 }
@@ -55,7 +60,10 @@ int main() {
         const std::vector<std::string> expectedSvt{"13", "11", "10", "8", "6", "4", "2", "0"};
         const std::vector<std::string> expectedAom{"8", "7", "6", "4", "3", "2", "1", "0"};
         const std::vector<std::string> expectedNvenc{"p1", "p2", "p3", "p4", "p5", "p6", "p7", "p7"};
-        const std::vector<std::string> expectedQsv{"veryfast", "faster", "fast", "medium", "slow", "slower", "veryslow", "veryslow"};
+        const std::vector<std::string> expectedQsv{
+            "veryfast", "faster", "fast", "medium",
+            "slow", "slower", "veryslow", "veryslow"
+        };
 
         ConversionSettings settings;
         settings.inputPath = "input file.mov";
@@ -72,7 +80,9 @@ int main() {
         require(containsPair(command, "-map", "0:a?"), "Optional audio streams must be mapped.");
         require(containsPair(command, "-c:a", "aac"), "Audio must be encoded as AAC.");
         require(containsPair(command, "-b:a", "192k"), "The selected audio bitrate must be passed to FFmpeg.");
-        require(containsPair(command, "-threads:v", "0") == false, "An unset thread limit must not add an invalid thread option.");
+        require(
+            !containsPair(command, "-threads:v", "0"),
+            "An unset thread limit must not add an invalid thread option.");
         settings.codec = VideoCodec::AV1;
         command = buildFfmpegCommand(settings, capabilities, "ffmpeg", "temporary.webm");
         require(containsPair(command, "-c:a", "libopus"), "WebM output must use Opus audio.");
@@ -85,7 +95,12 @@ int main() {
         try { (void)buildFfmpegCommand(settings, capabilities, "ffmpeg", "temporary.webm"); }
         catch (const std::invalid_argument&) { rejectedWebmH264 = true; }
         require(rejectedWebmH264, "WebM must reject H.264 when only H.264/H.265/AV1 choices are available.");
-        require(std::any_of(command.begin(), command.end(), [](const std::string& arg) { return arg.find("FFmpegStudio:v2:") != std::string::npos; }),
+        require(
+            std::any_of(
+                command.begin(), command.end(),
+                [](const std::string& argument) {
+                    return argument.find("FFmpegStudio:v2:") != std::string::npos;
+                }),
                 "The output must carry a parameter marker for repeat-processing detection.");
 
         for (int index = 0; index < compressionLevelCount(); ++index) {
@@ -152,7 +167,9 @@ int main() {
             require(containsPair(command, "-c:v", "h264_qsv"), "Intel Quick Sync must select h264_qsv.");
             require(containsPair(command, "-preset", expectedQsv[static_cast<std::size_t>(index)]),
                     "Each Quick Sync compression level must map to its encoder preset.");
-            require(containsPair(command, "-global_quality", "23"), "Quick Sync must receive the selected quality value.");
+            require(
+                containsPair(command, "-global_quality", "23"),
+                "Quick Sync must receive the selected quality value.");
             require(containsPair(command, "-threads:v", "4"), "The scheduler thread budget must reach FFmpeg.");
 
             settings.backend = EncoderBackend::AMF;
@@ -201,9 +218,15 @@ int main() {
         }
         require(rejectedAudioBitrate, "Out-of-range audio bitrates must be rejected.");
 
-        require(isVideoFile("sample.mov") && isVideoFile("clip.MP4"), "Common video extensions must be recognized case-insensitively.");
-        require(isSupportedArchiveFile("media.zip") && isSupportedArchiveFile("slides.pptx"), "ZIP and PPTX must be recognized as batch inputs.");
-        require(!isSupportedArchiveFile("document.docx"), "Non-video document archives must not be treated as supported input.");
+        require(
+            isVideoFile("sample.mov") && isVideoFile("clip.MP4"),
+            "Common video extensions must be recognized case-insensitively.");
+        require(
+            isSupportedArchiveFile("media.zip") && isSupportedArchiveFile("slides.pptx"),
+            "ZIP and PPTX must be recognized as batch inputs.");
+        require(
+            !isSupportedArchiveFile("document.docx"),
+            "Non-video document archives must not be treated as supported input.");
         ConversionSettings fingerprintSettings = settings;
         fingerprintSettings.codec = VideoCodec::H264;
         fingerprintSettings.backend = EncoderBackend::CPU;
@@ -213,9 +236,15 @@ int main() {
         const auto fingerprint = settingsFingerprint(fingerprintSettings);
         auto changedFingerprint = fingerprintSettings;
         changedFingerprint.audioBitrateKbps = 256;
-        require(fingerprint != settingsFingerprint(changedFingerprint), "The repeat-processing marker must include audio settings.");
-        require(outputSuffix(fingerprintSettings).find("H264") != std::string::npos, "Output suffixes must identify the selected video codec.");
-        require(outputSuffix(fingerprintSettings).find("A192") != std::string::npos, "Output suffixes must identify the selected audio bitrate.");
+        require(
+            fingerprint != settingsFingerprint(changedFingerprint),
+            "The repeat-processing marker must include audio settings.");
+        require(
+            outputSuffix(fingerprintSettings).find("H264") != std::string::npos,
+            "Output suffixes must identify the selected video codec.");
+        require(
+            outputSuffix(fingerprintSettings).find("A192") != std::string::npos,
+            "Output suffixes must identify the selected audio bitrate.");
         require(outputVideoExtension(OutputContainer::MP4, "sample.mov") == ".mp4",
                 "MP4 mode must use the MP4 extension for every source container.");
         require(outputVideoExtension(OutputContainer::SameAsSource, "sample.MOV") == ".mov",
@@ -265,12 +294,12 @@ int main() {
             fs::create_directories(testDirectory);
             const fs::path configPath = testDirectory / "config";
 #ifdef _WIN32
-            const char* oldConfig = std::getenv("FFMPEG_STUDIO_SSH_CONFIG");
-            const std::string oldConfigValue = oldConfig == nullptr ? std::string{} : oldConfig;
+            const auto oldConfig = environmentVariable("FFMPEG_STUDIO_SSH_CONFIG");
+            const std::string oldConfigValue = oldConfig.value_or(std::string{});
             _putenv_s("FFMPEG_STUDIO_SSH_CONFIG", configPath.string().c_str());
 #else
-            const char* oldConfig = std::getenv("FFMPEG_STUDIO_SSH_CONFIG");
-            const std::string oldConfigValue = oldConfig == nullptr ? std::string{} : oldConfig;
+            const auto oldConfig = environmentVariable("FFMPEG_STUDIO_SSH_CONFIG");
+            const std::string oldConfigValue = oldConfig.value_or(std::string{});
             setenv("FFMPEG_STUDIO_SSH_CONFIG", configPath.c_str(), 1);
 #endif
             {
@@ -283,7 +312,9 @@ int main() {
             }
             SshService ssh;
             auto servers = ssh.listServers();
-            require(servers.size() == 3, "SSH config discovery must list concrete aliases and ignore wildcard patterns.");
+            require(
+                servers.size() == 3,
+                "SSH config discovery must list concrete aliases and ignore wildcard patterns.");
             require(SshService::validAlias("media-node_1.example") && !SshService::validAlias("-invalid"),
                     "SSH aliases must reject option-like names.");
             require(SshService::shellQuote("a'b") == "'a'\\''b'",
@@ -299,15 +330,27 @@ int main() {
             std::string sshError;
             require(ssh.saveServer(keyServer, {}, sshError), "Saving an SSH server must update the local SSH config.");
             servers = ssh.listServers();
-            const auto keyEntry = std::find_if(servers.begin(), servers.end(), [](const auto& item) { return item.alias == "shared-node"; });
+            const auto keyEntry = std::find_if(
+                servers.begin(), servers.end(),
+                [](const SshServer& server) {
+                    return server.alias == "shared-node";
+                });
             require(keyEntry != servers.end() && keyEntry->hostName == "media.internal" &&
                     keyEntry->user == "worker" && keyEntry->port == 2200 &&
                     keyEntry->identityFile == "C:/Keys/worker key_ed25519",
                     "The SSH manager must write and read server connection settings.");
-            const auto otherEntry = std::find_if(servers.begin(), servers.end(), [](const auto& item) { return item.alias == "other-node"; });
+            const auto otherEntry = std::find_if(
+                servers.begin(), servers.end(),
+                [](const SshServer& server) {
+                    return server.alias == "other-node";
+                });
             require(otherEntry != servers.end() && otherEntry->user.empty(),
                     "Match blocks must not be interpreted as Host options.");
-            const auto backupEntry = std::find_if(servers.begin(), servers.end(), [](const auto& item) { return item.alias == "backup-node"; });
+            const auto backupEntry = std::find_if(
+                servers.begin(), servers.end(),
+                [](const SshServer& server) {
+                    return server.alias == "backup-node";
+                });
             require(backupEntry != servers.end() && backupEntry->hostName == "10.0.0.5" &&
                     backupEntry->user == "admin",
                     "Editing one alias from a shared Host block must preserve the other aliases.");
@@ -343,9 +386,18 @@ int main() {
                     "Removing a server must remove its saved password.");
             require(ssh.removeServer("shared-node", sshError), "Removing one SSH alias must succeed.");
             servers = ssh.listServers();
-            require(std::none_of(servers.begin(), servers.end(), [](const auto& item) { return item.alias == "shared-node"; }) &&
-                    std::any_of(servers.begin(), servers.end(), [](const auto& item) { return item.alias == "backup-node"; }),
-                    "Removing one SSH alias must leave unrelated aliases intact.");
+            require(
+                std::none_of(
+                    servers.begin(), servers.end(),
+                    [](const SshServer& server) {
+                        return server.alias == "shared-node";
+                    }) &&
+                std::any_of(
+                    servers.begin(), servers.end(),
+                    [](const SshServer& server) {
+                        return server.alias == "backup-node";
+                    }),
+                "Removing one SSH alias must leave unrelated aliases intact.");
             require(ssh.removeServer("other-node", sshError),
                     "Removing a Host block before a Match block must succeed.");
             std::ifstream finalConfig(configPath, std::ios::binary);
