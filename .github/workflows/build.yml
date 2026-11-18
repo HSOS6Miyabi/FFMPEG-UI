@@ -126,11 +126,15 @@ jobs:
             import -window "$window" artifacts/ui/video-compression-workbench-linux.png
 
             # Expand the two-column settings panel and exercise the discrete eight-step slider.
-            xdotool mousemove --window "$window" 920 190 click 1
+            xdotool mousemove --window "$window" 980 190 click 1
             sleep 1
             xdotool mousemove --window "$window" 434 422 click 1
             sleep 1
-            grep -qx "compression=6" "$FFMPEG_STUDIO_CONFIG_DIR/settings.ini"
+            grep -qx "compression=6" "$FFMPEG_STUDIO_CONFIG_DIR/settings.ini" || {
+              cat "$FFMPEG_STUDIO_CONFIG_DIR/settings.ini"
+              import -window "$window" artifacts/ui/video-compression-workbench-linux-failed-setting.png
+              exit 1
+            }
             xdotool key --window "$window" Left
             sleep 1
             grep -qx "compression=5" "$FFMPEG_STUDIO_CONFIG_DIR/settings.ini"
