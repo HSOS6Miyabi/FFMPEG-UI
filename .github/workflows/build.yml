@@ -398,6 +398,19 @@ jobs:
             throw "FFmpeg self-test did not report success."
           }
 
+      - name: Capture Windows desktop and trimmer screenshots
+        shell: pwsh
+        continue-on-error: true
+        run: ./scripts/test-windows-ui.ps1
+
+      - name: Upload Windows UI screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: video-compression-workbench-ui-windows
+          path: artifacts/ui/video-compression-workbench-windows*.png
+          if-no-files-found: warn
+
       - name: Upload Windows portable archive
         uses: actions/upload-artifact@v4
         with:
