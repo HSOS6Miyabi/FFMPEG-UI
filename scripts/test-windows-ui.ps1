@@ -172,6 +172,17 @@ try {
         if ($trimmer -eq [IntPtr]::Zero) {
             $trimmer = [WorkbenchCapture]::FindWindow($null, '可视化视频裁剪')
         }
+        if ($trimmer -eq [IntPtr]::Zero) {
+            $popup = [WorkbenchCapture]::GetLastActivePopup($handle)
+            if ($popup -ne [IntPtr]::Zero -and $popup -ne $handle) {
+                $popupClass = [System.Text.StringBuilder]::new(256)
+                [void] [WorkbenchCapture]::GetClassName(
+                    $popup, $popupClass, $popupClass.Capacity)
+                if ($popupClass.ToString() -eq 'VideoCompressionWorkbenchTrimmer') {
+                    $trimmer = $popup
+                }
+            }
+        }
         if ($trimmer -ne [IntPtr]::Zero) { break }
     }
     if ($trimmer -eq [IntPtr]::Zero) {
