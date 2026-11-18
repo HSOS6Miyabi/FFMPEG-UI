@@ -1343,6 +1343,11 @@ private:
         };
         const auto commit = [&]() -> bool {
             if (editing == -1) return true;
+            if (entry.empty() && editing == 0) {
+                editing = -1;
+                status.clear();
+                return true;
+            }
             const auto time = entry.empty() && editing == 1
                 ? std::optional<double>{-1.0} : parseTrimTime(entry.empty() ? "0" : entry);
             if (!time) {
@@ -1426,8 +1431,7 @@ private:
                 if (contains(startRect, x, y) || contains(endRect, x, y)) {
                     if (commit()) {
                         editing = contains(startRect, x, y) ? 0 : 1;
-                        entry = editing == 0 ? formatTrimTime(start) :
-                            end >= 0 ? formatTrimTime(end) : "";
+                        entry.clear();
                     }
                 } else if (commit()) {
                     const Rect trackHit{seekRect.x, seekRect.y - s(14),
@@ -1472,9 +1476,11 @@ private:
                                 entry.push_back(ch);
                         }
                     }
-                } else if (key == XK_Left || key == XK_Right) {
-                    const double seconds = (event.xkey.state & ShiftMask) ? 10.0 : 1.0;
-                    jump(key == XK_Left ? -seconds : seconds);
+                } else if (key == XK_Left || key == XK_Right ||
+                           key == XK_less || key == XK_greater) {
+                    const double seconds = (event.xkey.state & ShiftMask) &&
+                        (key == XK_Left || key == XK_Right) ? 10.0 : 1.0;
+                    jump(key == XK_Left || key == XK_less ? -seconds : seconds);
                 } else if (key == XK_Home) {
                     cursor = 0.0; refresh();
                 } else if (key == XK_End) {
@@ -1499,6 +1505,11 @@ private:
     bool commitTrimText() {
         if (editingTrim_ == -1) return true;
         const std::string raw = trimEditText_;
+        if (raw.empty() && editingTrim_ == 0) {
+            editingTrim_ = -1;
+            trimError_.clear();
+            return true;
+        }
         const auto parsed = raw.empty() && editingTrim_ == 1
             ? std::optional<double>{-1.0} : parseTrimTime(raw.empty() ? "0" : raw);
         if (!parsed) {
@@ -2140,9 +2151,7 @@ private:
             (contains(layout.trimStart, x, y) || contains(layout.trimEnd, x, y))) {
             if (!commitTrimText()) return;
             editingTrim_ = contains(layout.trimStart, x, y) ? 0 : 1;
-            trimEditText_ = editingTrim_ == 0
-                ? formatTrimTime(settings_.trimStartSeconds)
-                : settings_.trimEndSeconds < 0.0 ? "" : formatTrimTime(settings_.trimEndSeconds);
+            trimEditText_.clear();
             XSetInputFocus(display_, window_, RevertToParent, CurrentTime);
             return;
         }
