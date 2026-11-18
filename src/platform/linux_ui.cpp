@@ -6,6 +6,7 @@
 #include <X11/Xatom.h>
 #include <X11/Xlib.h>
 #include <X11/Xutil.h>
+#include <X11/extensions/Xrender.h>
 #include <X11/keysym.h>
 #include <poll.h>
 #include <unistd.h>
@@ -32,6 +33,7 @@ struct XftColor { unsigned long pixel; XftRenderColor color; };
 _XftDraw* XftDrawCreate(Display*, Drawable, Visual*, Colormap);
 void XftDrawDestroy(_XftDraw*);
 void XftDrawStringUtf8(_XftDraw*, const XftColor*, _XftFont*, int, int, const unsigned char*, int);
+void XftTextExtentsUtf8(Display*, _XftFont*, const unsigned char*, int, XGlyphInfo*);
 _XftFont* XftFontOpenName(Display*, int, const char*);
 void XftFontClose(Display*, _XftFont*);
 }
@@ -288,7 +290,7 @@ public:
         if (currentFont == nullptr || value.empty()) return 0;
         XGlyphInfo metrics{};
         XftTextExtentsUtf8(display_, currentFont,
-                           reinterpret_cast<const FcChar8*>(value.data()),
+                           reinterpret_cast<const unsigned char*>(value.data()),
                            static_cast<int>(value.size()), &metrics);
         return static_cast<int>(metrics.xOff);
     }
@@ -1326,8 +1328,6 @@ private:
         const int secondColumn = layout.codec[0].x;
         const int firstWidth = layout.container[1].x +
             layout.container[1].width - firstColumn;
-        const int secondWidth = layout.codec[2].x +
-            layout.codec[2].width - secondColumn;
         canvas_->text(firstColumn, top + s(102), "输出容器", colors.muted, 0);
         canvas_->text(secondColumn, top + s(102), "视频编码", colors.muted, 0);
         const std::array<std::string, 2> containers{"MP4", "与源文件相同"};
