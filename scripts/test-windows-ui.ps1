@@ -15,6 +15,11 @@ public static class WorkbenchCapture
     public static extern bool GetWindowRect(IntPtr hwnd, out Rect rectangle);
     [DllImport("user32.dll")]
     [return: MarshalAs(UnmanagedType.Bool)]
+    public static extern bool GetClientRect(IntPtr hwnd, out Rect rectangle);
+    [DllImport("user32.dll")]
+    public static extern uint GetDpiForWindow(IntPtr hwnd);
+    [DllImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
     public static extern bool PrintWindow(IntPtr hwnd, IntPtr target, uint flags);
     [DllImport("user32.dll")]
     public static extern IntPtr GetWindowDC(IntPtr hwnd);
@@ -122,11 +127,35 @@ try {
     [void] [WorkbenchCapture]::SetWindowPos($handle, [IntPtr]::Zero, 0, 0, 1400, 840, 0x0004)
     Start-Sleep -Seconds 3
 
+    $client = [WorkbenchCapture+Rect]::new()
+    [void] [WorkbenchCapture]::GetClientRect($handle, [ref] $client)
+    $scale = [double]([WorkbenchCapture]::GetDpiForWindow($handle)) / 96.0
+    $S = { param([int] $Value) [int][Math]::Round($Value * $scale) }
+    $pad = & $S 22
+    $gap = & $S 14
+    $rightWidth = [Math]::Max((& $S 320), [Math]::Min(
+        [int]($client.Right / 3), (& $S 370)))
+    $leftWidth = $client.Right - 2 * $pad - $gap - $rightWidth
+    $settingsY = (& $S 94) + (& $S 50)
+    $advancedX = $pad + $leftWidth - (& $S 146) + (& $S 60)
+    $advancedY = $settingsY + (& $S 9) + (& $S 14)
+    Write-Host "Windows client size: $($client.Right)x$($client.Bottom), DPI scale: $scale"
+
     Save-WindowScreenshot $handle (Join-Path $output 'video-compression-workbench-windows.png')
-    Click-Window $handle 860 165
+    Click-Window $handle $advancedX $advancedY
     Save-WindowScreenshot $handle (Join-Path $output 'video-compression-workbench-windows-expanded.png')
-    Click-Window $handle 860 165
-    Click-Window $handle 795 389
+    Click-Window $handle $advancedX $advancedY
+
+    $gridX = $pad + (& $S 18)
+    $gridWidth = $leftWidth - (& $S 36)
+    $trimGap = & $S 7
+    $openWidth = & $S 111
+    $resetWidth = & $S 76
+    $trimWidth = [int][Math]::Floor(($gridWidth - 3 * $trimGap -
+                                     $openWidth - $resetWidth) / 2)
+    $openX = $gridX + 2 * ($trimWidth + $trimGap) + [int]($openWidth / 2)
+    $openY = $settingsY + (& $S 232) + (& $S 15)
+    Click-Window $handle $openX $openY
 
     $trimmer = [IntPtr]::Zero
     for ($i = 0; $i -lt 35; $i++) {
@@ -142,7 +171,10 @@ try {
     [void] [WorkbenchCapture]::SetWindowPos($handle, [IntPtr]::Zero, 0, 0, 1280, 720, 0x0004)
     Start-Sleep -Milliseconds 1100
     Save-WindowScreenshot $handle (Join-Path $output 'video-compression-workbench-windows-compact-settings.png')
-    Click-Window $handle 970 38
+    [void] [WorkbenchCapture]::GetClientRect($handle, [ref] $client)
+    $focusX = $client.Right - (& $S 382) + (& $S 70)
+    $focusY = (& $S 23) + (& $S 17)
+    Click-Window $handle $focusX $focusY
     Save-WindowScreenshot $handle (Join-Path $output 'video-compression-workbench-windows-compact-queue.png')
 } finally {
     if (-not $app.HasExited) {
