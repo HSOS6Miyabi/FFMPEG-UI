@@ -111,11 +111,20 @@ $iconPath = Join-Path $repoRoot "assets/icons/video-compression-workbench.ico"
 if (-not (Test-Path -LiteralPath $iconPath -PathType Leaf)) {
     throw "The Windows application icon is missing: $iconPath"
 }
+$artworkDirectory = Join-Path $outputPath "installer-art"
+& (Join-Path $repoRoot "scripts/generate-windows-installer-art.ps1") -IconPath (Join-Path $repoRoot "assets/icons/video-compression-workbench.png") -OutputDirectory $artworkDirectory
+$welcomeBitmap = Join-Path $artworkDirectory "installer-welcome.bmp"
+$headerBitmap = Join-Path $artworkDirectory "installer-header.bmp"
+foreach ($artwork in @($welcomeBitmap, $headerBitmap)) {
+    if (-not (Test-Path -LiteralPath $artwork -PathType Leaf)) {
+        throw "Installer artwork has not been generated: $artwork"
+    }
+}
 $installerPath = Join-Path $outputPath "video-compression-workbench-$version-windows-x64-setup.exe"
 if (Test-Path -LiteralPath $installerPath) {
     Remove-Item -LiteralPath $installerPath -Force
 }
-& $nsis "/INPUTCHARSET" "UTF8" "/V3" "/DPRODUCT_VERSION=$version" "/DPAYLOAD_DIR=$payloadPath" "/DOUTPUT_FILE=$installerPath" "/DPRODUCT_ICON=$iconPath" (Join-Path $repoRoot "packaging/windows-installer.nsi")
+& $nsis "/INPUTCHARSET" "UTF8" "/V3" "/DPRODUCT_VERSION=$version" "/DPAYLOAD_DIR=$payloadPath" "/DOUTPUT_FILE=$installerPath" "/DPRODUCT_ICON=$iconPath" "/DPRODUCT_WELCOME_BMP=$welcomeBitmap" "/DPRODUCT_HEADER_BMP=$headerBitmap" (Join-Path $repoRoot "packaging/windows-installer.nsi")
 if ($LASTEXITCODE -ne 0 -or -not (Test-Path -LiteralPath $installerPath -PathType Leaf)) {
     throw "NSIS did not produce an installer."
 }

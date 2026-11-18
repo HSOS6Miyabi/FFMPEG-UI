@@ -5,7 +5,7 @@
 ## 当前项目状态
 
 - 项目名称：视频压缩工作台。
-- 当前开发版本：1.2.0。
+- 当前开发版本：1.2.1。
 - 主要分支：`main`。
 - 目标平台：Windows x64、Linux x86_64。
 - 主要语言：C++20。
@@ -34,6 +34,7 @@
 | `.github/workflows/build.yml` | Windows/Linux CI、桌面截图、NSIS 安装包测试及经测试的版本发布 |
 | `packaging/windows-installer.nsi` | NSIS 安装、卸载、快捷方式和软件注册表信息 |
 | `scripts/package-windows.ps1` | 固定版本 FFmpeg 下载校验、静态依赖许可文件整理和 Windows 发布包生成 |
+| `scripts/generate-windows-installer-art.ps1` | 根据项目图标生成 NSIS 安装向导的欢迎页和页眉插图 |
 | `scripts/test-windows-installer.ps1` | Windows EXE 版本资源、静默安装、内置 FFmpeg、媒体测试和卸载验证 |
 | `src/platform/windows_version.rc.in` | Windows 应用版本信息和 Kenvix 作者版权字段 |
 | `docs/architecture.md` | 组件结构和处理流程 |

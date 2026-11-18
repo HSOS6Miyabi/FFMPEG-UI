@@ -17,8 +17,25 @@ Unicode true
   !error "Pass /DPRODUCT_ICON=absolute-path"
 !endif
 
+!ifndef PRODUCT_WELCOME_BMP
+  !error "Pass /DPRODUCT_WELCOME_BMP=absolute-path"
+!endif
+!ifndef PRODUCT_HEADER_BMP
+  !error "Pass /DPRODUCT_HEADER_BMP=absolute-path"
+!endif
+
 !define MUI_ICON "${PRODUCT_ICON}"
 !define MUI_UNICON "${PRODUCT_ICON}"
+!define MUI_WELCOMEFINISHPAGE_BITMAP "${PRODUCT_WELCOME_BMP}"
+!define MUI_UNWELCOMEFINISHPAGE_BITMAP "${PRODUCT_WELCOME_BMP}"
+!define MUI_HEADERIMAGE
+!define MUI_HEADERIMAGE_RIGHT
+!define MUI_HEADERIMAGE_BITMAP "${PRODUCT_HEADER_BMP}"
+!define MUI_HEADERIMAGE_UNBITMAP "${PRODUCT_HEADER_BMP}"
+!define MUI_HEADERIMAGE_BITMAP_STRETCH "AspectFitHeight"
+!define MUI_HEADERIMAGE_UNBITMAP_STRETCH "AspectFitHeight"
+!define MUI_BGCOLOR "F7F9FF"
+
 
 !define PRODUCT_NAME "视频压缩工作台"
 !define PRODUCT_EXE "video-compression-workbench.exe"
@@ -44,6 +61,11 @@ VIAddVersionKey /LANG=0 "CompanyName" "Kenvix"
 VIAddVersionKey /LANG=0 "LegalCopyright" "Copyright (C) 2026 Kenvix <i@kenvix.com>"
 VIAddVersionKey /LANG=0 "Comments" "Author: Kenvix <i@kenvix.com>"
 VIAddVersionKey /LANG=0 "OriginalFilename" "video-compression-workbench-setup.exe"
+
+!define MUI_WELCOMEPAGE_TITLE "欢迎安装视频压缩工作台"
+!define MUI_WELCOMEPAGE_TEXT "此向导将安装视频压缩工作台。$\r$\n$\r$\n请关闭已经运行的程序，然后点击“下一步”继续。"
+!define MUI_FINISHPAGE_TITLE "视频压缩工作台已安装"
+!define MUI_FINISHPAGE_TEXT "安装已完成。您可以通过开始菜单启动视频压缩工作台。"
 
 !insertmacro MUI_PAGE_WELCOME
 !insertmacro MUI_PAGE_COMPONENTS

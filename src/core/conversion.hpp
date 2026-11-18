@@ -79,6 +79,7 @@ struct EncoderCapabilities {
     bool h264Amf{false};
     bool hevcAmf{false};
     bool av1Amf{false};
+    std::string nvencProbeDetails;
 
     bool supports(VideoCodec codec, EncoderBackend backend) const;
     std::string cpuAv1Encoder() const;
@@ -186,7 +187,7 @@ private:
     ConversionResult convertRemote(const ConversionSettings& settings, const EncoderCapabilities& capabilities,
                                    const ProgressCallback& onProgress, const std::atomic_bool* cancelRequested,
                                    const std::atomic_bool* pauseRequested) const;
-    bool probeHardwareEncoder(const std::string& encoder) const;
+    bool probeHardwareEncoder(const std::string& encoder, std::string* detail = nullptr) const;
     bool verifyOutput(const std::string& path, VideoCodec codec,
                       const std::string& expectedMarker,
                       const std::string& expectedAudioCodec,

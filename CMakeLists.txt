@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.25)
-project(VideoCompressionWorkbench VERSION 1.2.0 LANGUAGES CXX)
+project(VideoCompressionWorkbench VERSION 1.2.1 LANGUAGES CXX)
 
 if(WIN32)
     enable_language(RC)
@@ -50,7 +50,7 @@ if(WIN32)
         ${CMAKE_CURRENT_BINARY_DIR}/windows_app.rc
         PROPERTIES OBJECT_DEPENDS "${APP_ICON_SOURCE}"
     )
-    add_executable(ffmpeg-ui
+    add_executable(ffmpeg-ui WIN32
         src/main.cpp
         src/platform/windows_ui.cpp
         ${CMAKE_CURRENT_BINARY_DIR}/windows_app.rc
