@@ -356,6 +356,15 @@ void AppController::selectLocalEncoder() {
     error_.clear();
 }
 
+std::optional<double> AppController::videoDuration(const std::string& inputPath) const {
+    return service_.probeDuration(inputPath);
+}
+
+std::optional<PreviewFrame> AppController::videoPreview(const std::string& inputPath,
+                                                        double seconds, int width, int height) const {
+    return service_.previewFrame(inputPath, seconds, width, height);
+}
+
 AppSnapshot AppController::snapshot() const {
     std::lock_guard lock(mutex_);
     AppSnapshot result;
@@ -414,6 +423,10 @@ void AppController::updateSettings(const BatchSettings& settings) {
     settings_.outputResolution = static_cast<OutputResolution>(
         std::clamp(static_cast<int>(settings_.outputResolution), 0, 5));
     settings_.maxParallelJobs = std::clamp(settings_.maxParallelJobs, 0, 128);
+    if (!validTrimRange(settings_.trimStartSeconds, settings_.trimEndSeconds)) {
+        settings_.trimStartSeconds = 0.0;
+        settings_.trimEndSeconds = -1.0;
+    }
     refreshOutputPathsLocked();
     saveSettingsLocked();
 }
@@ -555,6 +568,10 @@ void AppController::loadSettings() {
             } else if (key == "outputResolution") {
                 settings_.outputResolution = static_cast<OutputResolution>(
                     std::clamp(std::stoi(value), 0, 5));
+            } else if (key == "trimStartSeconds") {
+                settings_.trimStartSeconds = std::stod(value);
+            } else if (key == "trimEndSeconds") {
+                settings_.trimEndSeconds = std::stod(value);
             } else if (key == "maxParallelJobs") {
                 settings_.maxParallelJobs = std::stoi(value);
             } else if (key == "recursive") {
@@ -583,6 +600,10 @@ void AppController::loadSettings() {
     settings_.outputResolution = static_cast<OutputResolution>(
         std::clamp(static_cast<int>(settings_.outputResolution), 0, 5));
     settings_.maxParallelJobs = std::clamp(settings_.maxParallelJobs, 0, 128);
+    if (!validTrimRange(settings_.trimStartSeconds, settings_.trimEndSeconds)) {
+        settings_.trimStartSeconds = 0.0;
+        settings_.trimEndSeconds = -1.0;
+    }
 }
 
 void AppController::loadQueue() {
@@ -659,6 +680,8 @@ void AppController::saveSettingsLocked() const {
            << "audioBitrateKbps=" << settings_.audioBitrateKbps << '\n'
            << "audioMode=" << static_cast<int>(settings_.audioMode) << '\n'
            << "outputResolution=" << static_cast<int>(settings_.outputResolution) << '\n'
+           << "trimStartSeconds=" << std::to_string(settings_.trimStartSeconds) << '\n'
+           << "trimEndSeconds=" << std::to_string(settings_.trimEndSeconds) << '\n'
            << "maxParallelJobs=" << settings_.maxParallelJobs << '\n'
            << "recursive=" << (settings_.recursive ? 1 : 0) << '\n'
            << "preserveDirectoryStructure=" << (settings_.preserveDirectoryStructure ? 1 : 0) << '\n'
@@ -708,6 +731,8 @@ std::string AppController::makeOutputPathLocked(const BatchTaskSnapshot& task) c
     encoding.audioBitrateKbps = settings_.audioBitrateKbps;
     encoding.audioMode = settings_.audioMode;
     encoding.outputResolution = settings_.outputResolution;
+    encoding.trimStartSeconds = settings_.trimStartSeconds;
+    encoding.trimEndSeconds = settings_.trimEndSeconds;
     const std::string suffix = outputSuffix(encoding);
     const std::filesystem::path input = pathFromUtf8(task.inputPath);
     std::filesystem::path directory = input.parent_path();
@@ -874,6 +899,8 @@ void AppController::runTask(std::size_t index, const ResourcePlan& plan, std::si
     settings.audioBitrateKbps = batchSettings.audioBitrateKbps;
     settings.audioMode = batchSettings.audioMode;
     settings.outputResolution = batchSettings.outputResolution;
+    settings.trimStartSeconds = batchSettings.trimStartSeconds;
+    settings.trimEndSeconds = batchSettings.trimEndSeconds;
     settings.threadsPerJob = static_cast<int>(plan.threadsPerJob);
     settings.overwrite = batchSettings.overwrite;
     settings.skipAlreadyProcessed = batchSettings.skipAlreadyProcessed;

@@ -128,12 +128,20 @@ Section /o "创建桌面快捷方式" SecDesktop
 SectionEnd
 
 Section "Uninstall"
-    SetShellVarContext current
     SetRegView 64
-    Delete "$DESKTOP\视频压缩工作台.lnk"
+    ; Remove both redirected desktop shortcuts and shortcuts made by older installers.
+    SetShellVarContext current
+    Delete /REBOOTOK "$DESKTOP\视频压缩工作台.lnk"
+    Delete /REBOOTOK "$PROFILE\Desktop\视频压缩工作台.lnk"
     Delete "$SMPROGRAMS\视频压缩工作台\视频压缩工作台.lnk"
     Delete "$SMPROGRAMS\视频压缩工作台\卸载视频压缩工作台.lnk"
     RMDir "$SMPROGRAMS\视频压缩工作台"
+    SetShellVarContext all
+    Delete /REBOOTOK "$DESKTOP\视频压缩工作台.lnk"
+    Delete "$SMPROGRAMS\视频压缩工作台\视频压缩工作台.lnk"
+    Delete "$SMPROGRAMS\视频压缩工作台\卸载视频压缩工作台.lnk"
+    RMDir "$SMPROGRAMS\视频压缩工作台"
+    SetShellVarContext current
 
     Delete "$INSTDIR\${PRODUCT_EXE}"
     Delete "$INSTDIR\README.md"

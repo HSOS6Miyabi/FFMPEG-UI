@@ -38,6 +38,8 @@ struct ConversionSettings {
     int audioBitrateKbps{192};
     AudioMode audioMode{AudioMode::Encode};
     OutputResolution outputResolution{OutputResolution::Original};
+    double trimStartSeconds{0.0};
+    double trimEndSeconds{-1.0}; // -1 represents the end of the source.
     int threadsPerJob{0};
     bool overwrite{false};
     bool skipAlreadyProcessed{true};
@@ -52,6 +54,8 @@ struct BatchSettings {
     int audioBitrateKbps{192};
     AudioMode audioMode{AudioMode::Encode};
     OutputResolution outputResolution{OutputResolution::Original};
+    double trimStartSeconds{0.0};
+    double trimEndSeconds{-1.0};
     int maxParallelJobs{0}; // 0 = automatic
     bool recursive{true};
     bool preserveDirectoryStructure{true};
@@ -98,6 +102,12 @@ struct RemoteProbeResult {
     EncoderCapabilities capabilities;
     RemoteResources resources;
     std::string error;
+};
+
+struct PreviewFrame {
+    int width{0};
+    int height{0};
+    std::vector<std::uint8_t> rgb;
 };
 
 struct ConversionProgress {
@@ -148,6 +158,9 @@ std::string taskStateName(TaskState state);
 int compressionLevelCount();
 int crfMaximum(VideoCodec codec);
 int defaultCrf(VideoCodec codec);
+std::optional<double> parseTrimTime(std::string_view text);
+std::string formatTrimTime(double seconds);
+bool validTrimRange(double startSeconds, double endSeconds);
 std::string settingsFingerprint(const ConversionSettings& settings);
 std::string outputSuffix(const ConversionSettings& settings);
 ResourcePlan recommendResourcePlan(std::size_t taskCount, EncoderBackend backend,
@@ -174,6 +187,9 @@ public:
     SshService& sshService();
     const SshService& sshService() const;
     std::optional<double> probeDuration(const std::string& inputPath) const;
+    std::optional<PreviewFrame> previewFrame(const std::string& inputPath,
+                                             double timeSeconds, int maximumWidth = 720,
+                                             int maximumHeight = 405) const;
     bool isAlreadyProcessed(const std::string& inputPath,
                             const ConversionSettings& settings) const;
     bool isOutputForSourceAlreadyProcessed(const std::string& outputPath,

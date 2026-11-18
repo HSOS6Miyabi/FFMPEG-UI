@@ -24,9 +24,16 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Install build and media dependencies
+        timeout-minutes: 12
         run: |
-          sudo apt-get update
-          sudo apt-get install -y build-essential cmake ninja-build libx11-dev libxft-dev libfontconfig1 libarchive-dev ffmpeg fonts-noto-cjk openssh-server xvfb xdotool imagemagick x11-xserver-utils
+          set -euxo pipefail
+          sudo systemctl stop apt-daily.service apt-daily-upgrade.service 2>/dev/null || true
+          timeout 240s sudo apt-get -o Acquire::Retries=3 update
+          timeout 420s sudo env DEBIAN_FRONTEND=noninteractive apt-get install -y \
+            -o Acquire::Retries=3 -o DPkg::Lock::Timeout=60 \
+            build-essential cmake ninja-build libx11-dev libxft-dev \
+            libfontconfig1 libarchive-dev ffmpeg fonts-noto-cjk \
+            openssh-server xvfb xdotool imagemagick x11-xserver-utils
 
       - name: Start disposable SSH test server
         shell: bash
@@ -93,11 +100,16 @@ jobs:
         shell: bash
         run: |
           mkdir -p artifacts/ui
-          xvfb-run -a -s "-screen 0 1600x1100x24" bash -c '
+          xvfb-run -a -s "-screen 0 1600x1100x24 -noreset" bash -c '
+            set -ex
+            printf "Xft.dpi: 96\n" | xrdb -nocpp -load
+            xrdb -query | grep -Eq "^Xft\\.dpi:[[:space:]]*96$"
             export FFMPEG_STUDIO_CONFIG_DIR="$RUNNER_TEMP/workbench-ui-config"
             mkdir -p "$FFMPEG_STUDIO_CONFIG_DIR" "$RUNNER_TEMP/ui-example"
             ui_file="$RUNNER_TEMP/ui-example/长文件名-羊只饲养记录-2026-11-18-4K摄像机原始素材-视频压缩任务.mp4"
-            printf "test media placeholder" > "$ui_file"
+            ffmpeg -hide_banner -loglevel error -y \
+              -f lavfi -i "testsrc2=size=320x180:rate=24:duration=4" \
+              -an -c:v mpeg4 -q:v 5 "$ui_file"
             printf "FFmpegStudioQueue/1\n%s\n" "$ui_file" > "$FFMPEG_STUDIO_CONFIG_DIR/queue.ffq"
             ./build/linux-release/video-compression-workbench > /tmp/video-compression-workbench-ui.log 2>&1 &
             app_pid=$!
@@ -116,22 +128,54 @@ jobs:
             import -window "$window" artifacts/ui/video-compression-workbench-linux.png
 
             # Expand the two-column settings panel and exercise the discrete eight-step slider.
-            xdotool mousemove --window "$window" 920 190 click 1
+            xdotool mousemove --window "$window" 980 190 click 1
             sleep 1
             xdotool mousemove --window "$window" 434 422 click 1
             sleep 1
-            grep -qx "compression=6" "$FFMPEG_STUDIO_CONFIG_DIR/settings.ini"
+            grep -qx "compression=6" "$FFMPEG_STUDIO_CONFIG_DIR/settings.ini" || {
+              cat "$FFMPEG_STUDIO_CONFIG_DIR/settings.ini"
+              import -window "$window" artifacts/ui/video-compression-workbench-linux-failed-setting.png
+              exit 1
+            }
             xdotool key --window "$window" Left
             sleep 1
             grep -qx "compression=5" "$FFMPEG_STUDIO_CONFIG_DIR/settings.ini"
 
             # Verify that settings in the second column and the lower row are interactive.
             xdotool mousemove --window "$window" 755 430 click 1
-            xdotool mousemove --window "$window" 792 510 click 1
+            xdotool mousemove --window "$window" 835 510 click 1
             sleep 1
             grep -qx "audioMode=1" "$FFMPEG_STUDIO_CONFIG_DIR/settings.ini"
             grep -qx "outputResolution=3" "$FFMPEG_STUDIO_CONFIG_DIR/settings.ini"
             import -window "$window" artifacts/ui/video-compression-workbench-linux-expanded.png
+
+            # Set the trim start directly in the main encoding panel.
+            xdotool mousemove --window "$window" 130 608 click 1
+            xdotool type --window "$window" --clearmodifiers "00:00:00.500"
+            xdotool key --window "$window" Return
+            sleep 1
+            grep -qx "trimStartSeconds=0.500000" "$FFMPEG_STUDIO_CONFIG_DIR/settings.ini"
+
+            # Preview a real video and mark a two-second interval in the native trimmer.
+            xdotool mousemove --window "$window" 910 608 click 1
+            dialog=""
+            for attempt in $(seq 1 20); do
+              dialog=$(xdotool search --class "VideoCompressionWorkbenchTrimmer" 2>/dev/null | head -n 1 || true)
+              if [ -n "$dialog" ]; then break; fi
+              sleep 1
+            done
+            test -n "$dialog" || { cat /tmp/video-compression-workbench-ui.log; exit 1; }
+            sleep 2
+            import -window "$dialog" artifacts/ui/video-compression-workbench-linux-trimmer.png
+            xdotool key --window "$dialog" Right
+            xdotool mousemove --window "$dialog" 450 575 click 1
+            xdotool key --window "$dialog" Right
+            xdotool mousemove --window "$dialog" 690 575 click 1
+            xdotool mousemove --window "$dialog" 753 672 click 1
+            sleep 1
+            grep -qx "trimStartSeconds=1.500000" "$FFMPEG_STUDIO_CONFIG_DIR/settings.ini"
+            grep -qx "trimEndSeconds=2.500000" "$FFMPEG_STUDIO_CONFIG_DIR/settings.ini"
+            kill -0 "$app_pid"
 
             # Verify queue-first navigation and selected-task details without starting encoding.
             xdotool mousemove --window "$window" 1190 46 click 1
@@ -166,7 +210,8 @@ jobs:
             # Test the 150% DPI geometry and direct format-selection interactions.
             kill "$app_pid" 2>/dev/null || true
             wait "$app_pid" 2>/dev/null || true
-            printf "Xft.dpi: 144\n" | xrdb -merge
+            printf "Xft.dpi: 144\n" | xrdb -nocpp -load
+            xrdb -query | grep -Eq "^Xft\\.dpi:[[:space:]]*144$"
             export FFMPEG_STUDIO_CONFIG_DIR="$RUNNER_TEMP/workbench-ui-hidpi-config"
             mkdir -p "$FFMPEG_STUDIO_CONFIG_DIR"
             ./build/linux-release/video-compression-workbench >/tmp/video-compression-workbench-hidpi.log 2>&1 &
@@ -184,10 +229,31 @@ jobs:
             dimensions=$(identify -format "%wx%h" artifacts/ui/video-compression-workbench-linux-hidpi-150.png)
             test "$dimensions" = "1600x900"
 
+            # The expanded settings panel must expose compression, audio and trimming controls.
+            xdotool mousemove --window "$window" 885 285 click 1
+            sleep 1
+            import -window "$window" artifacts/ui/video-compression-workbench-linux-hidpi-expanded.png
+            xdotool mousemove --window "$window" 885 285 click 1
+            sleep 1
+
+            # Verify readable theme colors at 150% DPI.
+            xdotool mousemove --window "$window" 1490 68 click 1
+            sleep 1
+            import -window "$window" artifacts/ui/video-compression-workbench-linux-hidpi-dark.png
+            xdotool mousemove --window "$window" 1490 68 click 1
+            sleep 1
+
             # WebM selection must automatically select an available compatible encoder.
             xdotool mousemove --window "$window" 341 443 click 1
             sleep 1
-            grep -qx "outputContainer=3" "$FFMPEG_STUDIO_CONFIG_DIR/settings.ini"
+            if ! grep -qx "outputContainer=3" "$FFMPEG_STUDIO_CONFIG_DIR/settings.ini"; then
+              echo "HiDPI settings after selecting WebM:"
+              cat "$FFMPEG_STUDIO_CONFIG_DIR/settings.ini"
+              xrdb -query
+              xdotool getwindowgeometry "$window"
+              import -window "$window" artifacts/ui/video-compression-workbench-linux-hidpi-selection.png
+              exit 1
+            fi
             grep -qx "codec=3" "$FFMPEG_STUDIO_CONFIG_DIR/settings.ini"
 
             # With tasks restored on a very small HiDPI window, prioritize the queue.
@@ -208,16 +274,29 @@ jobs:
             import -window "$window" artifacts/ui/video-compression-workbench-linux-hidpi-compact-queue.png
             dimensions=$(identify -format "%wx%h" artifacts/ui/video-compression-workbench-linux-hidpi-compact-queue.png)
             test "$dimensions" = "1280x720"
+            xdotool key --window "$window" ctrl+q
+            sleep 1
+            import -window "$window" artifacts/ui/video-compression-workbench-linux-hidpi-compact-settings.png
+
+            # Switch a narrow codec button at 150% DPI and verify container compatibility.
+            xdotool mousemove --window "$window" 484 442 click 1
+            sleep 1
+            grep -qx "codec=1" "$FFMPEG_STUDIO_CONFIG_DIR/settings.ini"
+            grep -qx "outputContainer=2" "$FFMPEG_STUDIO_CONFIG_DIR/settings.ini"
+            import -window "$window" artifacts/ui/video-compression-workbench-linux-hidpi-compact-h265.png
             kill -0 "$app_pid"
           '
 
       - name: Upload Linux interface screenshot
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: video-compression-workbench-ui-linux
           path: |
             artifacts/ui/video-compression-workbench-linux.png
             artifacts/ui/video-compression-workbench-linux-expanded.png
+            artifacts/ui/video-compression-workbench-linux-trimmer.png
+            artifacts/ui/video-compression-workbench-linux-hidpi-selection.png
             artifacts/ui/video-compression-workbench-linux-queue-focus.png
             artifacts/ui/video-compression-workbench-linux-task-details.png
             artifacts/ui/video-compression-workbench-linux-failed-filter.png
@@ -225,8 +304,12 @@ jobs:
             artifacts/ui/video-compression-workbench-linux-compact-settings.png
             artifacts/ui/video-compression-workbench-linux-compact-queue.png
             artifacts/ui/video-compression-workbench-linux-hidpi-150.png
+            artifacts/ui/video-compression-workbench-linux-hidpi-expanded.png
+            artifacts/ui/video-compression-workbench-linux-hidpi-dark.png
             artifacts/ui/video-compression-workbench-linux-hidpi-compact-queue.png
-          if-no-files-found: error
+            artifacts/ui/video-compression-workbench-linux-hidpi-compact-settings.png
+            artifacts/ui/video-compression-workbench-linux-hidpi-compact-h265.png
+          if-no-files-found: warn
 
       - name: Package Linux application
         run: |
@@ -269,6 +352,7 @@ jobs:
           key: vcpkg-win-static-${{ hashFiles('vcpkg.json') }}
 
       - name: Install libarchive
+        timeout-minutes: 12
         shell: pwsh
         run: vcpkg install --triplet x64-windows-static
 
@@ -279,6 +363,7 @@ jobs:
           key: vcpkg-win-static-${{ hashFiles('vcpkg.json') }}
 
       - name: Install FFmpeg
+        timeout-minutes: 10
         run: choco install ffmpeg -y --no-progress
 
       - name: Configure
@@ -299,6 +384,7 @@ jobs:
         run: choco install nsis -y --no-progress
 
       - name: Bundle pinned FFmpeg and create Windows packages
+        timeout-minutes: 15
         shell: pwsh
         run: ./scripts/package-windows.ps1
 
@@ -322,6 +408,18 @@ jobs:
           if ($result -notmatch 'Self-test result: \d+ passed, 0 failed') {
             throw "FFmpeg self-test did not report success."
           }
+
+      - name: Capture Windows desktop and trimmer screenshots
+        shell: pwsh
+        run: ./scripts/test-windows-ui.ps1
+
+      - name: Upload Windows UI screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: video-compression-workbench-ui-windows
+          path: artifacts/ui/video-compression-workbench-windows*.png
+          if-no-files-found: warn
 
       - name: Upload Windows portable archive
         uses: actions/upload-artifact@v4

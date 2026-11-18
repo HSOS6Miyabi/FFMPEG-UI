@@ -14,6 +14,7 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <cstdlib>
 #include <cstdio>
 #include <filesystem>
 #include <iostream>
@@ -59,6 +60,7 @@ Palette palette(bool dark) {
 struct Layout {
     Rect addFiles, addFolder, addArchive, importQueue, exportQueue, removeSelected, clearDone;
     Rect outputField, outputBrowse, container[4], codec[5], backend[4], crfTrack, crfValue;
+    Rect trimStart, trimEnd, trimOpen, trimReset;
     Rect compressionTrack, compressionValue, audio[6], resolution[6], audioMode[3];
     Rect parallel, recursive, skip, preserve, overwrite;
     Rect queue, overallCard, overallTrack, start, pause, cancel, ssh, theme, advancedToggle;
@@ -88,6 +90,7 @@ Layout makeLayout(int width, int height, double scale, int backendCount = 4,
     l.removeSelected={secondaryStart+(secondaryBase+toolbarGap)*2,top,secondaryBase,s(42)};
     l.clearDone={secondaryStart+(secondaryBase+toolbarGap)*3,top,secondaryWidth-(secondaryBase+toolbarGap)*3,s(42)};
     const int sy=top+s(56);
+    const bool compactAdvanced = expanded && height < s(940);
 
     const int controlX = leftX + s(132), controlW = leftW - s(154);
     l.advancedToggle = {leftX + leftW - s(146), sy + s(9), s(126), s(28)};
@@ -114,39 +117,55 @@ Layout makeLayout(int width, int height, double scale, int backendCount = 4,
     l.crfTrack = {secondX + s(11), sy + s(192), columnWidth - s(111), s(7)};
     l.crfValue = {secondX + columnWidth - s(84), sy + s(179), s(84), s(30)};
 
-    l.compressionTrack = {gridX + s(10), sy + s(253), columnWidth - s(20), s(7)};
-    l.compressionValue = {gridX + columnWidth - s(92), sy + s(219), s(92), s(24)};
+    l.compressionTrack = {gridX + s(10), sy + s(compactAdvanced ? 245 : 253), columnWidth - s(20), s(7)};
+    l.compressionValue = {gridX + columnWidth - s(92), sy + s(compactAdvanced ? 211 : 219), s(92), s(24)};
     const int audioModeWidth = (columnWidth - buttonGap * 2) / 3;
     for (int index = 0; index < 3; ++index)
         l.audioMode[index] = {secondX + index * (audioModeWidth + buttonGap),
-                              sy + s(247), audioModeWidth, s(30)};
+                              sy + s(compactAdvanced ? 232 : 247), audioModeWidth, s(30)};
 
     const int audioWidth = (columnWidth - buttonGap * 5) / 6;
     for (int index = 0; index < 6; ++index) {
         l.audio[index] = {gridX + index * (audioWidth + buttonGap),
-                          sy + s(325), audioWidth, s(30)};
+                          sy + s(compactAdvanced ? 298 : 325), audioWidth, s(30)};
         l.resolution[index] = {secondX + index * (audioWidth + buttonGap),
-                               sy + s(325), audioWidth, s(30)};
+                               sy + s(compactAdvanced ? 298 : 325), audioWidth, s(30)};
     }
 
     const int optionGap = s(5);
     const int optionWidth = (leftW - s(40) - optionGap * 4) / 5;
-    const int optionY = sy + s(369);
+    const int optionY = sy + s(compactAdvanced ? 331 : 369);
     l.parallel = {leftX + s(20), optionY, optionWidth, s(28)};
     l.recursive = {leftX + s(20) + optionWidth + optionGap, optionY, optionWidth, s(28)};
     l.skip = {leftX + s(20) + (optionWidth + optionGap) * 2, optionY, optionWidth, s(28)};
     l.preserve = {leftX + s(20) + (optionWidth + optionGap) * 3, optionY, optionWidth, s(28)};
     l.overwrite = {leftX + s(20) + (optionWidth + optionGap) * 4, optionY, optionWidth, s(28)};
 
-    const int queueY = sy + s(expanded ? 425 : 233);
+    const int trimY = sy + s(expanded ? (compactAdvanced ? 366 : 424) : 232);
+    const int trimGap = s(7), openW = s(111), resetW = s(76);
+    const int trimW = (gridWidth - trimGap * 3 - openW - resetW) / 2;
+    l.trimStart = {gridX, trimY, trimW, s(31)};
+    l.trimEnd = {gridX + trimW + trimGap, trimY, trimW, s(31)};
+    l.trimOpen = {gridX + (trimW + trimGap) * 2, trimY, openW, s(31)};
+    l.trimReset = {gridX + gridWidth - resetW, trimY, resetW, s(31)};
+    const int queueY = sy + s(expanded ? (compactAdvanced ? 428 : 486) : 294);
     const int actualQueueY = queueFocused ? sy : queueY;
     l.queue = {leftX, actualQueueY, leftW, std::max(0, height - actualQueueY - pad)};
     l.failedOnly = {leftX + s(142), actualQueueY + s(10), s(102), s(28)};
-    l.overallCard={rightX,top,rightW,s(270)};l.overallTrack={rightX+s(22),top+s(126),rightW-s(44),s(12)};
-    l.start={rightX+s(22),top+s(206),rightW-s(44),s(44)};
-    const int actionGap=s(8),actionWidth=(rightW-s(52)-actionGap)/2;
-    l.pause={rightX+s(22),top+s(206),actionWidth,s(44)};
-    l.cancel={rightX+s(22)+actionWidth+actionGap,top+s(206),rightW-s(44)-actionWidth-actionGap,s(44)};
+    const int availableRightHeight = std::max(0, height - top - pad);
+    const int statusHeight = std::clamp(availableRightHeight * 47 / 100, s(185), s(270));
+    const bool compactStatus = statusHeight < s(260);
+    const int actionY = compactStatus ? top + statusHeight - s(48) : top + s(206);
+    const int actionHeight = compactStatus ? s(38) : s(44);
+    l.overallCard = {rightX, top, rightW, statusHeight};
+    l.overallTrack = {rightX + s(22), compactStatus
+        ? top + statusHeight - s(90) : top + s(126), rightW - s(44), s(12)};
+    l.start = {rightX + s(22), actionY, rightW - s(44), actionHeight};
+    const int actionGap = s(8);
+    const int actionWidth = (rightW - s(52) - actionGap) / 2;
+    l.pause = {rightX + s(22), actionY, actionWidth, actionHeight};
+    l.cancel = {rightX + s(22) + actionWidth + actionGap, actionY,
+                rightW - s(44) - actionWidth - actionGap, actionHeight};
     l.focusQueue = {width - s(377), s(28), s(135), s(36)};
     l.ssh={width-s(224),s(28),s(100),s(36)};
     l.theme={width-s(112),s(28),s(82),s(36)};
@@ -338,10 +357,12 @@ public:
         }
 
         const int measuredWidth = textWidth(label, 0);
-        const int availableWidth = std::max(0, rectangle.width - 16);
-        const int textX = rectangle.x + std::max(8, (rectangle.width - measuredWidth) / 2);
+        const int padding = rectangle.width < 80 ? 4 : 8;
+        const int availableWidth = std::max(0, rectangle.width - padding * 2);
+        const int textX = rectangle.x + std::max(
+            padding, (rectangle.width - measuredWidth) / 2);
         const int textY = rectangle.y + rectangle.height / 2 + 5;
-        textFit(measuredWidth <= availableWidth ? textX : rectangle.x + 8,
+        textFit(measuredWidth <= availableWidth ? textX : rectangle.x + padding,
                 textY, label, availableWidth,
                 active && !disabled ? colors.white : colors.text, 0);
     }
@@ -384,6 +405,44 @@ public:
                 {rectangle.x, rectangle.y, filledWidth, rectangle.height},
                 colors.accent, 5);
         }
+    }
+
+    void image(Rect rectangle, const PreviewFrame& frame) {
+        if (frame.width < 1 || frame.height < 1 ||
+            frame.rgb.size() != static_cast<std::size_t>(frame.width * frame.height * 3))
+            return;
+        const int depth = DefaultDepth(display_, screen_);
+        XImage* ximage = XCreateImage(display_, visual_, depth, ZPixmap,
+                                      0, nullptr, frame.width, frame.height, 32, 0);
+        if (ximage == nullptr) return;
+        const std::size_t bytes = static_cast<std::size_t>(ximage->bytes_per_line) *
+                                  static_cast<std::size_t>(frame.height);
+        ximage->data = static_cast<char*>(std::calloc(bytes, 1));
+        if (!ximage->data) {
+            XDestroyImage(ximage);
+            return;
+        }
+        const auto maskPixel = [](unsigned char sample, unsigned long mask) {
+            if (mask == 0) return 0UL;
+            unsigned int shift = 0;
+            while (((mask >> shift) & 1UL) == 0UL) ++shift;
+            const unsigned long maximum = mask >> shift;
+            return ((static_cast<unsigned long>(sample) * maximum + 127UL) / 255UL << shift) & mask;
+        };
+        for (int y = 0; y < frame.height; ++y) {
+            for (int x = 0; x < frame.width; ++x) {
+                const std::size_t index = static_cast<std::size_t>((y * frame.width + x) * 3);
+                const unsigned long pixelValue =
+                    maskPixel(frame.rgb[index], ximage->red_mask) |
+                    maskPixel(frame.rgb[index + 1], ximage->green_mask) |
+                    maskPixel(frame.rgb[index + 2], ximage->blue_mask);
+                XPutPixel(ximage, x, y, pixelValue);
+            }
+        }
+        XPutImage(display_, window_, gc(), ximage, 0, 0, rectangle.x, rectangle.y,
+                  static_cast<unsigned int>(frame.width),
+                  static_cast<unsigned int>(frame.height));
+        XDestroyImage(ximage);
     }
 
     void flush() {
@@ -575,7 +634,8 @@ std::string percentDecode(const std::string& value) {
 
 class LinuxWindow {
 public:
-    explicit LinuxWindow(AppController& controller):controller_(controller){}
+    explicit LinuxWindow(AppController& controller) : controller_(controller),
+        settings_(controller.snapshot().settings) {}
     int run() {
         display_ = XOpenDisplay(nullptr);
         if (display_ == nullptr) {
@@ -1223,6 +1283,287 @@ private:
         crfEditText_.clear();
     }
 
+    void openVideoTrimmer() {
+        const auto snapshot = controller_.snapshot();
+        if (snapshot.running) return;
+        const auto selected = std::find_if(snapshot.tasks.begin(), snapshot.tasks.end(),
+            [this](const BatchTaskSnapshot& task) {
+                return task.kind == TaskKind::Video && task.id == selectedTask_;
+            });
+        const auto candidate = selected == snapshot.tasks.end()
+            ? std::find_if(snapshot.tasks.begin(), snapshot.tasks.end(),
+                [](const BatchTaskSnapshot& task) { return task.kind == TaskKind::Video; })
+            : selected;
+        if (candidate == snapshot.tasks.end()) {
+            trimError_ = "请先添加独立视频；ZIP 和 PPTX 任务可以直接填写裁剪时间。";
+            return;
+        }
+        const auto sourceDuration = controller_.videoDuration(candidate->inputPath);
+        if (!sourceDuration || *sourceDuration <= 0.0) {
+            trimError_ = "无法读取视频时长。请检查输入文件和 ffprobe。";
+            return;
+        }
+        const std::string source = candidate->inputPath;
+        const double duration = *sourceDuration;
+        double start = settings_.trimStartSeconds < duration ? settings_.trimStartSeconds : 0.0;
+        double end = settings_.trimEndSeconds < 0.0 ? -1.0 :
+            std::min(settings_.trimEndSeconds, duration);
+        if (!validTrimRange(start, end)) end = -1.0;
+        const double maximumCursor = std::max(0.0, duration - 0.05);
+        double cursor = std::clamp(start, 0.0, maximumCursor);
+        int editing = -1;
+        std::string entry;
+        std::string status;
+        bool accepted = false;
+
+        const double dialogScale = std::max(0.65, std::min({
+            scale_,
+            static_cast<double>(DisplayWidth(display_, screen_) - s(40)) / 946.0,
+            static_cast<double>(DisplayHeight(display_, screen_) - s(48)) / 794.0
+        }));
+        const auto d = [dialogScale](int value) {
+            return static_cast<int>(std::lround(value * dialogScale));
+        };
+        const int dialogWidth = d(946), dialogHeight = d(794);
+        const int dialogX = std::max(0, (DisplayWidth(display_, screen_) - dialogWidth) / 2);
+        const int dialogY = std::max(0, (DisplayHeight(display_, screen_) - dialogHeight) / 2);
+        Window dialog = XCreateSimpleWindow(display_, RootWindow(display_, screen_),
+            dialogX, dialogY, static_cast<unsigned int>(dialogWidth),
+            static_cast<unsigned int>(dialogHeight), 0,
+            BlackPixel(display_, screen_), WhitePixel(display_, screen_));
+        const std::string dialogTitle = "可视化视频裁剪";
+        XStoreName(display_, dialog, dialogTitle.c_str());
+        const Atom utf8String = XInternAtom(display_, "UTF8_STRING", False);
+        const Atom netWmName = XInternAtom(display_, "_NET_WM_NAME", False);
+        XChangeProperty(display_, dialog, netWmName, utf8String, 8, PropModeReplace,
+                        reinterpret_cast<const unsigned char*>(dialogTitle.data()),
+                        static_cast<int>(dialogTitle.size()));
+        XClassHint dialogClass{};
+        dialogClass.res_name = const_cast<char*>("video-compression-workbench-trimmer");
+        dialogClass.res_class = const_cast<char*>("VideoCompressionWorkbenchTrimmer");
+        XSetClassHint(display_, dialog, &dialogClass);
+        XSetTransientForHint(display_, dialog, window_);
+        const Atom deleteMessage = XInternAtom(display_, "WM_DELETE_WINDOW", False);
+        XSetWMProtocols(display_, dialog, const_cast<Atom*>(&deleteMessage), 1);
+        XSelectInput(display_, dialog, ExposureMask | StructureNotifyMask |
+                     ButtonPressMask | KeyPressMask);
+        XMapRaised(display_, dialog);
+        auto canvas = std::make_unique<XftCanvas>(display_, dialog, dialogScale);
+        const Palette colors = palette(dark_);
+        const Rect previewRect{d(35), d(82), d(875), d(392)};
+        const Rect seekRect{d(45), d(506), d(840), d(12)};
+        const Rect backRect{d(45), d(556), d(134), d(38)};
+        const Rect nextRect{d(191), d(556), d(134), d(38)};
+        const Rect markInRect{d(410), d(556), d(185), d(38)};
+        const Rect markOutRect{d(607), d(556), d(185), d(38)};
+        const Rect startRect{d(45), d(656), d(270), d(39)};
+        const Rect endRect{d(327), d(656), d(270), d(39)};
+        const Rect clearRect{d(608), d(656), d(88), d(39)};
+        const Rect applyRect{d(708), d(656), d(102), d(39)};
+        const Rect cancelRect{d(822), d(656), d(88), d(39)};
+        std::optional<PreviewFrame> frame;
+        const auto refresh = [&]() {
+            frame = controller_.videoPreview(source, cursor,
+                std::min(1600, d(835)), std::min(900, d(355)));
+            if (!frame) status = "当前时间位置无法提取画面，可尝试向前跳转。";
+            else status.clear();
+        };
+        const auto jump = [&](double seconds) {
+            const double target = std::clamp(cursor + seconds, 0.0, maximumCursor);
+            if (std::abs(target - cursor) < 0.001) return;
+            cursor = target;
+            refresh();
+        };
+        const auto commit = [&]() -> bool {
+            if (editing == -1) return true;
+            if (entry.empty() && editing == 0) {
+                editing = -1;
+                status.clear();
+                return true;
+            }
+            const auto time = entry.empty() && editing == 1
+                ? std::optional<double>{-1.0} : parseTrimTime(entry.empty() ? "0" : entry);
+            if (!time) {
+                status = "请输入秒数或 时:分:秒.毫秒，例如 00:01:23.500。";
+                return false;
+            }
+            const double newStart = editing == 0 ? *time : start;
+            const double newEnd = editing == 1 ? *time : end;
+            if (!validTrimRange(newStart, newEnd) || newStart >= duration ||
+                (newEnd >= 0.0 && newEnd > duration + 0.05)) {
+                status = "裁剪时间必须位于视频时长内，且结束时间必须晚于起始时间。";
+                return false;
+            }
+            start = newStart;
+            end = newEnd;
+            editing = -1;
+            entry.clear();
+            status.clear();
+            return true;
+        };
+        const auto drawDialog = [&]() {
+            canvas->fill({0, 0, dialogWidth, dialogHeight}, colors.background);
+            canvas->text(d(35), d(41), "可视化视频裁剪", colors.text, 2);
+            canvas->textFit(d(36), d(69),
+                basename(source) + "  ·  时长 " + formatTrimTime(duration),
+                d(864), colors.muted, 0);
+            canvas->rounded(previewRect, "#0c111c", 12);
+            if (frame) {
+                const int previewX = previewRect.x + (previewRect.width - frame->width) / 2;
+                const int previewY = previewRect.y + (previewRect.height - frame->height) / 2;
+                canvas->image({previewX, previewY, frame->width, frame->height}, *frame);
+            } else {
+                canvas->text(d(360), d(275), "当前画面不可用", colors.white, 1);
+            }
+            canvas->progress(seekRect, cursor / duration, colors);
+            const int indicator = seekRect.x + static_cast<int>(
+                std::lround(seekRect.width * (cursor / duration)));
+            canvas->rounded({indicator - d(7), seekRect.y - d(5), d(14), d(22)},
+                            colors.accent, d(7));
+            canvas->text(d(45), d(543), "当前位置 " + formatTrimTime(cursor), colors.text, 1);
+            canvas->text(d(523), d(543), "← / → 跳转 1 秒；Shift 跳转 10 秒",
+                         colors.muted, 0);
+            canvas->button(backRect, "< 后退 1 秒", colors);
+            canvas->button(nextRect, "前进 1 秒 >", colors);
+            canvas->button(markInRect, "当前位置设为起点", colors);
+            canvas->button(markOutRect, "当前位置设为终点", colors);
+            canvas->text(d(45), d(640), "裁剪起始时间", colors.muted, 0);
+            canvas->text(d(327), d(640), "裁剪结束时间", colors.muted, 0);
+            canvas->button(startRect, editing == 0 ? entry + "|" : formatTrimTime(start),
+                           colors, editing == 0);
+            canvas->button(endRect, editing == 1 ? entry + "|" :
+                           end < 0 ? "直到片尾" : formatTrimTime(end),
+                           colors, editing == 1);
+            canvas->button(clearRect, "重置", colors);
+            canvas->button(applyRect, "应用裁剪", colors, true);
+            canvas->button(cancelRect, "取消", colors);
+            canvas->textFit(d(45), d(741),
+                status.empty() ? "点击时间可直接输入，结束时间留空表示保留到片尾。" : status,
+                d(855), status.empty() ? colors.muted : colors.red, 0);
+            canvas->flush();
+        };
+        refresh();
+        drawDialog();
+        bool finished = false;
+        while (!finished) {
+            if (!XPending(display_)) {
+                pollfd descriptor{ConnectionNumber(display_), POLLIN, 0};
+                poll(&descriptor, 1, 120);
+                if ((descriptor.revents & POLLIN) == 0) continue;
+            }
+            XEvent event{};
+            XNextEvent(display_, &event);
+            if (event.xany.window != dialog) continue;
+            if (event.type == ClientMessage &&
+                static_cast<Atom>(event.xclient.data.l[0]) == deleteMessage) {
+                finished = true;
+            } else if (event.type == Expose) {
+                drawDialog();
+            } else if (event.type == ButtonPress && event.xbutton.button == Button1) {
+                const int x = event.xbutton.x, y = event.xbutton.y;
+                if (contains(startRect, x, y) || contains(endRect, x, y)) {
+                    if (commit()) {
+                        editing = contains(startRect, x, y) ? 0 : 1;
+                        entry.clear();
+                    }
+                } else if (commit()) {
+                    const Rect trackHit{seekRect.x, seekRect.y - d(14),
+                                        seekRect.width, seekRect.height + d(28)};
+                    if (contains(trackHit, x, y)) {
+                        cursor = std::clamp(duration * (x - seekRect.x) /
+                                            std::max(1, seekRect.width), 0.0, maximumCursor);
+                        refresh();
+                    } else if (contains(backRect, x, y)) jump(-1.0);
+                    else if (contains(nextRect, x, y)) jump(1.0);
+                    else if (contains(markInRect, x, y)) {
+                        if (end >= 0.0 && cursor >= end)
+                            status = "新的起始时间必须早于结束时间。";
+                        else { start = cursor; status.clear(); }
+                    } else if (contains(markOutRect, x, y)) {
+                        if (cursor <= start)
+                            status = "结束时间必须晚于起始时间。";
+                        else { end = cursor; status.clear(); }
+                    } else if (contains(clearRect, x, y)) {
+                        start = 0.0; end = -1.0; status.clear();
+                    } else if (contains(applyRect, x, y)) {
+                        accepted = true;
+                        finished = true;
+                    } else if (contains(cancelRect, x, y)) finished = true;
+                }
+                if (!finished) drawDialog();
+            } else if (event.type == KeyPress) {
+                const KeySym key = XLookupKeysym(&event.xkey, 0);
+                if (editing != -1) {
+                    if (key == XK_Return || key == XK_KP_Enter) commit();
+                    else if (key == XK_Escape) {
+                        editing = -1; entry.clear(); status.clear();
+                    } else if (key == XK_BackSpace && !entry.empty()) entry.pop_back();
+                    else {
+                        char text[16]{};
+                        KeySym symbol{};
+                        const int count = XLookupString(&event.xkey, text,
+                                                        sizeof(text), &symbol, nullptr);
+                        for (int i = 0; i < count && entry.size() < 20; ++i) {
+                            const char ch = text[i];
+                            if ((ch >= '0' && ch <= '9') || ch == ':' || ch == '.')
+                                entry.push_back(ch);
+                        }
+                    }
+                } else if (key == XK_Left || key == XK_Right ||
+                           key == XK_less || key == XK_greater) {
+                    const double seconds = (event.xkey.state & ShiftMask) &&
+                        (key == XK_Left || key == XK_Right) ? 10.0 : 1.0;
+                    jump(key == XK_Left || key == XK_less ? -seconds : seconds);
+                } else if (key == XK_Home) {
+                    cursor = 0.0; refresh();
+                } else if (key == XK_End) {
+                    cursor = maximumCursor; refresh();
+                } else if (key == XK_Return || key == XK_KP_Enter) {
+                    accepted = true; finished = true;
+                } else if (key == XK_Escape) finished = true;
+                if (!finished) drawDialog();
+            }
+        }
+        canvas.reset();
+        XDestroyWindow(display_, dialog);
+        XFlush(display_);
+        if (accepted) {
+            settings_.trimStartSeconds = start;
+            settings_.trimEndSeconds = end;
+            trimError_.clear();
+            updateSettings();
+        }
+    }
+
+    bool commitTrimText() {
+        if (editingTrim_ == -1) return true;
+        const std::string raw = trimEditText_;
+        if (raw.empty() && editingTrim_ == 0) {
+            editingTrim_ = -1;
+            trimError_.clear();
+            return true;
+        }
+        const auto parsed = raw.empty() && editingTrim_ == 1
+            ? std::optional<double>{-1.0} : parseTrimTime(raw.empty() ? "0" : raw);
+        if (!parsed) {
+            trimError_ = "请输入秒数或 时:分:秒.毫秒，例如 00:01:23.500。";
+            return false;
+        }
+        const double start = editingTrim_ == 0 ? *parsed : settings_.trimStartSeconds;
+        const double end = editingTrim_ == 1 ? *parsed : settings_.trimEndSeconds;
+        if (!validTrimRange(start, end)) {
+            trimError_ = "裁剪结束时间必须晚于起始时间。";
+            return false;
+        }
+        settings_.trimStartSeconds = start;
+        settings_.trimEndSeconds = end;
+        editingTrim_ = -1;
+        trimEditText_.clear();
+        trimError_.clear();
+        updateSettings();
+        return true;
+    }
+
     void addFiles(bool archiveOnly = false) {
         const auto files = chooseFiles(archiveOnly);
         if (!files.empty()) {
@@ -1298,6 +1639,9 @@ private:
             s(31), s(82),
             "批量视频压缩 · ZIP / PPTX 媒体处理 · CPU 与硬件编码",
             colors.muted, 0);
+        if (!trimError_.empty())
+            canvas_->textFit(s(31), s(104), trimError_,
+                             width_ - s(450), colors.red, 0);
         canvas_->button(
             layout.focusQueue, queueFocused_ ? "返回编码设置" : "专注处理队列",
             colors, queueFocused_);
@@ -1306,18 +1650,22 @@ private:
         canvas_->button(
             layout.theme, dark_ ? "浅色外观" : "深色外观", colors);
 
+        const bool compactToolbar = layout.importQueue.width < s(76);
         canvas_->button(layout.addFiles, "添加文件", colors, true);
         canvas_->button(layout.addFolder, "添加文件夹", colors);
-        canvas_->button(layout.addArchive, "添加 ZIP / PPTX", colors);
-        canvas_->button(layout.importQueue, "导入清单", colors);
-        canvas_->button(layout.exportQueue, "导出清单", colors);
-        canvas_->button(layout.removeSelected, "移除选中", colors);
-        canvas_->button(layout.clearDone, "清除已完成", colors);
+        canvas_->button(layout.addArchive,
+                        layout.addArchive.width < s(118) ? "ZIP/PPTX" : "添加 ZIP / PPTX",
+                        colors);
+        canvas_->button(layout.importQueue, compactToolbar ? "导入" : "导入清单", colors);
+        canvas_->button(layout.exportQueue, compactToolbar ? "导出" : "导出清单", colors);
+        canvas_->button(layout.removeSelected, compactToolbar ? "移除" : "移除选中", colors);
+        canvas_->button(layout.clearDone, compactToolbar ? "清除" : "清除已完成", colors);
 
         if (!queueFocused_) {
         const int left = layout.queue.x, top = s(168);
+        const bool compactAdvanced = advancedExpanded_ && height_ < s(940);
         canvas_->card({left, top, layout.queue.width,
-                       s(advancedExpanded_ ? 413 : 221)}, colors);
+                       s(advancedExpanded_ ? (compactAdvanced ? 416 : 474) : 282)}, colors);
         canvas_->text(left + s(20), top + s(30), "编码设置", colors.text, 1);
         canvas_->button(layout.advancedToggle,
                         advancedExpanded_ ? "收起高级设置" : "展开高级设置", colors);
@@ -1334,8 +1682,8 @@ private:
 
         const int firstColumn = layout.container[0].x;
         const int secondColumn = layout.codec[0].x;
-        const int firstWidth = layout.container[1].x +
-            layout.container[1].width - firstColumn;
+        const int firstWidth = layout.container[3].x +
+            layout.container[3].width - firstColumn;
         canvas_->text(firstColumn, top + s(102), "输出容器", colors.muted, 0);
         canvas_->text(secondColumn, top + s(102), "视频编码", colors.muted, 0);
         const std::array<OutputContainer, 4> containers{
@@ -1353,11 +1701,23 @@ private:
             VideoCodec::AV1, VideoCodec::H266
         };
         const auto supported = availableVideoCodecs(snapshot.capabilities);
-        for (std::size_t index = 0; index < codecChoices.size(); ++index)
-            canvas_->button(layout.codec[index], codecName(codecChoices[index]), colors,
+        const std::array<std::string, 5> compactCodecNames{
+            "H264", "H265", "VP9", "AV1", "H266"
+        };
+        const std::array<std::string, 5> narrowCodecNames{
+            "264", "265", "VP9", "AV1", "266"
+        };
+        for (std::size_t index = 0; index < codecChoices.size(); ++index) {
+            const int buttonWidth = layout.codec[index].width;
+            const std::string label = buttonWidth >= s(70)
+                ? codecName(codecChoices[index])
+                : canvas_->textWidth(compactCodecNames[index], 0) + s(8) <= buttonWidth
+                    ? compactCodecNames[index] : narrowCodecNames[index];
+            canvas_->button(layout.codec[index], label, colors,
                             settings_.codec == codecChoices[index],
                             std::find(supported.begin(), supported.end(),
                                       codecChoices[index]) == supported.end());
+        }
 
         canvas_->text(firstColumn, top + s(169), "编码设备", colors.muted, 0);
         canvas_->text(secondColumn, top + s(169),
@@ -1396,7 +1756,7 @@ private:
         if (advancedExpanded_) {
             const int compressionIndex = std::clamp(
                 static_cast<int>(settings_.compression), 0, 7);
-            canvas_->text(firstColumn, top + s(235), "压缩级别", colors.muted, 0);
+            canvas_->text(firstColumn, top + s(compactAdvanced ? 227 : 235), "压缩级别", colors.muted, 0);
             canvas_->rounded(layout.compressionValue, colors.accentSoft, 7);
             canvas_->text(layout.compressionValue.x + s(10),
                           layout.compressionValue.y + s(17),
@@ -1415,11 +1775,13 @@ private:
                     static_cast<double>(layout.compressionTrack.width) * compressionIndex / 7.0));
             canvas_->rounded({compressionX - s(8), layout.compressionTrack.y - s(6),
                               s(16), s(19)}, colors.accent, 8);
-            canvas_->text(firstColumn, top + s(289), "极速", colors.muted, 0);
-            canvas_->text(firstColumn + firstWidth - s(70), top + s(289),
-                          "极致压缩", colors.muted, 0);
+            if (!compactAdvanced) {
+                canvas_->text(firstColumn, top + s(289), "极速", colors.muted, 0);
+                canvas_->text(firstColumn + firstWidth - s(70), top + s(289),
+                              "极致压缩", colors.muted, 0);
+            }
 
-            canvas_->text(secondColumn, top + s(235), "音频处理", colors.muted, 0);
+            canvas_->text(secondColumn, top + s(compactAdvanced ? 220 : 235), "音频处理", colors.muted, 0);
             const std::array<std::string, 3> audioModes{
                 "自动编码", "保留原音频", "移除音频"
             };
@@ -1427,8 +1789,8 @@ private:
                 canvas_->button(layout.audioMode[index], audioModes[index], colors,
                                 static_cast<int>(settings_.audioMode) == index);
 
-            canvas_->text(firstColumn, top + s(312), "音频码率 (kbps)", colors.muted, 0);
-            canvas_->text(secondColumn, top + s(312), "输出分辨率", colors.muted, 0);
+            canvas_->text(firstColumn, top + s(compactAdvanced ? 285 : 312), "音频码率 (kbps)", colors.muted, 0);
+            canvas_->text(secondColumn, top + s(compactAdvanced ? 285 : 312), "输出分辨率", colors.muted, 0);
             const std::array<int, 6> audioRates{96, 128, 160, 192, 256, 320};
             const std::array<std::string, 6> resolutionLabels{
                 "原始", "2160p", "1440p", "1080p", "720p", "480p"
@@ -1457,13 +1819,35 @@ private:
                             settings_.overwrite ? "覆盖文件✓" : "保留文件",
                             colors, settings_.overwrite);
         }
+        if (!compactAdvanced) {
+            canvas_->text(layout.trimStart.x, layout.trimStart.y - s(4),
+                          "裁剪起始时间", colors.muted, 0);
+            canvas_->text(layout.trimEnd.x, layout.trimEnd.y - s(4),
+                          "裁剪结束时间", colors.muted, 0);
+        }
+        const std::string startLabel = (compactAdvanced ? "起点 " : "") +
+            (editingTrim_ == 0 ? trimEditText_ + "|"
+                               : formatTrimTime(settings_.trimStartSeconds));
+        const std::string endLabel = (compactAdvanced ? "终点 " : "") +
+            (editingTrim_ == 1 ? trimEditText_ + "|"
+                               : settings_.trimEndSeconds < 0.0
+                                   ? "直到片尾" : formatTrimTime(settings_.trimEndSeconds));
+        canvas_->button(layout.trimStart, startLabel, colors,
+                        editingTrim_ == 0, snapshot.running);
+        canvas_->button(layout.trimEnd, endLabel, colors,
+                        editingTrim_ == 1, snapshot.running);
+        canvas_->button(layout.trimOpen, "可视化裁剪", colors, false, snapshot.running);
+        canvas_->button(layout.trimReset, "重置", colors, false, snapshot.running);
 
         }
 
+        if (layout.queue.height >= s(90)) {
         canvas_->card(layout.queue, colors);
-        canvas_->text(
-            layout.queue.x + s(20), layout.queue.y + s(34),
-            "处理队列", colors.text, 1);
+        const bool compactQueueHeader =
+            layout.queue.width < s(820) && layout.queue.height >= s(170);
+        const int queueHeaderHeight = compactQueueHeader ? s(83) : s(54);
+        canvas_->text(layout.queue.x + s(20), layout.queue.y + s(34),
+                      "处理队列", colors.text, 1);
         canvas_->button(layout.failedOnly,
                         failedOnly_ ? "显示全部" : "仅看失败",
                         colors, failedOnly_);
@@ -1472,15 +1856,20 @@ private:
             " · 运行 " + std::to_string(snapshot.runningTasks) +
             " · 完成 " + std::to_string(snapshot.completedTasks) +
             " · 失败 " + std::to_string(snapshot.failedTasks);
-        canvas_->text(
-            layout.queue.x + layout.queue.width - s(330),
-            layout.queue.y + s(34), queueSummary, colors.muted, 0);
+        if (compactQueueHeader) {
+            canvas_->textFit(layout.queue.x + s(20), layout.queue.y + s(69),
+                             queueSummary, layout.queue.width - s(40), colors.muted, 0);
+        } else if (layout.queue.width >= s(600)) {
+            canvas_->textFit(layout.queue.x + layout.queue.width - s(330),
+                             layout.queue.y + s(34), queueSummary,
+                             s(310), colors.muted, 0);
+        }
 
         const auto taskRows = rows(snapshot, failedOnly_);
         const int rowHeight = s(70);
-        const int listTop = layout.queue.y + s(54);
+        const int listTop = layout.queue.y + queueHeaderHeight;
         const int visibleRows = std::max(
-            0, (layout.queue.height - s(68)) / rowHeight);
+            0, (layout.queue.height - queueHeaderHeight - s(14)) / rowHeight);
         const int maximumScroll = std::max(
             0, static_cast<int>(taskRows.size()) - visibleRows);
         scrollOffset_ = std::clamp(scrollOffset_, 0, maximumScroll);
@@ -1566,16 +1955,21 @@ private:
             }
         }
 
+        }
+
         canvas_->card(layout.overallCard, colors);
-        canvas_->text(
-            layout.overallCard.x + s(22), layout.overallCard.y + s(36),
-            "批量处理进度", colors.text, 1);
-        canvas_->text(
-            layout.overallCard.x + s(22), layout.overallCard.y + s(76),
-            snapshot.status, colors.text, 0);
-        canvas_->text(
-            layout.overallCard.x + s(22), layout.overallCard.y + s(102),
-            snapshot.detail, colors.muted, 0);
+        const bool compactStatus = layout.overallCard.height < s(260);
+        const int statusX = layout.overallCard.x + s(22);
+        const int statusWidth = layout.overallCard.width - s(44);
+        canvas_->textFit(statusX,
+                         layout.overallCard.y + s(compactStatus ? 26 : 36),
+                         "批量处理进度", statusWidth, colors.text, 1);
+        canvas_->textFit(statusX,
+                         layout.overallCard.y + s(compactStatus ? 55 : 76),
+                         snapshot.status, statusWidth, colors.text, 0);
+        canvas_->textFit(statusX,
+                         layout.overallCard.y + s(compactStatus ? 77 : 102),
+                         snapshot.detail, statusWidth, colors.muted, 0);
         canvas_->progress(layout.overallTrack, snapshot.overallProgress, colors);
 
         std::ostringstream percentage;
@@ -1583,13 +1977,17 @@ private:
         percentage.precision(1);
         percentage << snapshot.overallProgress * 100.0 << "%";
         canvas_->text(
-            layout.overallCard.x + s(22), layout.overallCard.y + s(178),
+            statusX, compactStatus
+                ? layout.overallCard.y + layout.overallCard.height - s(65)
+                : layout.overallCard.y + s(178),
             percentage.str(), colors.accent, 1);
-        canvas_->text(
-            layout.overallCard.x + s(130), layout.overallCard.y + s(178),
+        canvas_->textFit(
+            layout.overallCard.x + s(130), compactStatus
+                ? layout.overallCard.y + layout.overallCard.height - s(65)
+                : layout.overallCard.y + s(178),
             "完成 " + std::to_string(snapshot.completedTasks + snapshot.skippedTasks) +
                 " / " + std::to_string(snapshot.totalTasks),
-            colors.muted, 0);
+            layout.overallCard.width - s(152), colors.muted, 0);
 
         if (!snapshot.running) {
             const bool canStart = !snapshot.tasks.empty() &&
@@ -1607,13 +2005,40 @@ private:
             layout.overallCard.x,
             infoY,
             layout.overallCard.width,
-            height_ - infoY - s(28)
+            std::max(0, height_ - infoY - s(28))
         };
         canvas_->card(information, colors);
         const auto selected = std::find_if(
             snapshot.tasks.begin(), snapshot.tasks.end(),
             [this](const BatchTaskSnapshot& task) { return task.id == selectedTask_; });
-        if (selected != snapshot.tasks.end()) {
+        const bool compactInformation = information.height < s(340);
+        if (selected != snapshot.tasks.end() && compactInformation) {
+            const int labelX = information.x + s(22);
+            const int maximumWidth = information.width - s(44);
+            const int baseY = information.y + s(33);
+            const int step = std::clamp(
+                (information.height - s(55)) / 4, s(18), s(27));
+            if (information.height >= s(70)) {
+                canvas_->textFit(labelX, baseY, "当前选中任务", maximumWidth, colors.text, 1);
+                canvas_->textFit(labelX, baseY + step, basename(selected->inputPath),
+                                 maximumWidth, colors.text, 0);
+            }
+            if (information.height >= s(115)) {
+                canvas_->textFit(labelX, baseY + step * 2,
+                    taskStateName(selected->state) + " · " + taskKindName(selected->kind),
+                    maximumWidth, selected->state == TaskState::Failed ? colors.red : colors.muted, 0);
+            }
+            if (information.height >= s(111)) {
+                canvas_->textFit(labelX, baseY + step * 3,
+                                 "来源：" + selected->inputPath, maximumWidth,
+                                 colors.muted, 0);
+            }
+            if (information.height >= s(128)) {
+                canvas_->textFit(labelX, baseY + step * 4,
+                                 "输出：" + selected->outputPath, maximumWidth,
+                                 selected->state == TaskState::Failed ? colors.red : colors.text, 0);
+            }
+        } else if (selected != snapshot.tasks.end()) {
             const int labelX = information.x + s(22);
             const int maxWidth = information.width - s(44);
             canvas_->text(labelX, information.y + s(38),
@@ -1652,6 +2077,41 @@ private:
                 canvas_->textFit(labelX, information.y + s(355), details,
                                  maxWidth, selected->error.empty() ?
                                      colors.text : colors.red, 0);
+            }
+        } else if (compactInformation) {
+            const int labelX = information.x + s(22);
+            const int columnWidth = (information.width - s(58)) / 2;
+            const int secondX = labelX + columnWidth + s(14);
+            const int baseY = information.y + s(34);
+            const int startY = information.y + s(74);
+            const int step = std::clamp(
+                (information.height - s(83)) / 2, s(19), s(30));
+            if (information.height >= s(50))
+                canvas_->textFit(labelX, baseY, "设备与编码摘要",
+                                 information.width - s(44), colors.text, 1);
+            if (information.height >= s(102)) {
+                canvas_->textFit(labelX, startY,
+                    "格式 " + codecName(settings_.codec) + " · " +
+                    outputContainerName(settings_.outputContainer),
+                    columnWidth, colors.text, 0);
+                canvas_->textFit(secondX, startY,
+                    "编码器 " + backendName(settings_.backend), columnWidth, colors.text, 0);
+            }
+            if (information.height >= s(132)) {
+                canvas_->textFit(labelX, startY + step,
+                    "质量 " + std::to_string(settings_.crf) + " · " +
+                    compressionName(settings_.compression), columnWidth, colors.text, 0);
+                canvas_->textFit(secondX, startY + step,
+                    "音频 " + audioModeName(settings_.audioMode), columnWidth, colors.text, 0);
+            }
+            if (information.height >= s(128)) {
+                canvas_->textFit(labelX, startY + step * 2,
+                    "分辨率 " + outputResolutionName(settings_.outputResolution),
+                    columnWidth, colors.text, 0);
+                canvas_->textFit(secondX, startY + step * 2,
+                    settings_.remoteHost.empty() ? "计算设备 本机"
+                        : "计算设备 " + settings_.remoteHost,
+                    columnWidth, colors.text, 0);
             }
         } else {
         canvas_->text(
@@ -1821,6 +2281,25 @@ private:
             return;
         }
         if (!queueFocused_) {
+        if (!snapshot.running &&
+            (contains(layout.trimStart, x, y) || contains(layout.trimEnd, x, y))) {
+            if (!commitTrimText()) return;
+            editingTrim_ = contains(layout.trimStart, x, y) ? 0 : 1;
+            trimEditText_.clear();
+            XSetInputFocus(display_, window_, RevertToParent, CurrentTime);
+            return;
+        }
+        if (!commitTrimText()) return;
+        if (!snapshot.running && contains(layout.trimOpen, x, y)) {
+            openVideoTrimmer();
+            return;
+        }
+        if (!snapshot.running && contains(layout.trimReset, x, y)) {
+            settings_.trimStartSeconds = 0.0;
+            settings_.trimEndSeconds = -1.0;
+            updateSettings();
+            return;
+        }
         if (contains(layout.outputBrowse, x, y)) {
             chooseOutput();
             return;
@@ -1987,9 +2466,13 @@ private:
         }
 
         }
-        const int listTop = layout.queue.y + s(54);
+        const bool compactQueueHeader =
+            layout.queue.width < s(820) && layout.queue.height >= s(170);
+        const int headerHeight = compactQueueHeader ? s(83) : s(54);
+        const int listTop = layout.queue.y + headerHeight;
         const int rowHeight = s(70);
-        const int visibleCount = std::max(0, (layout.queue.height - s(68)) / rowHeight);
+        const int visibleCount = std::max(
+            0, (layout.queue.height - headerHeight - s(14)) / rowHeight);
         if (y >= listTop && y < listTop + visibleCount * rowHeight &&
             x >= layout.queue.x && x < layout.queue.x + layout.queue.width) {
             const int rowIndex = (y - listTop) / rowHeight + scrollOffset_;
@@ -2140,6 +2623,29 @@ private:
             const KeySym key = XLookupKeysym(&event.xkey, 0);
             const bool controlPressed = (event.xkey.state & ControlMask) != 0;
 
+            if (editingTrim_ != -1) {
+                if (key == XK_Return || key == XK_KP_Enter) {
+                    commitTrimText();
+                } else if (key == XK_BackSpace && !trimEditText_.empty()) {
+                    trimEditText_.pop_back();
+                } else if (key == XK_Escape) {
+                    editingTrim_ = -1;
+                    trimEditText_.clear();
+                    trimError_.clear();
+                } else {
+                    char buffer[16]{};
+                    KeySym symbol{};
+                    const int count = XLookupString(&event.xkey, buffer,
+                                                    sizeof(buffer), &symbol, nullptr);
+                    for (int index = 0; index < count && trimEditText_.size() < 20; ++index) {
+                        const char ch = buffer[index];
+                        if ((ch >= '0' && ch <= '9') || ch == ':' || ch == '.')
+                            trimEditText_.push_back(ch);
+                    }
+                }
+                return false;
+            }
+
             if (editingCrf_) {
                 if (key == XK_Return || key == XK_KP_Enter) {
                     commitCrfText();
@@ -2236,6 +2742,9 @@ private:
     bool failedOnly_{false};
     bool editingCrf_{false};
     std::string crfEditText_;
+    int editingTrim_{-1};
+    std::string trimEditText_;
+    std::string trimError_;
     int scrollOffset_{0};
     std::uint64_t selectedTask_{0};
     Atom wmDelete_{};

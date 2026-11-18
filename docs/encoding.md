@@ -36,7 +36,7 @@ H.264 和 H.265 的界面范围为 0–51，VP9、AV1 和 H.266 的界面范围�
 | 很慢 | veryslow | 2 | 1 | p7 | veryslow |
 | 极致压缩 | placebo | 0 | 0 | p7 + fullres multipass | veryslow |
 
-VP9 使用 `-deadline good`、`-row-mt 1` 和 `-cpu-used`，八档从 8 逐步降至 0。H.266 使用 libvvenc 的 `faster`、`fast`、`medium`、`slow`、`slower` 五种可用预设，其中部分相邻档位共享预设。
+VP9 在前七档使用 `-deadline good`，极致压缩档使用 `-deadline best`；同时使用 `-row-mt 1` 和 `-cpu-used`，八档从 8 逐步降至 0。H.266 使用 libvvenc 的 `faster`、`fast`、`medium`、`slow`、`slower` 五种可用预设，其中部分相邻档位共享预设。
 
 AMD AMF 使用其支持的 `speed`、`balanced`、`quality` 预设，并使用 CQP 参数控制画质。AMF 的预设数量由其编码器接口决定，因此多个相邻档位会映射到相同的 AMF 质量预设。
 
@@ -46,10 +46,25 @@ AMD AMF 使用其支持的 `speed`、`balanced`、`quality` 预设，并使用 C
 - x265：`-preset placebo`
 - SVT-AV1：`-preset 0`
 - libaom AV1：`-cpu-used 0`
+- VP9：`-deadline best -cpu-used 0`
 - NVENC：`-preset p7 -tune hq -multipass fullres`
 - Quick Sync：`-preset veryslow -look_ahead 1`
 
-该模式可能显著增加编码时间，适合不需要关注转换速度的归档任务。
+该模式可能显著增加编码时间，适合不需要关注转换速度的归档任务。相同质量参数下，压缩效率还取决于编码格式、源视频内容与编码器实现。音频码率、视频分辨率及 CRF 或 QP 仍按用户选择的值执行；对于硬件编码器，最慢的预设也受到硬件所支持的编码选项限制。
+
+## 裁剪时间和 FFmpeg 参数顺序
+
+主界面支持 `00:01:23.500`、`01:23.500` 和 `83.500` 等时间格式。起始时间为 0 且结束时间留空时，转换完整视频。
+
+例如，要保留从 01:23.500 到 01:30.250 的片段，FFmpeg 命令中的相关参数为：
+
+```text
+ffmpeg ... -ss 00:01:23.500 -i input.mp4 ... -t 00:00:06.750 ... output.mp4
+```
+
+`-ss` 在 `-i` 之前，可以使用媒体文件的索引先跳转到附近的关键帧。重新编码时，FFmpeg 会精确处理从关键帧到目标起点之间的部分，无需从视频开头遍历整个前段。`-t` 位于输出侧，其参数是持续时间，即结束时间减去起始时间。任务进度根据裁剪后的时长计算。
+
+裁剪后的文件仍按照用户所选编码器、质量数值、音频和分辨率设置转换。起止时间写入输出文件名和处理参数指纹，保证不同裁剪片段具有独立的输出位置和重复处理记录。
 
 ## 音频压缩
 

@@ -233,12 +233,28 @@ try {
     else { $env:FFPROBE_PATH = $originalFfprobe }
 }
 
+# Exercise cleanup for a previously created user desktop shortcut.
+$desktopDirectory = [Environment]::GetFolderPath([Environment+SpecialFolder]::DesktopDirectory)
+if (-not (Test-Path -LiteralPath $desktopDirectory)) {
+    New-Item -ItemType Directory -Path $desktopDirectory -Force | Out-Null
+}
+$desktopShortcut = Join-Path $desktopDirectory "视频压缩工作台.lnk"
+# NSIS deletes the shortcut by filename; a placeholder checks that exact path
+# without relying on the Windows Script Host in a service-runner session.
+[System.IO.File]::WriteAllBytes($desktopShortcut, [byte[]]@())
+if (-not (Test-Path -LiteralPath $desktopShortcut)) {
+    throw "Unable to prepare a desktop shortcut path for uninstall testing."
+}
+
 $uninstallProcess = Start-Process -FilePath $uninstaller -ArgumentList @("/S") -Wait -PassThru
 if ($uninstallProcess.ExitCode -ne 0) {
     throw "Silent uninstallation failed with exit code $($uninstallProcess.ExitCode)"
 }
 if (Test-Path -LiteralPath $installedApp -PathType Leaf) {
     throw "Uninstallation left the application executable behind."
+}
+if (Test-Path -LiteralPath $desktopShortcut) {
+    throw "Uninstallation left the desktop shortcut behind."
 }
 if (Test-Path -LiteralPath $registryPath) {
     throw "Uninstallation left the application registry entry behind."

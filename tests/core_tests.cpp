@@ -64,6 +64,22 @@ int main() {
         capabilities.av1Amf = true;
 
         require(compressionLevelCount() == 8, "The interface must expose eight compression levels.");
+        require(parseTrimTime("00:01:23.500") == std::optional<double>{83.5},
+                "Trim times must support HH:MM:SS.mmm.");
+        require(parseTrimTime("11:03.250") == std::optional<double>{663.25},
+                "Trim times must support MM:SS.mmm.");
+        require(parseTrimTime("27.125") == std::optional<double>{27.125},
+                "Trim times must support seconds and milliseconds.");
+        require(!parseTrimTime("1:70:00") && !parseTrimTime("-1") &&
+                !parseTrimTime("1:2:3:4") && !parseTrimTime("0:1e3") &&
+                !parseTrimTime("1.2.3") && !parseTrimTime(""),
+                "Malformed trim times must be rejected.");
+        require(formatTrimTime(83.567) == "00:01:23.567",
+                "Trim formatter must retain millisecond precision.");
+        require(validTrimRange(2.0, 4.0) && validTrimRange(0.0, -1.0) &&
+                !validTrimRange(4.0, 2.0) && !validTrimRange(1.0, 1.0) &&
+                !validTrimRange(-1.0, 2.0),
+                "Trim ranges must be validated before encoding.");
         const auto sortedCodecs = availableVideoCodecs(capabilities);
         require(sortedCodecs == std::vector<VideoCodec>{
                 VideoCodec::H264, VideoCodec::H265, VideoCodec::VP9,
@@ -103,6 +119,36 @@ int main() {
         require(
             !containsPair(command, "-threads:v", "0"),
             "An unset thread limit must not add an invalid thread option.");
+        settings.trimStartSeconds = 63.250;
+        settings.trimEndSeconds = 68.875;
+        command = buildFfmpegCommand(settings, capabilities, "ffmpeg", "temporary.mp4");
+        const auto findArgument = [](const std::vector<std::string>& arguments,
+                                     std::string_view option) {
+            const auto position = std::find(arguments.begin(), arguments.end(), option);
+            return position == arguments.end()
+                ? arguments.size() : static_cast<std::size_t>(position - arguments.begin());
+        };
+        require(containsPair(command, "-ss", "00:01:03.250") &&
+                containsPair(command, "-t", "00:00:05.625"),
+                "Trim duration must be calculated relative to the source start.");
+        require(findArgument(command, "-ss") < findArgument(command, "-i") &&
+                findArgument(command, "-i") < findArgument(command, "-t"),
+                "FFmpeg must seek before opening the input and limit duration on output.");
+        settings.trimStartSeconds = 0.0;
+        settings.trimEndSeconds = -1.0;
+        command = buildFfmpegCommand(settings, capabilities, "ffmpeg", "temporary.mp4");
+        require(findArgument(command, "-ss") == command.size() &&
+                findArgument(command, "-t") == command.size(),
+                "Untrimmed jobs must retain their previous FFmpeg invocation.");
+        settings.trimStartSeconds = 10.0;
+        settings.trimEndSeconds = 9.0;
+        bool rejectedTrim = false;
+        try { (void)buildFfmpegCommand(settings, capabilities, "ffmpeg", "temporary.mp4"); }
+        catch (const std::invalid_argument&) { rejectedTrim = true; }
+        require(rejectedTrim, "End times earlier than start times must fail before FFmpeg runs.");
+        settings.trimStartSeconds = 0.0;
+        settings.trimEndSeconds = -1.0;
+
         settings.codec = VideoCodec::AV1;
         command = buildFfmpegCommand(settings, capabilities, "ffmpeg", "temporary.webm");
         require(containsPair(command, "-c:a", "libopus"), "WebM output must use Opus audio.");
@@ -142,6 +188,12 @@ int main() {
                 "VP9 must use constant-quality libvpx encoding.");
         require(containsPair(command, "-c:a", "libopus"),
                 "WebM output must use a compatible audio codec.");
+        settings.compression = CompressionLevel::Extreme;
+        command = buildFfmpegCommand(settings, capabilities, "ffmpeg", "output.webm");
+        require(containsPair(command, "-deadline", "best") &&
+                containsPair(command, "-cpu-used", "0"),
+                "Extreme VP9 compression must select the best available coding effort.");
+        settings.compression = CompressionLevel::Balanced;
         settings.codec = VideoCodec::H266;
         settings.crf = 32;
         settings.outputContainer = OutputContainer::MKV;
@@ -354,6 +406,16 @@ int main() {
         require(
             mutedAudioMarker == settingsFingerprint(mutedAudioFingerprint),
             "Unused audio bitrate values must not invalidate muted output.");
+        changedFingerprint = fingerprintSettings;
+        changedFingerprint.trimStartSeconds = 1.125;
+        changedFingerprint.trimEndSeconds = 2.625;
+        require(fingerprint != settingsFingerprint(changedFingerprint) &&
+                outputSuffix(changedFingerprint).find("_T1125-2625") != std::string::npos,
+                "Changing the trim interval must update output names and processing markers.");
+        changedFingerprint.trimEndSeconds = 3.625;
+        require(settingsFingerprint(changedFingerprint) !=
+                settingsFingerprint(fingerprintSettings),
+                "Trim end times must participate in the processing marker.");
         changedFingerprint = fingerprintSettings;
         changedFingerprint.outputResolution = OutputResolution::HD720;
         require(
@@ -587,6 +649,8 @@ int main() {
                 auto settings = firstRun.snapshot().settings;
                 settings.audioMode = AudioMode::Copy;
                 settings.outputResolution = OutputResolution::HD720;
+                settings.trimStartSeconds = 0.125;
+                settings.trimEndSeconds = 1.500;
                 firstRun.updateSettings(settings);
                 firstRun.addInputs({pathToUtf8(inputFile)});
                 require(firstRun.snapshot().totalTasks == 1,
@@ -598,8 +662,10 @@ int main() {
                 require(restored.totalTasks == 1,
                         "The pending task queue must be restored after restarting the application.");
                 require(restored.settings.audioMode == AudioMode::Copy &&
-                        restored.settings.outputResolution == OutputResolution::HD720,
-                        "Audio handling and output resolution settings must persist across restarts.");
+                        restored.settings.outputResolution == OutputResolution::HD720 &&
+                        restored.settings.trimStartSeconds == 0.125 &&
+                        restored.settings.trimEndSeconds == 1.5,
+                        "Audio, resolution and trim settings must persist across restarts.");
                 restoredRun.clearAll();
                 require(restoredRun.snapshot().totalTasks == 0,
                         "Clearing the task list must update the persisted queue.");

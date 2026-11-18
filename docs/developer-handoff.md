@@ -5,7 +5,7 @@
 ## 当前项目状态
 
 - 项目名称：视频压缩工作台。
-- 当前开发版本：1.2.6。
+- 当前开发版本：1.2.7。
 - 主要分支：`main`。
 - 目标平台：Windows x64、Linux x86_64。
 - 主要语言：C++20。
@@ -82,6 +82,14 @@ ctest --preset windows-release
 ```
 
 vcpkg 依赖由 `vcpkg.json` 声明。Windows NSIS 安装程序和便携 ZIP 已包含固定版本的 FFmpeg 和 ffprobe，源码直接运行时可以使用系统 FFmpeg。打包规范、第三方许可证及测试方式记录在 [Windows 安装与第三方组件](windows-distribution.md)。
+
+## 裁剪功能开发要求
+
+- 共享核心定义 `BatchSettings::trimStartSeconds`、`BatchSettings::trimEndSeconds` 与对应的 `ConversionSettings` 字段。结束时间为 `-1` 表示保留到片尾。直接在主界面修改时间和在可视化裁剪器选择时间，最后都由 `AppController::updateSettings` 保存。
+- 预览入口位于 `windows_ui.cpp` 的 `VideoTrimmerDialog` 和 `linux_ui.cpp` 的 `LinuxWindow::openVideoTrimmer`。通过 `FfmpegService::previewFrame` 读取预览帧；添加新交互时须维护两个平台。
+- `-ss` 必须出现在 `-i` 之前，结束时间转换为输出侧 `-t` 的持续时间。检查长视频后部裁剪时的读取性能，确保新参数不使 FFmpeg 从视频起点重新处理整个前段。
+- 任意裁剪参数变化都必须改变输出文件名和处理参数指纹。媒体转换、ZIP/PPTX、SSH 与任务队列的参数传递都需要保持一致。
+- 运行 `tests/core_tests.cpp` 中的时间解析、裁剪范围校验和参数顺序测试；运行 `--self-test` 检查真实裁剪片段、预览帧与归档内视频。Windows 安装包测试还需检查卸载后的桌面快捷方式。
 
 ## 运行与调试
 
