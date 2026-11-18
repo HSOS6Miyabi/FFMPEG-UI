@@ -1761,9 +1761,11 @@ private:
                     static_cast<double>(layout.compressionTrack.width) * compressionIndex / 7.0));
             canvas_->rounded({compressionX - s(8), layout.compressionTrack.y - s(6),
                               s(16), s(19)}, colors.accent, 8);
-            canvas_->text(firstColumn, top + s(compactAdvanced ? 281 : 289), "极速", colors.muted, 0);
-            canvas_->text(firstColumn + firstWidth - s(70), top + s(compactAdvanced ? 281 : 289),
-                          "极致压缩", colors.muted, 0);
+            if (!compactAdvanced) {
+                canvas_->text(firstColumn, top + s(289), "极速", colors.muted, 0);
+                canvas_->text(firstColumn + firstWidth - s(70), top + s(289),
+                              "极致压缩", colors.muted, 0);
+            }
 
             canvas_->text(secondColumn, top + s(compactAdvanced ? 220 : 235), "音频处理", colors.muted, 0);
             const std::array<std::string, 3> audioModes{
@@ -1803,15 +1805,19 @@ private:
                             settings_.overwrite ? "覆盖文件✓" : "保留文件",
                             colors, settings_.overwrite);
         }
-        canvas_->text(layout.trimStart.x, layout.trimStart.y - s(4),
-                      "裁剪起始时间", colors.muted, 0);
-        canvas_->text(layout.trimEnd.x, layout.trimEnd.y - s(4),
-                      "裁剪结束时间", colors.muted, 0);
-        const std::string startLabel = editingTrim_ == 0
-            ? trimEditText_ + "|" : formatTrimTime(settings_.trimStartSeconds);
-        const std::string endLabel = editingTrim_ == 1
-            ? trimEditText_ + "|" : settings_.trimEndSeconds < 0.0
-                ? "直到片尾" : formatTrimTime(settings_.trimEndSeconds);
+        if (!compactAdvanced) {
+            canvas_->text(layout.trimStart.x, layout.trimStart.y - s(4),
+                          "裁剪起始时间", colors.muted, 0);
+            canvas_->text(layout.trimEnd.x, layout.trimEnd.y - s(4),
+                          "裁剪结束时间", colors.muted, 0);
+        }
+        const std::string startLabel = (compactAdvanced ? "起点 " : "") +
+            (editingTrim_ == 0 ? trimEditText_ + "|"
+                               : formatTrimTime(settings_.trimStartSeconds));
+        const std::string endLabel = (compactAdvanced ? "终点 " : "") +
+            (editingTrim_ == 1 ? trimEditText_ + "|"
+                               : settings_.trimEndSeconds < 0.0
+                                   ? "直到片尾" : formatTrimTime(settings_.trimEndSeconds));
         canvas_->button(layout.trimStart, startLabel, colors,
                         editingTrim_ == 0, snapshot.running);
         canvas_->button(layout.trimEnd, endLabel, colors,
