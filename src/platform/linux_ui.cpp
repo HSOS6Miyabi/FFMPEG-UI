@@ -357,10 +357,12 @@ public:
         }
 
         const int measuredWidth = textWidth(label, 0);
-        const int availableWidth = std::max(0, rectangle.width - 16);
-        const int textX = rectangle.x + std::max(8, (rectangle.width - measuredWidth) / 2);
+        const int padding = rectangle.width < 80 ? 4 : 8;
+        const int availableWidth = std::max(0, rectangle.width - padding * 2);
+        const int textX = rectangle.x + std::max(
+            padding, (rectangle.width - measuredWidth) / 2);
         const int textY = rectangle.y + rectangle.height / 2 + 5;
-        textFit(measuredWidth <= availableWidth ? textX : rectangle.x + 8,
+        textFit(measuredWidth <= availableWidth ? textX : rectangle.x + padding,
                 textY, label, availableWidth,
                 active && !disabled ? colors.white : colors.text, 0);
     }
@@ -1702,9 +1704,15 @@ private:
         const std::array<std::string, 5> compactCodecNames{
             "H264", "H265", "VP9", "AV1", "H266"
         };
+        const std::array<std::string, 5> narrowCodecNames{
+            "264", "265", "VP9", "AV1", "266"
+        };
         for (std::size_t index = 0; index < codecChoices.size(); ++index) {
-            const std::string label = layout.codec[index].width < s(70)
-                ? compactCodecNames[index] : codecName(codecChoices[index]);
+            const int buttonWidth = layout.codec[index].width;
+            const std::string label = buttonWidth >= s(70)
+                ? codecName(codecChoices[index])
+                : canvas_->textWidth(compactCodecNames[index], 0) + s(8) <= buttonWidth
+                    ? compactCodecNames[index] : narrowCodecNames[index];
             canvas_->button(layout.codec[index], label, colors,
                             settings_.codec == codecChoices[index],
                             std::find(supported.begin(), supported.end(),
