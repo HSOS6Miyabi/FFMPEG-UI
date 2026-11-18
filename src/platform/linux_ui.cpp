@@ -90,6 +90,7 @@ Layout makeLayout(int width, int height, double scale, int backendCount = 4,
     l.removeSelected={secondaryStart+(secondaryBase+toolbarGap)*2,top,secondaryBase,s(42)};
     l.clearDone={secondaryStart+(secondaryBase+toolbarGap)*3,top,secondaryWidth-(secondaryBase+toolbarGap)*3,s(42)};
     const int sy=top+s(56);
+    const bool compactAdvanced = expanded && height < s(940);
 
     const int controlX = leftX + s(132), controlW = leftW - s(154);
     l.advancedToggle = {leftX + leftW - s(146), sy + s(9), s(126), s(28)};
@@ -116,38 +117,38 @@ Layout makeLayout(int width, int height, double scale, int backendCount = 4,
     l.crfTrack = {secondX + s(11), sy + s(192), columnWidth - s(111), s(7)};
     l.crfValue = {secondX + columnWidth - s(84), sy + s(179), s(84), s(30)};
 
-    l.compressionTrack = {gridX + s(10), sy + s(253), columnWidth - s(20), s(7)};
-    l.compressionValue = {gridX + columnWidth - s(92), sy + s(219), s(92), s(24)};
+    l.compressionTrack = {gridX + s(10), sy + s(compactAdvanced ? 245 : 253), columnWidth - s(20), s(7)};
+    l.compressionValue = {gridX + columnWidth - s(92), sy + s(compactAdvanced ? 211 : 219), s(92), s(24)};
     const int audioModeWidth = (columnWidth - buttonGap * 2) / 3;
     for (int index = 0; index < 3; ++index)
         l.audioMode[index] = {secondX + index * (audioModeWidth + buttonGap),
-                              sy + s(247), audioModeWidth, s(30)};
+                              sy + s(compactAdvanced ? 232 : 247), audioModeWidth, s(30)};
 
     const int audioWidth = (columnWidth - buttonGap * 5) / 6;
     for (int index = 0; index < 6; ++index) {
         l.audio[index] = {gridX + index * (audioWidth + buttonGap),
-                          sy + s(325), audioWidth, s(30)};
+                          sy + s(compactAdvanced ? 298 : 325), audioWidth, s(30)};
         l.resolution[index] = {secondX + index * (audioWidth + buttonGap),
-                               sy + s(325), audioWidth, s(30)};
+                               sy + s(compactAdvanced ? 298 : 325), audioWidth, s(30)};
     }
 
     const int optionGap = s(5);
     const int optionWidth = (leftW - s(40) - optionGap * 4) / 5;
-    const int optionY = sy + s(369);
+    const int optionY = sy + s(compactAdvanced ? 331 : 369);
     l.parallel = {leftX + s(20), optionY, optionWidth, s(28)};
     l.recursive = {leftX + s(20) + optionWidth + optionGap, optionY, optionWidth, s(28)};
     l.skip = {leftX + s(20) + (optionWidth + optionGap) * 2, optionY, optionWidth, s(28)};
     l.preserve = {leftX + s(20) + (optionWidth + optionGap) * 3, optionY, optionWidth, s(28)};
     l.overwrite = {leftX + s(20) + (optionWidth + optionGap) * 4, optionY, optionWidth, s(28)};
 
-    const int trimY = sy + s(expanded ? 424 : 232);
+    const int trimY = sy + s(expanded ? (compactAdvanced ? 366 : 424) : 232);
     const int trimGap = s(7), openW = s(111), resetW = s(76);
     const int trimW = (gridWidth - trimGap * 3 - openW - resetW) / 2;
     l.trimStart = {gridX, trimY, trimW, s(31)};
     l.trimEnd = {gridX + trimW + trimGap, trimY, trimW, s(31)};
     l.trimOpen = {gridX + (trimW + trimGap) * 2, trimY, openW, s(31)};
     l.trimReset = {gridX + gridWidth - resetW, trimY, resetW, s(31)};
-    const int queueY = sy + s(expanded ? 486 : 294);
+    const int queueY = sy + s(expanded ? (compactAdvanced ? 428 : 486) : 294);
     const int actualQueueY = queueFocused ? sy : queueY;
     l.queue = {leftX, actualQueueY, leftW, std::max(0, height - actualQueueY - pad)};
     l.failedOnly = {leftX + s(142), actualQueueY + s(10), s(102), s(28)};
@@ -1660,8 +1661,9 @@ private:
 
         if (!queueFocused_) {
         const int left = layout.queue.x, top = s(168);
+        const bool compactAdvanced = advancedExpanded_ && height_ < s(940);
         canvas_->card({left, top, layout.queue.width,
-                       s(advancedExpanded_ ? 474 : 282)}, colors);
+                       s(advancedExpanded_ ? (compactAdvanced ? 416 : 474) : 282)}, colors);
         canvas_->text(left + s(20), top + s(30), "编码设置", colors.text, 1);
         canvas_->button(layout.advancedToggle,
                         advancedExpanded_ ? "收起高级设置" : "展开高级设置", colors);
@@ -1740,7 +1742,7 @@ private:
         if (advancedExpanded_) {
             const int compressionIndex = std::clamp(
                 static_cast<int>(settings_.compression), 0, 7);
-            canvas_->text(firstColumn, top + s(235), "压缩级别", colors.muted, 0);
+            canvas_->text(firstColumn, top + s(compactAdvanced ? 227 : 235), "压缩级别", colors.muted, 0);
             canvas_->rounded(layout.compressionValue, colors.accentSoft, 7);
             canvas_->text(layout.compressionValue.x + s(10),
                           layout.compressionValue.y + s(17),
@@ -1759,11 +1761,11 @@ private:
                     static_cast<double>(layout.compressionTrack.width) * compressionIndex / 7.0));
             canvas_->rounded({compressionX - s(8), layout.compressionTrack.y - s(6),
                               s(16), s(19)}, colors.accent, 8);
-            canvas_->text(firstColumn, top + s(289), "极速", colors.muted, 0);
-            canvas_->text(firstColumn + firstWidth - s(70), top + s(289),
+            canvas_->text(firstColumn, top + s(compactAdvanced ? 281 : 289), "极速", colors.muted, 0);
+            canvas_->text(firstColumn + firstWidth - s(70), top + s(compactAdvanced ? 281 : 289),
                           "极致压缩", colors.muted, 0);
 
-            canvas_->text(secondColumn, top + s(235), "音频处理", colors.muted, 0);
+            canvas_->text(secondColumn, top + s(compactAdvanced ? 220 : 235), "音频处理", colors.muted, 0);
             const std::array<std::string, 3> audioModes{
                 "自动编码", "保留原音频", "移除音频"
             };
@@ -1771,8 +1773,8 @@ private:
                 canvas_->button(layout.audioMode[index], audioModes[index], colors,
                                 static_cast<int>(settings_.audioMode) == index);
 
-            canvas_->text(firstColumn, top + s(312), "音频码率 (kbps)", colors.muted, 0);
-            canvas_->text(secondColumn, top + s(312), "输出分辨率", colors.muted, 0);
+            canvas_->text(firstColumn, top + s(compactAdvanced ? 285 : 312), "音频码率 (kbps)", colors.muted, 0);
+            canvas_->text(secondColumn, top + s(compactAdvanced ? 285 : 312), "输出分辨率", colors.muted, 0);
             const std::array<int, 6> audioRates{96, 128, 160, 192, 256, 320};
             const std::array<std::string, 6> resolutionLabels{
                 "原始", "2160p", "1440p", "1080p", "720p", "480p"
