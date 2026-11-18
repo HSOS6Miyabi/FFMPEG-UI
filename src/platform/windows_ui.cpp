@@ -1473,7 +1473,7 @@ private:
 
         const int firstColumn = l.container[0].x;
         const int secondColumn = l.codec[0].x;
-        const int firstWidth = (l.container[1].x + l.container[1].width) - firstColumn;
+        const int firstWidth = (l.container[3].x + l.container[3].width) - firstColumn;
         const int secondWidth = (l.codec[4].x + l.codec[4].width) - secondColumn;
         drawText(dc, {firstColumn, top + s(88), firstWidth, s(19)},
                  L"输出容器", c.muted, smallFont);
