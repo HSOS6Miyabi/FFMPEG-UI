@@ -98,6 +98,7 @@ Layout makeLayout(int width, int height, double scale, int backendCount = 4,
     const int leftW = width - pad * 2 - gap - rightW;
     const int leftX = pad, rightX = leftX + leftW + gap, top = s(94);
     const int settingsY = top + s(50);
+    const bool compactAdvanced = expanded && height < s(940);
     Layout l{};
     const int toolbarGap = s(5);
     const int primaryWidth = std::min(s(450), (leftW - s(12)) * 54 / 100);
@@ -145,40 +146,40 @@ Layout makeLayout(int width, int height, double scale, int backendCount = 4,
     l.crfTrack = {secondX + s(11), settingsY + s(192), columnWidth - s(111), s(7)};
     l.crfValue = {secondX + columnWidth - s(84), settingsY + s(179), s(84), s(30)};
 
-    l.compressionTrack = {gridX + s(10), settingsY + s(253),
+    l.compressionTrack = {gridX + s(10), settingsY + s(compactAdvanced ? 245 : 253),
                           columnWidth - s(20), s(7)};
-    l.compressionValue = {gridX + columnWidth - s(92), settingsY + s(219),
+    l.compressionValue = {gridX + columnWidth - s(92), settingsY + s(compactAdvanced ? 211 : 219),
                           s(92), s(24)};
     const int audioModeWidth = (columnWidth - buttonGap * 2) / 3;
     for (int index = 0; index < 3; ++index)
         l.audioMode[index] = {secondX + index * (audioModeWidth + buttonGap),
-                              settingsY + s(247), audioModeWidth, s(30)};
+                              settingsY + s(compactAdvanced ? 232 : 247), audioModeWidth, s(30)};
 
     const int audioWidth = (columnWidth - buttonGap * 5) / 6;
     for (int index = 0; index < 6; ++index) {
         l.audio[index] = {gridX + index * (audioWidth + buttonGap),
-                          settingsY + s(325), audioWidth, s(30)};
+                          settingsY + s(compactAdvanced ? 298 : 325), audioWidth, s(30)};
         l.resolution[index] = {secondX + index * (audioWidth + buttonGap),
-                               settingsY + s(325), audioWidth, s(30)};
+                               settingsY + s(compactAdvanced ? 298 : 325), audioWidth, s(30)};
     }
 
     const int optionGap = s(5);
     const int optionWidth = (leftW - s(40) - optionGap * 4) / 5;
-    const int optionY = settingsY + s(369);
+    const int optionY = settingsY + s(compactAdvanced ? 331 : 369);
     l.parallel = {leftX + s(20), optionY, optionWidth, s(28)};
     l.recursive = {leftX + s(20) + optionWidth + optionGap, optionY, optionWidth, s(28)};
     l.skip = {leftX + s(20) + (optionWidth + optionGap) * 2, optionY, optionWidth, s(28)};
     l.preserve = {leftX + s(20) + (optionWidth + optionGap) * 3, optionY, optionWidth, s(28)};
     l.overwrite = {leftX + s(20) + (optionWidth + optionGap) * 4, optionY, optionWidth, s(28)};
 
-    const int trimY = settingsY + s(expanded ? 424 : 232);
+    const int trimY = settingsY + s(expanded ? (compactAdvanced ? 366 : 424) : 232);
     const int trimGap = s(7), openW = s(111), resetW = s(76);
     const int trimW = (gridWidth - trimGap * 3 - openW - resetW) / 2;
     l.trimStart = {gridX, trimY, trimW, s(31)};
     l.trimEnd = {gridX + trimW + trimGap, trimY, trimW, s(31)};
     l.trimOpen = {gridX + (trimW + trimGap) * 2, trimY, openW, s(31)};
     l.trimReset = {gridX + gridWidth - resetW, trimY, resetW, s(31)};
-    const int queueY = settingsY + s(expanded ? 486 : 294);
+    const int queueY = settingsY + s(expanded ? (compactAdvanced ? 428 : 486) : 294);
     const int actualQueueY = queueFocused ? settingsY : queueY;
     l.queue = {leftX, actualQueueY, leftW, std::max(0, height - actualQueueY - pad)};
     l.failedOnly = {leftX + s(142), actualQueueY + s(9), s(102), s(26)};
@@ -1453,7 +1454,9 @@ private:
 
         if (!queueFocused_) {
         const int leftX = l.queue.x, top = s(144), leftW = l.queue.width;
-        drawCard(dc, {leftX, top, leftW, s(advancedExpanded_ ? 474 : 282)}, c);
+        const bool compactAdvanced = advancedExpanded_ && height < s(940);
+        drawCard(dc, {leftX, top, leftW,
+                      s(advancedExpanded_ ? (compactAdvanced ? 416 : 474) : 282)}, c);
         drawText(dc, {leftX + s(18), top + s(10), s(170), s(26)},
                  L"编码设置", c.text, heading);
         drawButton(dc, l.advancedToggle,
@@ -1536,7 +1539,7 @@ private:
         if (advancedExpanded_) {
             const int compressionIndex = std::clamp(
                 static_cast<int>(settings_.compression), 0, 7);
-            drawText(dc, {firstColumn, top + s(220), firstWidth - s(102), s(19)},
+            drawText(dc, {firstColumn, top + s(compactAdvanced ? 212 : 220), firstWidth - s(102), s(19)},
                      L"压缩级别", c.muted, smallFont);
             fillRound(dc, l.compressionValue, c.accentSoft, c.accentSoft, 7);
             drawText(dc, l.compressionValue, wide(compressionName(settings_.compression)),
@@ -1559,13 +1562,13 @@ private:
                     static_cast<double>(l.compressionTrack.width) * compressionIndex / 7.0));
             fillRound(dc, {compressionX - s(8), l.compressionTrack.y - s(6),
                            s(16), s(19)}, c.accent, c.accent, 8);
-            drawText(dc, {firstColumn, top + s(273), s(100), s(19)},
+            drawText(dc, {firstColumn, top + s(compactAdvanced ? 265 : 273), s(100), s(19)},
                      L"极速", c.muted, smallFont);
-            drawText(dc, {firstColumn + firstWidth - s(100), top + s(273),
+            drawText(dc, {firstColumn + firstWidth - s(100), top + s(compactAdvanced ? 265 : 273),
                           s(100), s(19)}, L"极致压缩", c.muted, smallFont,
                      DT_RIGHT | DT_SINGLELINE | DT_VCENTER);
 
-            drawText(dc, {secondColumn, top + s(220), secondWidth, s(19)},
+            drawText(dc, {secondColumn, top + s(compactAdvanced ? 205 : 220), secondWidth, s(19)},
                      L"音频处理", c.muted, smallFont);
             const std::array<std::wstring, 3> audioModes{
                 L"自动编码", L"保留原音频", L"移除音频"
@@ -1574,9 +1577,9 @@ private:
                 drawButton(dc, l.audioMode[index], audioModes[index], c, smallFont,
                            static_cast<int>(settings_.audioMode) == index);
 
-            drawText(dc, {firstColumn, top + s(298), firstWidth, s(19)},
+            drawText(dc, {firstColumn, top + s(compactAdvanced ? 271 : 298), firstWidth, s(19)},
                      L"音频码率 (kbps)", c.muted, smallFont);
-            drawText(dc, {secondColumn, top + s(298), secondWidth, s(19)},
+            drawText(dc, {secondColumn, top + s(compactAdvanced ? 271 : 298), secondWidth, s(19)},
                      L"输出分辨率", c.muted, smallFont);
             const std::array<int, 6> rates{96, 128, 160, 192, 256, 320};
             const std::array<std::wstring, 6> resolutions{
