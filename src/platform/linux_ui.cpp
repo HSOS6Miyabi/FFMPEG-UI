@@ -622,7 +622,8 @@ std::string percentDecode(const std::string& value) {
 
 class LinuxWindow {
 public:
-    explicit LinuxWindow(AppController& controller):controller_(controller){}
+    explicit LinuxWindow(AppController& controller) : controller_(controller),
+        settings_(controller.snapshot().settings) {}
     int run() {
         display_ = XOpenDisplay(nullptr);
         if (display_ == nullptr) {
