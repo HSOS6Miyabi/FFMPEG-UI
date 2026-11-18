@@ -101,6 +101,7 @@ jobs:
         run: |
           mkdir -p artifacts/ui
           xvfb-run -a -s "-screen 0 1600x1100x24" bash -c '
+            set -ex
             export FFMPEG_STUDIO_CONFIG_DIR="$RUNNER_TEMP/workbench-ui-config"
             mkdir -p "$FFMPEG_STUDIO_CONFIG_DIR" "$RUNNER_TEMP/ui-example"
             ui_file="$RUNNER_TEMP/ui-example/长文件名-羊只饲养记录-2026-11-18-4K摄像机原始素材-视频压缩任务.mp4"
@@ -153,7 +154,7 @@ jobs:
             xdotool mousemove --window "$window" 910 608 click 1
             dialog=""
             for attempt in $(seq 1 20); do
-              dialog=$(xdotool search --name "可视化视频裁剪" 2>/dev/null | head -n 1 || true)
+              dialog=$(xdotool search --class "VideoCompressionWorkbenchTrimmer" 2>/dev/null | head -n 1 || true)
               if [ -n "$dialog" ]; then break; fi
               sleep 1
             done
