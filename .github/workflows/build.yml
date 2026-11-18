@@ -89,11 +89,13 @@ jobs:
       - name: Run FFmpeg conversion, ZIP, PPTX and SSH integration tests
         run: ./build/linux-release/video-compression-workbench --self-test
 
-      - name: Capture Linux desktop interface
+      - name: Capture Linux desktop interface and test compression slider
         shell: bash
         run: |
           mkdir -p artifacts/ui
           xvfb-run -a -s "-screen 0 1600x1100x24" bash -c '
+            export FFMPEG_STUDIO_CONFIG_DIR="$RUNNER_TEMP/workbench-ui-config"
+            mkdir -p "$FFMPEG_STUDIO_CONFIG_DIR"
             ./build/linux-release/video-compression-workbench > /tmp/video-compression-workbench-ui.log 2>&1 &
             app_pid=$!
             trap "kill $app_pid 2>/dev/null || true" EXIT
@@ -104,25 +106,38 @@ jobs:
               sleep 1
             done
             if [ -z "$window" ]; then
-              echo "Cannot locate the video compression workbench X11 window" >&2
-              ps -p "$app_pid" -o pid,stat,cmd || true
-              xdotool search --name . 2>/dev/null || true
               cat /tmp/video-compression-workbench-ui.log
               exit 1
             fi
             sleep 2
-            xdotool mousemove --window "$window" 650 572 click 1
-            sleep 1
-            xdotool mousemove --window "$window" 580 610 click 1
-            sleep 1
             import -window "$window" artifacts/ui/video-compression-workbench-linux.png
+
+            # Expand the two-column settings panel and exercise the discrete eight-step slider.
+            xdotool mousemove --window "$window" 920 190 click 1
+            sleep 1
+            xdotool mousemove --window "$window" 434 352 click 1
+            sleep 1
+            grep -qx "compression=6" "$FFMPEG_STUDIO_CONFIG_DIR/settings.ini"
+            xdotool key --window "$window" Left
+            sleep 1
+            grep -qx "compression=5" "$FFMPEG_STUDIO_CONFIG_DIR/settings.ini"
+
+            # Verify that settings in the second column and the lower row are interactive.
+            xdotool mousemove --window "$window" 755 355 click 1
+            xdotool mousemove --window "$window" 792 418 click 1
+            sleep 1
+            grep -qx "audioMode=1" "$FFMPEG_STUDIO_CONFIG_DIR/settings.ini"
+            grep -qx "outputResolution=3" "$FFMPEG_STUDIO_CONFIG_DIR/settings.ini"
+            import -window "$window" artifacts/ui/video-compression-workbench-linux-expanded.png
           '
 
       - name: Upload Linux interface screenshot
         uses: actions/upload-artifact@v4
         with:
           name: video-compression-workbench-ui-linux
-          path: artifacts/ui/video-compression-workbench-linux.png
+          path: |
+            artifacts/ui/video-compression-workbench-linux.png
+            artifacts/ui/video-compression-workbench-linux-expanded.png
           if-no-files-found: error
 
       - name: Package Linux application
