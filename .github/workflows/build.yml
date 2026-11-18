@@ -149,6 +149,19 @@ jobs:
             sleep 1
             kill -0 "$app_pid"
             import -window "$window" artifacts/ui/video-compression-workbench-linux-restored.png
+
+            # Check that a laptop-sized window keeps settings usable and
+            # that the queue-focused view exposes task details.
+            xdotool windowsize --sync "$window" 1280 720
+            sleep 1
+            import -window "$window" artifacts/ui/video-compression-workbench-linux-compact-settings.png
+            xdotool key --window "$window" ctrl+q
+            sleep 1
+            xdotool mousemove --window "$window" 150 255 click 1
+            sleep 1
+            import -window "$window" artifacts/ui/video-compression-workbench-linux-compact-queue.png
+            dimensions=$(identify -format "%wx%h" artifacts/ui/video-compression-workbench-linux-compact-queue.png)
+            test "$dimensions" = "1280x720"
           '
 
       - name: Upload Linux interface screenshot
@@ -162,6 +175,8 @@ jobs:
             artifacts/ui/video-compression-workbench-linux-task-details.png
             artifacts/ui/video-compression-workbench-linux-failed-filter.png
             artifacts/ui/video-compression-workbench-linux-restored.png
+            artifacts/ui/video-compression-workbench-linux-compact-settings.png
+            artifacts/ui/video-compression-workbench-linux-compact-queue.png
           if-no-files-found: error
 
       - name: Package Linux application
