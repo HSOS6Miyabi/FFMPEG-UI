@@ -4,7 +4,7 @@
 
 Windows 发布时同时生成以下文件：
 
-- `video-compression-workbench-1.2.6-windows-x64-setup.exe`：NSIS 安装程序。
+- `video-compression-workbench-1.2.7-windows-x64-setup.exe`：NSIS 安装程序。
 - `video-compression-workbench-windows-x86_64.zip`：可直接解压运行的版本。
 
 安装程序默认安装到当前用户的 `%LOCALAPPDATA%\Programs\VideoCompressionWorkbench`，无需管理员权限。安装时会创建开始菜单快捷方式，并可选择创建桌面快捷方式。可以通过 Windows“已安装的应用”或者开始菜单卸载程序。
