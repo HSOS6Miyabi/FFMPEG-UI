@@ -899,7 +899,7 @@ void AppController::runTask(std::size_t index, const ResourcePlan& plan, std::si
         } else if (!result.success) {
             current.state = TaskState::Failed;
             current.error = result.message;
-            current.detail = "转换失败";
+            current.detail = result.message;
             if (!current.items.empty()) {
                 current.items[0].state = TaskState::Failed;
                 current.items[0].detail = result.message;
@@ -954,7 +954,7 @@ void AppController::runTask(std::size_t index, const ResourcePlan& plan, std::si
     } else if (!result.success) {
         current.state = TaskState::Failed;
         current.error = result.message;
-        current.detail = "压缩包处理失败";
+        current.detail = result.message;
     } else {
         current.state = result.skipped ? TaskState::Skipped : TaskState::Completed;
         current.progress = 1.0;

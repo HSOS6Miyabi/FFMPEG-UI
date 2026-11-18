@@ -88,8 +88,8 @@ Layout makeLayout(int width, int height, double scale, int backendCount = 4,
 
     const int controlX = leftX + s(132), controlW = leftW - s(154);
     l.advancedToggle = {leftX + leftW - s(146), sy + s(9), s(126), s(28)};
-    l.outputField = {controlX, sy + s(38), controlW - s(100), s(28)};
-    l.outputBrowse = {controlX + controlW - s(92), sy + s(38), s(92), s(28)};
+    l.outputField = {controlX, sy + s(47), controlW - s(100), s(28)};
+    l.outputBrowse = {controlX + controlW - s(92), sy + s(47), s(92), s(28)};
 
     const int gridX = leftX + s(18), gridWidth = leftW - s(36);
     const int columnGap = s(18), columnWidth = (gridWidth - columnGap) / 2;
@@ -98,44 +98,44 @@ Layout makeLayout(int width, int height, double scale, int backendCount = 4,
     const int containerWidth = (columnWidth - buttonGap) / 2;
     for (int index = 0; index < 2; ++index)
         l.container[index] = {gridX + index * (containerWidth + buttonGap),
-                              sy + s(82), containerWidth, s(26)};
+                              sy + s(112), containerWidth, s(30)};
     const int codecWidth = (columnWidth - buttonGap * 2) / 3;
     for (int index = 0; index < 3; ++index)
         l.codec[index] = {secondX + index * (codecWidth + buttonGap),
-                          sy + s(82), codecWidth, s(26)};
+                          sy + s(112), codecWidth, s(30)};
     backendCount = std::clamp(backendCount, 1, 4);
     const int backendWidth = (columnWidth - buttonGap * (backendCount - 1)) / backendCount;
     for (int index = 0; index < backendCount; ++index)
         l.backend[index] = {gridX + index * (backendWidth + buttonGap),
-                            sy + s(128), backendWidth, s(26)};
-    l.crfTrack = {secondX + s(11), sy + s(140), columnWidth - s(111), s(7)};
-    l.crfValue = {secondX + columnWidth - s(84), sy + s(127), s(84), s(27)};
+                            sy + s(179), backendWidth, s(30)};
+    l.crfTrack = {secondX + s(11), sy + s(192), columnWidth - s(111), s(7)};
+    l.crfValue = {secondX + columnWidth - s(84), sy + s(179), s(84), s(30)};
 
-    l.compressionTrack = {gridX + s(10), sy + s(184), columnWidth - s(20), s(7)};
-    l.compressionValue = {gridX + columnWidth - s(92), sy + s(156), s(92), s(24)};
+    l.compressionTrack = {gridX + s(10), sy + s(253), columnWidth - s(20), s(7)};
+    l.compressionValue = {gridX + columnWidth - s(92), sy + s(219), s(92), s(24)};
     const int audioModeWidth = (columnWidth - buttonGap * 2) / 3;
     for (int index = 0; index < 3; ++index)
         l.audioMode[index] = {secondX + index * (audioModeWidth + buttonGap),
-                              sy + s(174), audioModeWidth, s(26)};
+                              sy + s(247), audioModeWidth, s(30)};
 
     const int audioWidth = (columnWidth - buttonGap * 5) / 6;
     for (int index = 0; index < 6; ++index) {
         l.audio[index] = {gridX + index * (audioWidth + buttonGap),
-                          sy + s(237), audioWidth, s(26)};
+                          sy + s(325), audioWidth, s(30)};
         l.resolution[index] = {secondX + index * (audioWidth + buttonGap),
-                               sy + s(237), audioWidth, s(26)};
+                               sy + s(325), audioWidth, s(30)};
     }
 
     const int optionGap = s(5);
     const int optionWidth = (leftW - s(40) - optionGap * 4) / 5;
-    const int optionY = sy + s(274);
+    const int optionY = sy + s(369);
     l.parallel = {leftX + s(20), optionY, optionWidth, s(28)};
     l.recursive = {leftX + s(20) + optionWidth + optionGap, optionY, optionWidth, s(28)};
     l.skip = {leftX + s(20) + (optionWidth + optionGap) * 2, optionY, optionWidth, s(28)};
     l.preserve = {leftX + s(20) + (optionWidth + optionGap) * 3, optionY, optionWidth, s(28)};
     l.overwrite = {leftX + s(20) + (optionWidth + optionGap) * 4, optionY, optionWidth, s(28)};
 
-    const int queueY = sy + s(expanded ? 326 : 177);
+    const int queueY = sy + s(expanded ? 425 : 233);
     l.queue = {leftX, queueY, leftW, std::max(0, height - queueY - pad)};
     l.overallCard={rightX,top,rightW,s(270)};l.overallTrack={rightX+s(22),top+s(126),rightW-s(44),s(12)};
     l.start={rightX+s(22),top+s(206),rightW-s(44),s(44)};
@@ -1258,11 +1258,11 @@ private:
 
         const int left = layout.queue.x, top = s(168);
         canvas_->card({left, top, layout.queue.width,
-                       s(advancedExpanded_ ? 314 : 165)}, colors);
+                       s(advancedExpanded_ ? 413 : 221)}, colors);
         canvas_->text(left + s(20), top + s(30), "编码设置", colors.text, 1);
         canvas_->button(layout.advancedToggle,
                         advancedExpanded_ ? "收起高级设置" : "展开高级设置", colors);
-        canvas_->text(left + s(18), top + s(59), "输出文件夹", colors.muted, 0);
+        canvas_->text(left + s(18), top + s(66), "输出文件夹", colors.muted, 0);
         const std::string outputDirectory = settings_.outputDirectory.empty()
             ? "默认：与每个源文件保存在同一文件夹"
             : settings_.outputDirectory;
@@ -1278,8 +1278,8 @@ private:
             layout.container[1].width - firstColumn;
         const int secondWidth = layout.codec[2].x +
             layout.codec[2].width - secondColumn;
-        canvas_->text(firstColumn, top + s(78), "输出容器", colors.muted, 0);
-        canvas_->text(secondColumn, top + s(78), "视频编码", colors.muted, 0);
+        canvas_->text(firstColumn, top + s(102), "输出容器", colors.muted, 0);
+        canvas_->text(secondColumn, top + s(102), "视频编码", colors.muted, 0);
         const std::array<std::string, 2> containers{"MP4", "与源文件相同"};
         for (std::size_t index = 0; index < containers.size(); ++index)
             canvas_->button(layout.container[index], containers[index], colors,
@@ -1289,8 +1289,8 @@ private:
             canvas_->button(layout.codec[index], codecs[index], colors,
                             static_cast<int>(settings_.codec) == static_cast<int>(index));
 
-        canvas_->text(firstColumn, top + s(124), "编码设备", colors.muted, 0);
-        canvas_->text(secondColumn, top + s(124), "目标质量 (CRF)", colors.muted, 0);
+        canvas_->text(firstColumn, top + s(169), "编码设备", colors.muted, 0);
+        canvas_->text(secondColumn, top + s(169), "目标质量 (CRF)", colors.muted, 0);
         const std::array<std::string, 4> backendNames{
             "CPU", "NVENC", "Intel QSV", "AMD AMF"
         };
@@ -1306,7 +1306,7 @@ private:
                             settings_.backend == backends[index]);
         }
         if (backends.empty())
-            canvas_->text(firstColumn, top + s(152),
+            canvas_->text(firstColumn, top + s(205),
                           "当前 FFmpeg 环境没有可用的编码器", colors.red, 0);
         const int maximumCrf = crfMaximum(settings_.codec);
         const double crfFraction = static_cast<double>(settings_.crf) / maximumCrf;
@@ -1323,7 +1323,7 @@ private:
         if (advancedExpanded_) {
             const int compressionIndex = std::clamp(
                 static_cast<int>(settings_.compression), 0, 7);
-            canvas_->text(firstColumn, top + s(170), "压缩级别", colors.muted, 0);
+            canvas_->text(firstColumn, top + s(235), "压缩级别", colors.muted, 0);
             canvas_->rounded(layout.compressionValue, colors.accentSoft, 7);
             canvas_->text(layout.compressionValue.x + s(10),
                           layout.compressionValue.y + s(17),
@@ -1342,11 +1342,11 @@ private:
                     static_cast<double>(layout.compressionTrack.width) * compressionIndex / 7.0));
             canvas_->rounded({compressionX - s(8), layout.compressionTrack.y - s(6),
                               s(16), s(19)}, colors.accent, 8);
-            canvas_->text(firstColumn, top + s(216), "极速", colors.muted, 0);
-            canvas_->text(firstColumn + firstWidth - s(70), top + s(216),
+            canvas_->text(firstColumn, top + s(289), "极速", colors.muted, 0);
+            canvas_->text(firstColumn + firstWidth - s(70), top + s(289),
                           "极致压缩", colors.muted, 0);
 
-            canvas_->text(secondColumn, top + s(170), "音频处理", colors.muted, 0);
+            canvas_->text(secondColumn, top + s(235), "音频处理", colors.muted, 0);
             const std::array<std::string, 3> audioModes{
                 "自动编码", "保留原音频", "移除音频"
             };
@@ -1354,8 +1354,8 @@ private:
                 canvas_->button(layout.audioMode[index], audioModes[index], colors,
                                 static_cast<int>(settings_.audioMode) == index);
 
-            canvas_->text(firstColumn, top + s(233), "音频码率 (kbps)", colors.muted, 0);
-            canvas_->text(secondColumn, top + s(233), "输出分辨率", colors.muted, 0);
+            canvas_->text(firstColumn, top + s(312), "音频码率 (kbps)", colors.muted, 0);
+            canvas_->text(secondColumn, top + s(312), "输出分辨率", colors.muted, 0);
             const std::array<int, 6> audioRates{96, 128, 160, 192, 256, 320};
             const std::array<std::string, 6> resolutionLabels{
                 "原始", "2160p", "1440p", "1080p", "720p", "480p"

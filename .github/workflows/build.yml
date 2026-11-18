@@ -115,7 +115,7 @@ jobs:
             # Expand the two-column settings panel and exercise the discrete eight-step slider.
             xdotool mousemove --window "$window" 920 190 click 1
             sleep 1
-            xdotool mousemove --window "$window" 434 352 click 1
+            xdotool mousemove --window "$window" 434 422 click 1
             sleep 1
             grep -qx "compression=6" "$FFMPEG_STUDIO_CONFIG_DIR/settings.ini"
             xdotool key --window "$window" Left
@@ -123,8 +123,8 @@ jobs:
             grep -qx "compression=5" "$FFMPEG_STUDIO_CONFIG_DIR/settings.ini"
 
             # Verify that settings in the second column and the lower row are interactive.
-            xdotool mousemove --window "$window" 755 355 click 1
-            xdotool mousemove --window "$window" 792 418 click 1
+            xdotool mousemove --window "$window" 755 430 click 1
+            xdotool mousemove --window "$window" 792 510 click 1
             sleep 1
             grep -qx "audioMode=1" "$FFMPEG_STUDIO_CONFIG_DIR/settings.ini"
             grep -qx "outputResolution=3" "$FFMPEG_STUDIO_CONFIG_DIR/settings.ini"
