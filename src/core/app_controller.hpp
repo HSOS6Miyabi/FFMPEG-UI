@@ -64,6 +64,10 @@ public:
 
     void initialize();
     AppSnapshot snapshot() const;
+    std::optional<double> videoDuration(const std::string& inputPath) const;
+    std::optional<PreviewFrame> videoPreview(const std::string& inputPath,
+                                             double seconds, int width = 720,
+                                             int height = 405) const;
     std::vector<SshServer> sshServers() const;
     bool saveSshServer(const SshServer& server, const std::string& password, std::string& error);
     bool removeSshServer(const std::string& alias, std::string& error);
