@@ -1304,9 +1304,19 @@ private:
         std::string status;
         bool accepted = false;
 
-        const int dialogWidth = s(946), dialogHeight = s(794);
+        const double dialogScale = std::max(0.65, std::min({
+            scale_,
+            static_cast<double>(DisplayWidth(display_, screen_) - d(40)) / 946.0,
+            static_cast<double>(DisplayHeight(display_, screen_) - d(48)) / 794.0
+        }));
+        const auto d = [dialogScale](int value) {
+            return static_cast<int>(std::lround(value * dialogScale));
+        };
+        const int dialogWidth = d(946), dialogHeight = d(794);
+        const int dialogX = std::max(0, (DisplayWidth(display_, screen_) - dialogWidth) / 2);
+        const int dialogY = std::max(0, (DisplayHeight(display_, screen_) - dialogHeight) / 2);
         Window dialog = XCreateSimpleWindow(display_, RootWindow(display_, screen_),
-            s(72), s(72), static_cast<unsigned int>(dialogWidth),
+            dialogX, dialogY, static_cast<unsigned int>(dialogWidth),
             static_cast<unsigned int>(dialogHeight), 0,
             BlackPixel(display_, screen_), WhitePixel(display_, screen_));
         const std::string dialogTitle = "可视化视频裁剪";
@@ -1326,23 +1336,23 @@ private:
         XSelectInput(display_, dialog, ExposureMask | StructureNotifyMask |
                      ButtonPressMask | KeyPressMask);
         XMapRaised(display_, dialog);
-        auto canvas = std::make_unique<XftCanvas>(display_, dialog, scale_);
+        auto canvas = std::make_unique<XftCanvas>(display_, dialog, dialogScale);
         const Palette colors = palette(dark_);
-        const Rect previewRect{s(35), s(82), s(875), s(392)};
-        const Rect seekRect{s(45), s(506), s(840), s(12)};
-        const Rect backRect{s(45), s(556), s(134), s(38)};
-        const Rect nextRect{s(191), s(556), s(134), s(38)};
-        const Rect markInRect{s(410), s(556), s(185), s(38)};
-        const Rect markOutRect{s(607), s(556), s(185), s(38)};
-        const Rect startRect{s(45), s(656), s(270), s(39)};
-        const Rect endRect{s(327), s(656), s(270), s(39)};
-        const Rect clearRect{s(608), s(656), s(88), s(39)};
-        const Rect applyRect{s(708), s(656), s(102), s(39)};
-        const Rect cancelRect{s(822), s(656), s(88), s(39)};
+        const Rect previewRect{d(35), d(82), d(875), d(392)};
+        const Rect seekRect{d(45), d(506), d(840), d(12)};
+        const Rect backRect{d(45), d(556), d(134), d(38)};
+        const Rect nextRect{d(191), d(556), d(134), d(38)};
+        const Rect markInRect{d(410), d(556), d(185), d(38)};
+        const Rect markOutRect{d(607), d(556), d(185), d(38)};
+        const Rect startRect{d(45), d(656), d(270), d(39)};
+        const Rect endRect{d(327), d(656), d(270), d(39)};
+        const Rect clearRect{d(608), d(656), d(88), d(39)};
+        const Rect applyRect{d(708), d(656), d(102), d(39)};
+        const Rect cancelRect{d(822), d(656), d(88), d(39)};
         std::optional<PreviewFrame> frame;
         const auto refresh = [&]() {
             frame = controller_.videoPreview(source, cursor,
-                std::min(1600, s(835)), std::min(900, s(355)));
+                std::min(1600, d(835)), std::min(900, d(355)));
             if (!frame) status = "当前时间位置无法提取画面，可尝试向前跳转。";
             else status.clear();
         };
@@ -1381,32 +1391,32 @@ private:
         };
         const auto drawDialog = [&]() {
             canvas->fill({0, 0, dialogWidth, dialogHeight}, colors.background);
-            canvas->text(s(35), s(41), "可视化视频裁剪", colors.text, 2);
-            canvas->textFit(s(36), s(69),
+            canvas->text(d(35), d(41), "可视化视频裁剪", colors.text, 2);
+            canvas->textFit(d(36), d(69),
                 basename(source) + "  ·  时长 " + formatTrimTime(duration),
-                s(864), colors.muted, 0);
+                d(864), colors.muted, 0);
             canvas->rounded(previewRect, "#0c111c", 12);
             if (frame) {
                 const int previewX = previewRect.x + (previewRect.width - frame->width) / 2;
                 const int previewY = previewRect.y + (previewRect.height - frame->height) / 2;
                 canvas->image({previewX, previewY, frame->width, frame->height}, *frame);
             } else {
-                canvas->text(s(360), s(275), "当前画面不可用", colors.white, 1);
+                canvas->text(d(360), d(275), "当前画面不可用", colors.white, 1);
             }
             canvas->progress(seekRect, cursor / duration, colors);
             const int indicator = seekRect.x + static_cast<int>(
                 std::lround(seekRect.width * (cursor / duration)));
-            canvas->rounded({indicator - s(7), seekRect.y - s(5), s(14), s(22)},
-                            colors.accent, s(7));
-            canvas->text(s(45), s(543), "当前位置 " + formatTrimTime(cursor), colors.text, 1);
-            canvas->text(s(523), s(543), "← / → 跳转 1 秒；Shift 跳转 10 秒",
+            canvas->rounded({indicator - d(7), seekRect.y - d(5), d(14), d(22)},
+                            colors.accent, d(7));
+            canvas->text(d(45), d(543), "当前位置 " + formatTrimTime(cursor), colors.text, 1);
+            canvas->text(d(523), d(543), "← / → 跳转 1 秒；Shift 跳转 10 秒",
                          colors.muted, 0);
             canvas->button(backRect, "< 后退 1 秒", colors);
             canvas->button(nextRect, "前进 1 秒 >", colors);
             canvas->button(markInRect, "当前位置设为起点", colors);
             canvas->button(markOutRect, "当前位置设为终点", colors);
-            canvas->text(s(45), s(640), "裁剪起始时间", colors.muted, 0);
-            canvas->text(s(327), s(640), "裁剪结束时间", colors.muted, 0);
+            canvas->text(d(45), d(640), "裁剪起始时间", colors.muted, 0);
+            canvas->text(d(327), d(640), "裁剪结束时间", colors.muted, 0);
             canvas->button(startRect, editing == 0 ? entry + "|" : formatTrimTime(start),
                            colors, editing == 0);
             canvas->button(endRect, editing == 1 ? entry + "|" :
@@ -1415,9 +1425,9 @@ private:
             canvas->button(clearRect, "重置", colors);
             canvas->button(applyRect, "应用裁剪", colors, true);
             canvas->button(cancelRect, "取消", colors);
-            canvas->textFit(s(45), s(741),
+            canvas->textFit(d(45), d(741),
                 status.empty() ? "点击时间可直接输入，结束时间留空表示保留到片尾。" : status,
-                s(855), status.empty() ? colors.muted : colors.red, 0);
+                d(855), status.empty() ? colors.muted : colors.red, 0);
             canvas->flush();
         };
         refresh();
@@ -1445,8 +1455,8 @@ private:
                         entry.clear();
                     }
                 } else if (commit()) {
-                    const Rect trackHit{seekRect.x, seekRect.y - s(14),
-                                        seekRect.width, seekRect.height + s(28)};
+                    const Rect trackHit{seekRect.x, seekRect.y - d(14),
+                                        seekRect.width, seekRect.height + d(28)};
                     if (contains(trackHit, x, y)) {
                         cursor = std::clamp(duration * (x - seekRect.x) /
                                             std::max(1, seekRect.width), 0.0, maximumCursor);
