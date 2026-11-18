@@ -1700,7 +1700,7 @@ private:
         };
         const auto supported = availableVideoCodecs(snapshot.capabilities);
         const std::array<std::string, 5> compactCodecNames{
-            "264", "265", "VP9", "AV1", "266"
+            "H264", "H265", "VP9", "AV1", "H266"
         };
         for (std::size_t index = 0; index < codecChoices.size(); ++index) {
             const std::string label = layout.codec[index].width < s(70)
