@@ -817,8 +817,10 @@ public:
         RECT parent{};
         GetWindowRect(owner, &parent);
         const int width = s(920), height = s(755);
-        const int x = parent.left + std::max(0, ((parent.right - parent.left) - width) / 2);
-        const int y = parent.top + std::max(0, ((parent.bottom - parent.top) - height) / 2);
+        const int x = static_cast<int>(parent.left) + std::max(
+            0, (static_cast<int>(parent.right - parent.left) - width) / 2);
+        const int y = static_cast<int>(parent.top) + std::max(
+            0, (static_cast<int>(parent.bottom - parent.top) - height) / 2);
         hwnd_ = CreateWindowExW(
             WS_EX_DLGMODALFRAME, wc.lpszClassName, L"可视化视频裁剪",
             WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_CLIPCHILDREN,
