@@ -1495,7 +1495,7 @@ private:
         };
         const auto supportedCodecs = availableVideoCodecs(snap.capabilities);
         const std::array<std::wstring, 5> compactCodecNames{
-            L"264", L"265", L"VP9", L"AV1", L"266"
+            L"H264", L"H265", L"VP9", L"AV1", L"H266"
         };
         for (std::size_t index = 0; index < codecs.size(); ++index) {
             const std::wstring label = l.codec[index].width < s(70)
