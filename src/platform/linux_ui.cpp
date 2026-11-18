@@ -1668,26 +1668,23 @@ private:
                 ? "计算设备  本机"
                 : "计算设备  远程 · " + settings_.remoteHost,
             colors.text, 0);
-        canvas_->textFit(
-            information.x + s(22), information.y + s(258),
-            snapshot.resourcePlan.explanation,
-            information.width - s(44), colors.muted, 0);
-        canvas_->text(
-            information.x + s(22), information.y + s(288),
-            "H.264 / H.265 / AV1 · ZIP / PPTX 批量处理",
-            colors.muted, 0);
-
         if (!snapshot.error.empty()) {
             canvas_->textFit(
                 information.x + s(22),
-                information.y + information.height - s(45),
+                information.y + information.height - s(42),
                 snapshot.error, information.width - s(44), colors.red, 0);
+        } else if (information.height >= s(310)) {
+            canvas_->textFit(
+                information.x + s(22), information.y + s(258),
+                snapshot.resourcePlan.explanation,
+                information.width - s(44), colors.muted, 0);
         }
-
+        if (information.height >= s(385)) {
             canvas_->textFit(
                 information.x + s(22), information.y + s(330),
                 "点击处理队列中的任务，可查看来源文件、输出位置和处理状态。",
                 information.width - s(44), colors.muted, 0);
+        }
         }
 
         canvas_->flush();
