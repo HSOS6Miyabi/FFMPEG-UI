@@ -277,6 +277,13 @@ jobs:
             xdotool key --window "$window" ctrl+q
             sleep 1
             import -window "$window" artifacts/ui/video-compression-workbench-linux-hidpi-compact-settings.png
+
+            # Switch a narrow codec button at 150% DPI and verify container compatibility.
+            xdotool mousemove --window "$window" 484 442 click 1
+            sleep 1
+            grep -qx "codec=1" "$FFMPEG_STUDIO_CONFIG_DIR/settings.ini"
+            grep -qx "outputContainer=2" "$FFMPEG_STUDIO_CONFIG_DIR/settings.ini"
+            import -window "$window" artifacts/ui/video-compression-workbench-linux-hidpi-compact-h265.png
             kill -0 "$app_pid"
           '
 
@@ -301,6 +308,7 @@ jobs:
             artifacts/ui/video-compression-workbench-linux-hidpi-dark.png
             artifacts/ui/video-compression-workbench-linux-hidpi-compact-queue.png
             artifacts/ui/video-compression-workbench-linux-hidpi-compact-settings.png
+            artifacts/ui/video-compression-workbench-linux-hidpi-compact-h265.png
           if-no-files-found: warn
 
       - name: Package Linux application
