@@ -229,6 +229,20 @@ jobs:
             dimensions=$(identify -format "%wx%h" artifacts/ui/video-compression-workbench-linux-hidpi-150.png)
             test "$dimensions" = "1600x900"
 
+            # The expanded settings panel must expose compression, audio and trimming controls.
+            xdotool mousemove --window "$window" 885 285 click 1
+            sleep 1
+            import -window "$window" artifacts/ui/video-compression-workbench-linux-hidpi-expanded.png
+            xdotool mousemove --window "$window" 885 285 click 1
+            sleep 1
+
+            # Verify readable theme colors at 150% DPI.
+            xdotool mousemove --window "$window" 1490 68 click 1
+            sleep 1
+            import -window "$window" artifacts/ui/video-compression-workbench-linux-hidpi-dark.png
+            xdotool mousemove --window "$window" 1490 68 click 1
+            sleep 1
+
             # WebM selection must automatically select an available compatible encoder.
             xdotool mousemove --window "$window" 341 443 click 1
             sleep 1
@@ -260,6 +274,9 @@ jobs:
             import -window "$window" artifacts/ui/video-compression-workbench-linux-hidpi-compact-queue.png
             dimensions=$(identify -format "%wx%h" artifacts/ui/video-compression-workbench-linux-hidpi-compact-queue.png)
             test "$dimensions" = "1280x720"
+            xdotool key --window "$window" ctrl+q
+            sleep 1
+            import -window "$window" artifacts/ui/video-compression-workbench-linux-hidpi-compact-settings.png
             kill -0 "$app_pid"
           '
 
@@ -280,7 +297,10 @@ jobs:
             artifacts/ui/video-compression-workbench-linux-compact-settings.png
             artifacts/ui/video-compression-workbench-linux-compact-queue.png
             artifacts/ui/video-compression-workbench-linux-hidpi-150.png
+            artifacts/ui/video-compression-workbench-linux-hidpi-expanded.png
+            artifacts/ui/video-compression-workbench-linux-hidpi-dark.png
             artifacts/ui/video-compression-workbench-linux-hidpi-compact-queue.png
+            artifacts/ui/video-compression-workbench-linux-hidpi-compact-settings.png
           if-no-files-found: warn
 
       - name: Package Linux application
