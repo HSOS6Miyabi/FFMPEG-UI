@@ -12,6 +12,7 @@
 #include <windows.h>
 #include <windowsx.h>
 #include <commdlg.h>
+#include <commctrl.h>
 #include <shellapi.h>
 #include <shlobj.h>
 #include <dwmapi.h>
@@ -27,6 +28,24 @@
 
 namespace ffmpegui {
 namespace {
+
+int showTaskDialog(HWND parent, const wchar_t* title, const wchar_t* message,
+                   DWORD buttons, PCWSTR icon, int defaultButton = 0) {
+    TASKDIALOGCONFIG config{};
+    config.cbSize = sizeof(config);
+    config.hwndParent = parent;
+    config.dwFlags = TDF_ALLOW_DIALOG_CANCELLATION;
+    config.dwCommonButtons = static_cast<TASKDIALOG_COMMON_BUTTON_FLAGS>(buttons);
+    config.pszWindowTitle = L"视频压缩工作台";
+    config.pszMainInstruction = title;
+    config.pszContent = message;
+    config.pszMainIcon = icon;
+    config.nDefaultButton = defaultButton;
+
+    int pressedButton = IDCANCEL;
+    const HRESULT result = TaskDialogIndirect(&config, &pressedButton, nullptr, nullptr);
+    return SUCCEEDED(result) ? pressedButton : IDCANCEL;
+}
 
 HICON loadApplicationIcon(HINSTANCE instance, int width, int height) {
     return static_cast<HICON>(LoadImageW(
@@ -872,8 +891,8 @@ private:
         dialog.Flags=OFN_EXPLORER|OFN_FILEMUSTEXIST|OFN_NOCHANGEDIR;dialog.lpstrTitle=L"导入任务清单";
         if(!GetOpenFileNameW(&dialog))return;
         std::string error;const auto added=controller_.importQueue(utf8FromWide(path.data()),error);
-        if(!error.empty())MessageBoxW(window_,wide(error).c_str(),L"导入失败",MB_ICONERROR|MB_OK);
-        else if(added==0)MessageBoxW(window_,L"清单中没有新增任务。",L"导入完成",MB_ICONINFORMATION|MB_OK);
+        if(!error.empty())showTaskDialog(window_, L"导入失败", wide(error).c_str(), TDCBF_OK_BUTTON, TD_ERROR_ICON);
+        else if(added==0)showTaskDialog(window_, L"导入完成", L"清单中没有新增任务。", TDCBF_OK_BUTTON, TD_INFORMATION_ICON);
     }
     void exportQueueDialog() {
         std::array<wchar_t,32768> path{};
@@ -884,7 +903,7 @@ private:
         dialog.lpstrTitle=L"导出任务清单";
         if(!GetSaveFileNameW(&dialog))return;
         std::string error;if(!controller_.exportQueue(utf8FromWide(path.data()),error))
-            MessageBoxW(window_,wide(error).c_str(),L"导出失败",MB_ICONERROR|MB_OK);
+            showTaskDialog(window_, L"导出失败", wide(error).c_str(), TDCBF_OK_BUTTON, TD_ERROR_ICON);
     }
     void chooseOutput() {
         BROWSEINFOW info{}; info.hwndOwner = window_; info.lpszTitle = L"选择输出文件夹";
@@ -932,11 +951,10 @@ private:
         const auto snap = controller_.snapshot();
         if (!snap.running) {
             if (!controller_.startBatch()) {
-                MessageBoxW(
-                    window_,
+                showTaskDialog(
+                    window_, L"无法开始任务",
                     L"请添加待处理文件，并确认当前编码器可用。",
-                    L"无法开始任务",
-                    MB_ICONINFORMATION | MB_OK);
+                    TDCBF_OK_BUTTON, TD_INFORMATION_ICON);
             }
         } else if (snap.paused) controller_.resumeBatch();
         else controller_.pauseBatch();
@@ -1397,8 +1415,9 @@ private:
         }
         if (contains(layout.clearAll, x, y)) {
             if (!snapshot.running && !snapshot.tasks.empty() &&
-                MessageBoxW(window_, L"清空当前任务列表？源文件和已经生成的输出文件将保留。",
-                            L"确认清空队列", MB_YESNO | MB_ICONQUESTION) == IDYES) {
+                showTaskDialog(window_, L"确认清空队列",
+                               L"清空当前任务列表？源文件和已经生成的输出文件将保留。",
+                               TDCBF_YES_BUTTON | TDCBF_NO_BUTTON, TD_WARNING_ICON, IDNO) == IDYES) {
                 controller_.clearAll();
                 selectedTask_ = 0;
                 scrollOffset_ = 0;
@@ -1423,7 +1442,7 @@ private:
             if (detail.empty()) detail = L"尚未获得 NVENC 检测信息。";
             detail += L"\n请确认 NVIDIA 显卡驱动正常，并在 Windows 图形设置中"
                       L"为安装目录下 bin\\ffmpeg.exe 选择高性能 GPU。";
-            MessageBoxW(window_, detail.c_str(), L"NVENC 编码器检测", MB_OK | MB_ICONINFORMATION);
+            showTaskDialog(window_, L"NVENC 编码器检测", detail.c_str(), TDCBF_OK_BUTTON, TD_INFORMATION_ICON);
             return;
         }
         if (contains(layout.outputBrowse, x, y)) {

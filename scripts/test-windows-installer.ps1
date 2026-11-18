@@ -61,6 +61,27 @@ function Assert-GuiSubsystem([string]$Path) {
     Assert-Equal $subsystem 2 "Windows graphical subsystem"
 }
 
+function Assert-DpiAwarenessManifest([string]$Path) {
+    $manifestPath = Join-Path $env:RUNNER_TEMP ("workbench-manifest-" + [guid]::NewGuid().ToString("N") + ".xml")
+    try {
+        & mt.exe -nologo "-inputresource:$Path;#1" "-out:$manifestPath"
+        if ($LASTEXITCODE -ne 0 -or -not (Test-Path -LiteralPath $manifestPath -PathType Leaf)) {
+            throw "Cannot extract the executable manifest: $Path"
+        }
+        [xml]$manifest = Get-Content -LiteralPath $manifestPath -Raw -Encoding UTF8
+        $dpiSettings = $manifest.SelectNodes("//*[local-name()='dpiAware' or local-name()='dpiAwareness']")
+        $dpiEnabled = @($dpiSettings | Where-Object {
+            $_.InnerText.Trim() -match '^(true|true/pm|PerMonitor.*)$'
+        }).Count -gt 0
+        if (-not $dpiEnabled) {
+            throw "DPI awareness is missing from the executable manifest: $Path"
+        }
+        Write-Host "Verified DPI awareness: $Path"
+    } finally {
+        Remove-Item -LiteralPath $manifestPath -Force -ErrorAction SilentlyContinue
+    }
+}
+
 function Assert-EmbeddedIcon([string]$Path, [string]$ExpectedIconPath) {
     $iconCount = [InstallerIconResource]::ExtractIconEx($Path, -1, $null, $null, 0)
     if ($iconCount -lt 1) { throw "The executable has no embedded icon: $Path" }
@@ -132,6 +153,8 @@ function Invoke-WorkbenchCommand([string]$Application, [string[]]$Arguments) {
 Assert-Metadata $originalApp "视频压缩工作台"
 Assert-Metadata $InstallerPath "视频压缩工作台安装程序"
 Assert-GuiSubsystem $originalApp
+Assert-DpiAwarenessManifest $originalApp
+Assert-DpiAwarenessManifest $InstallerPath
 $expectedIcon = Join-Path $repoRoot "assets/icons/video-compression-workbench.ico"
 Assert-EmbeddedIcon $originalApp $expectedIcon
 Assert-EmbeddedIcon $InstallerPath $expectedIcon
@@ -163,6 +186,7 @@ foreach ($required in @($installedApp, $installedFfmpeg, $installedFfprobe, $uni
         throw "Missing installed file: $required"
     }
 }
+Assert-DpiAwarenessManifest $uninstaller
 $registry = Get-ItemProperty -LiteralPath $registryPath -ErrorAction Stop
 Assert-Equal $registry.Publisher "Kenvix" "Installed publisher"
 Assert-Equal $registry.DisplayVersion $version "Installed application version"

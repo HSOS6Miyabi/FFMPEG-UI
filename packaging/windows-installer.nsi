@@ -1,4 +1,6 @@
 Unicode true
+ManifestDPIAware true
+ManifestDPIAwareness "PerMonitorV2,System"
 
 !include "MUI2.nsh"
 !include "LogicLib.nsh"
@@ -79,7 +81,8 @@ VIAddVersionKey /LANG=0 "OriginalFilename" "video-compression-workbench-setup.ex
 
 Function .onInit
     ${IfNot} ${RunningX64}
-        MessageBox MB_ICONSTOP "视频压缩工作台需要 64 位 Windows。"
+        IfSilent +2
+        System::Call 'comctl32::TaskDialog(p $HWNDPARENT, p 0, w "${PRODUCT_NAME}", w "无法安装", w "视频压缩工作台需要 64 位 Windows。", i 1, p -2, *i .r0) i .r1'
         Abort
     ${EndIf}
 FunctionEnd
