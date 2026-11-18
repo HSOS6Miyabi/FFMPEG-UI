@@ -1,0 +1,44 @@
+#pragma code_page(65001)
+#include <winver.h>
+
+VS_VERSION_INFO VERSIONINFO
+ FILEVERSION @PROJECT_VERSION_MAJOR@,@PROJECT_VERSION_MINOR@,@PROJECT_VERSION_PATCH@,0
+ PRODUCTVERSION @PROJECT_VERSION_MAJOR@,@PROJECT_VERSION_MINOR@,@PROJECT_VERSION_PATCH@,0
+ FILEFLAGSMASK VS_FFI_FILEFLAGSMASK
+ FILEFLAGS 0
+ FILEOS VOS_NT_WINDOWS32
+ FILETYPE VFT_APP
+ FILESUBTYPE 0
+BEGIN
+    BLOCK "StringFileInfo"
+    BEGIN
+        BLOCK "040904B0"
+        BEGIN
+            VALUE "CompanyName", "Kenvix\0"
+            VALUE "FileDescription", "视频压缩工作台\0"
+            VALUE "FileVersion", "@PROJECT_VERSION@.0\0"
+            VALUE "InternalName", "video-compression-workbench\0"
+            VALUE "LegalCopyright", "Copyright (C) 2026 Kenvix <i@kenvix.com>\0"
+            VALUE "OriginalFilename", "video-compression-workbench.exe\0"
+            VALUE "ProductName", "视频压缩工作台\0"
+            VALUE "ProductVersion", "@PROJECT_VERSION@\0"
+            VALUE "Comments", "Author: Kenvix <i@kenvix.com>\0"
+        END
+        BLOCK "080404B0"
+        BEGIN
+            VALUE "CompanyName", "Kenvix\0"
+            VALUE "FileDescription", "视频压缩工作台\0"
+            VALUE "FileVersion", "@PROJECT_VERSION@.0\0"
+            VALUE "InternalName", "video-compression-workbench\0"
+            VALUE "LegalCopyright", "Copyright (C) 2026 Kenvix <i@kenvix.com>\0"
+            VALUE "OriginalFilename", "video-compression-workbench.exe\0"
+            VALUE "ProductName", "视频压缩工作台\0"
+            VALUE "ProductVersion", "@PROJECT_VERSION@\0"
+            VALUE "Comments", "Author: Kenvix <i@kenvix.com>\0"
+        END
+    END
+    BLOCK "VarFileInfo"
+    BEGIN
+        VALUE "Translation", 0x0409, 1200, 0x0804, 1200
+    END
+END

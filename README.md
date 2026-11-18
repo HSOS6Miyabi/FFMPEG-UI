@@ -103,7 +103,7 @@ AMD AMF 使用其支持的 speed、balanced、quality 三种编码质量预设�
 
 - Windows 10 1703 或更新版本；Windows 11 可启用更多 DWM 外观效果。
 - 支持 C++20 的 MSVC 工具链和 CMake 3.25 或更新版本（仅源码构建需要）。
-- FFmpeg 和 ffprobe，并且两个程序都能从命令行访问。
+- 安装程序和新版便携 ZIP 包均已包含 FFmpeg、ffprobe，无需额外配置。直接从源码构建时，可以使用系统安装的 FFmpeg 和 ffprobe。
 - 使用 SSH 远程编码时，需要 Windows OpenSSH Client（ssh.exe、scp.exe）并确保两个程序可从 PATH 访问。
 - 使用 NVENC、Quick Sync 或 AMF 时，需要对应的显卡、驱动和包含该编码器的 FFmpeg 构建。
 
@@ -152,6 +152,20 @@ ctest --preset windows-release
 ```
 
 生成的程序位于 `build\windows-release\video-compression-workbench.exe`。
+
+### Windows 安装包
+
+发布版本包含可直接安装的 NSIS 程序，以及解压即用的便携 ZIP。两种形式均包含 FFmpeg 和 ffprobe，运行时优先使用程序目录 `bin` 中的工具。安装程序默认安装到当前用户的应用目录，支持开始菜单快捷方式、可选桌面快捷方式和 Windows“已安装的应用”卸载。
+
+从源码构建安装包，需要先安装 NSIS，然后运行：
+
+```powershell
+choco install nsis -y --no-progress
+./scripts/package-windows.ps1
+./scripts/test-windows-installer.ps1
+```
+
+应用 EXE 和 NSIS 安装程序的版本信息均注明版权所有者和作者 **Kenvix <i@kenvix.com>**。FFmpeg 和静态链接依赖的许可证、来源与分发说明见 [Windows 安装与第三方组件](docs/windows-distribution.md)。
 
 ## 任务清单
 
@@ -230,7 +244,7 @@ video-compression-workbench --demo
 
 ## 自动构建和发布
 
-GitHub Actions 在提交到 `main`、创建 Pull Request 或手动触发时构建 Windows 和 Linux 版本，并执行单元测试及实际视频、ZIP、PPTX、SSH 测试。`main` 上两个平台的全部测试通过后，发布任务读取 `CMakeLists.txt` 中的版本号。如果该版本尚未发布，就从通过测试的提交创建版本标签和 GitHub Release，并上传 Windows ZIP 包和 Linux tar.gz 包。已经发布的版本不会被后续提交覆盖；发布下一版本时，需要先更新 CMake 项目版本号。手动推送与项目版本一致的 `v*` 标签，也可以触发相同的验证和发布流程。
+GitHub Actions 在提交到 `main`、创建 Pull Request 或手动触发时构建 Windows 和 Linux 版本，并执行单元测试及实际视频、ZIP、PPTX、SSH 测试。`main` 上两个平台的全部测试通过后，发布任务读取 `CMakeLists.txt` 中的版本号。如果该版本尚未发布，就从通过测试的提交创建版本标签和 GitHub Release，并上传包含 FFmpeg 的 Windows NSIS 安装程序、Windows 便携 ZIP 包和 Linux tar.gz 包。已经发布的版本不会被后续提交覆盖；发布下一版本时，需要先更新 CMake 项目版本号。手动推送与项目版本一致的 `v*` 标签，也可以触发相同的验证和发布流程。
 
 ## 维护要求
 

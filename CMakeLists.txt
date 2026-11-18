@@ -34,10 +34,16 @@ else()
 endif()
 
 if(WIN32)
+    configure_file(
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/platform/windows_version.rc.in
+        ${CMAKE_CURRENT_BINARY_DIR}/windows_version.rc
+        @ONLY
+    )
     add_executable(ffmpeg-ui
         src/main.cpp
         src/platform/windows_ui.cpp
         src/platform/windows_app.rc
+        ${CMAKE_CURRENT_BINARY_DIR}/windows_version.rc
     )
     target_include_directories(ffmpeg-ui PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src/platform)
     target_link_libraries(ffmpeg-ui PRIVATE ffmpegui_core user32 gdi32 comdlg32 shell32 ole32 dwmapi uxtheme comctl32 advapi32)

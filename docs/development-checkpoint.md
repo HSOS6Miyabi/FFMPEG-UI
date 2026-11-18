@@ -50,11 +50,11 @@ ctest --preset windows-release
 .\build\windows-release\video-compression-workbench.exe --self-test
 ```
 
-系统需要安装 FFmpeg 和 ffprobe，并确保程序可以从 PATH 中找到它们。Windows 构建还需要通过 vcpkg 安装 libarchive。
+Linux 版仍需要系统安装 FFmpeg 和 ffprobe。Windows NSIS 安装程序及便携 ZIP 已包含 FFmpeg 和 ffprobe，程序优先使用应用目录中的工具。Windows 源码构建需要使用 vcpkg 安装 libarchive，生成发布包还需安装 NSIS。
 
 ## 自动化测试
 
-GitHub Actions 在 Linux 和 Windows 上分别执行 CMake 配置、编译、核心单元测试、FFmpeg 媒体测试和发布包生成。两端测试都通过后，`main` 分支的发布任务会根据 CMake 项目版本号创建未发布版本的标签与 GitHub Release，并上传两个平台的程序包。
+GitHub Actions 在 Linux 和 Windows 上分别执行 CMake 配置、编译、核心单元测试、FFmpeg 媒体测试和发布包生成。两端测试都通过后，`main` 分支的发布任务会根据 CMake 项目版本号创建未发布版本的标签与 GitHub Release，并上传 Windows NSIS 安装程序、Windows 便携 ZIP 和 Linux tar.gz。
 
 Linux CI 会启动临时 OpenSSH 服务器，验证密钥认证、密码认证、SCP 文件传输、远程 FFmpeg 能力探测、远程编码、进度读取和临时目录清理。
 
@@ -80,7 +80,8 @@ Linux CI 会使用 Xvfb 启动桌面程序，选择 1080p 和保留原音频选�
 
 ## 已知范围
 
-- 当前程序要求用户自行安装 FFmpeg 和 ffprobe，发布包不包含这两个依赖。
+- Linux 运行环境需要安装 FFmpeg 和 ffprobe；Windows 安装程序和便携 ZIP 已包含这两项工具。
+- Windows SSH 远程编码使用操作系统提供的 OpenSSH Client；仅使用此功能时需要启用相应可选组件。
 - 字幕流和数据流默认不复制。
 - 当前提供固定的八档压缩级别，尚未提供用户自定义编码预设。
 - 当前没有内置视频播放器、目标文件大小模式和逐任务独立编码设置。

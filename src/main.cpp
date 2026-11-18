@@ -48,6 +48,23 @@ fs::path pathFromUtf8(std::string_view value) {
 
 ffmpegui::FfmpegService makeService() {
     std::string ffmpeg = "ffmpeg", ffprobe = "ffprobe";
+#ifdef _WIN32
+    std::wstring modulePath(32768, L'\0');
+    const DWORD pathLength = GetModuleFileNameW(
+        nullptr, modulePath.data(), static_cast<DWORD>(modulePath.size()));
+    if (pathLength > 0 && pathLength < modulePath.size()) {
+        modulePath.resize(pathLength);
+        const fs::path bin = fs::path(modulePath).parent_path() / L"bin";
+        std::error_code fileError;
+        const fs::path bundledFfmpeg = bin / L"ffmpeg.exe";
+        const fs::path bundledFfprobe = bin / L"ffprobe.exe";
+        if (fs::is_regular_file(bundledFfmpeg, fileError) &&
+            fs::is_regular_file(bundledFfprobe, fileError)) {
+            ffmpeg = pathToUtf8(bundledFfmpeg);
+            ffprobe = pathToUtf8(bundledFfprobe);
+        }
+    }
+#endif
     if (const auto value = ffmpegui::environmentVariable("FFMPEG_PATH"); value && !value->empty()) {
         ffmpeg = *value;
     }

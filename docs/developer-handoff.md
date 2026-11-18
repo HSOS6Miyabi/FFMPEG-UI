@@ -31,7 +31,11 @@
 | `src/platform/linux_ui.cpp` | Linux X11/Xft 界面 |
 | `src/main.cpp` | 应用入口、命令行参数、自检和演示模式 |
 | `tests/core_tests.cpp` | 核心逻辑单元测试 |
-| `.github/workflows/build.yml` | Windows/Linux CI、桌面截图、打包和经测试的版本发布 |
+| `.github/workflows/build.yml` | Windows/Linux CI、桌面截图、NSIS 安装包测试及经测试的版本发布 |
+| `packaging/windows-installer.nsi` | NSIS 安装、卸载、快捷方式和软件注册表信息 |
+| `scripts/package-windows.ps1` | 固定版本 FFmpeg 下载校验、静态依赖许可文件整理和 Windows 发布包生成 |
+| `scripts/test-windows-installer.ps1` | Windows EXE 版本资源、静默安装、内置 FFmpeg、媒体测试和卸载验证 |
+| `src/platform/windows_version.rc.in` | Windows 应用版本信息和 Kenvix 作者版权字段 |
 | `docs/architecture.md` | 组件结构和处理流程 |
 | `docs/decision-log.md` | 重要设计决策和维护约束 |
 | `docs/encoding.md` | 编码质量、预设、音频处理、分辨率和进度参数 |
@@ -75,7 +79,7 @@ ctest --preset windows-release
 .\build\windows-release\video-compression-workbench.exe --self-test
 ```
 
-vcpkg 依赖由 `vcpkg.json` 声明。FFmpeg/ffprobe 由用户或运行环境安装，当前发布包不包含 FFmpeg 二进制文件。
+vcpkg 依赖由 `vcpkg.json` 声明。Windows NSIS 安装程序和便携 ZIP 已包含固定版本的 FFmpeg 和 ffprobe，源码直接运行时可以使用系统 FFmpeg。打包规范、第三方许可证及测试方式记录在 [Windows 安装与第三方组件](windows-distribution.md)。
 
 ## 运行与调试
 
@@ -131,7 +135,7 @@ scripts/lint-cpp.sh build/linux-release
 
 - 推送到 `main` 或创建针对 `main` 的 Pull Request 时，工作流会构建 Windows 和 Linux 版本，并执行单元测试及媒体自检。
 - `workflow_dispatch` 可手动运行工作流。
-- `main` 分支的 Linux 和 Windows 测试全部成功后，发布任务读取 `CMakeLists.txt` 中的版本号，从通过验证的提交创建版本标签和 GitHub Release，并上传 Windows ZIP 和 Linux tar.gz。
+- `main` 分支的 Linux 和 Windows 测试全部成功后，发布任务读取 `CMakeLists.txt` 中的版本号，从通过验证的提交创建版本标签和 GitHub Release，并上传 Windows NSIS 安装程序、Windows 便携 ZIP 和 Linux tar.gz。
 - 已发布的版本不会被自动覆盖。需要发布新版本时，先更新 CMake 项目的版本号，再提交到 `main`。
 - 手动推送与 CMake 项目版本一致的 `v*` 标签时，也会执行完整验证；发布前必须确保两个平台的检查通过。
 

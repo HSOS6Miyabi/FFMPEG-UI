@@ -92,26 +92,33 @@ void flushPending(std::string& pending, const ProcessLineCallback& callback) {
 }
 
 #ifdef _WIN32
-void resumeThreads(std::vector<HANDLE>& threads) {
-    for (HANDLE thread : threads) {
-        ResumeThread(thread);
-        CloseHandle(thread);
+void resumeThreads(std::map<DWORD, HANDLE>& threads) {
+    for (const auto& [threadId, handle] : threads) {
+        (void)threadId;
+        ResumeThread(handle);
+        CloseHandle(handle);
     }
     threads.clear();
 }
 
-void suspendProcessThreads(DWORD processId, std::vector<HANDLE>& suspendedThreads) {
+void suspendProcessThreads(DWORD processId, std::map<DWORD, HANDLE>& suspendedThreads) {
     HANDLE snapshot = CreateToolhelp32Snapshot(TH32CS_SNAPTHREAD, 0);
     if (snapshot == INVALID_HANDLE_VALUE) return;
     THREADENTRY32 entry{};
     entry.dwSize = sizeof(entry);
     if (Thread32First(snapshot, &entry)) {
         do {
-            if (entry.th32OwnerProcessID != processId) continue;
+            if (entry.th32OwnerProcessID != processId ||
+                suspendedThreads.contains(entry.th32ThreadID)) {
+                continue;
+            }
             HANDLE thread = OpenThread(THREAD_SUSPEND_RESUME, FALSE, entry.th32ThreadID);
             if (thread == nullptr) continue;
-            if (SuspendThread(thread) != static_cast<DWORD>(-1)) suspendedThreads.push_back(thread);
-            else CloseHandle(thread);
+            if (SuspendThread(thread) != static_cast<DWORD>(-1)) {
+                suspendedThreads.emplace(entry.th32ThreadID, thread);
+            } else {
+                CloseHandle(thread);
+            }
         } while (Thread32Next(snapshot, &entry));
     }
     CloseHandle(snapshot);
@@ -356,13 +363,15 @@ ProcessResult runProcess(const std::vector<std::string>& arguments,
     std::string pending;
     bool terminated = false;
     bool paused = false;
-    std::vector<HANDLE> suspendedThreads;
+    std::map<DWORD, HANDLE> suspendedThreads;
     while (true) {
         const bool shouldPause = pauseRequested != nullptr && pauseRequested->load() && !terminated;
-        if (shouldPause && !paused) {
+        if (shouldPause) {
+            // FFmpeg can create additional worker threads after it begins encoding.
+            // Suspend new threads as well while the user keeps the task paused.
             suspendProcessThreads(processInfo.dwProcessId, suspendedThreads);
             paused = !suspendedThreads.empty();
-        } else if (!shouldPause && paused) {
+        } else if (paused) {
             resumeThreads(suspendedThreads);
             paused = false;
         }

@@ -175,20 +175,30 @@ jobs:
       - name: Run FFmpeg conversion, ZIP and PPTX tests
         run: .\build\windows-release\video-compression-workbench.exe --self-test
 
-      - name: Package Windows application
+      - name: Install NSIS
         shell: pwsh
-        run: |
-          New-Item -ItemType Directory -Force dist\windows | Out-Null
-          Copy-Item build\windows-release\video-compression-workbench.exe dist\windows\
-          Copy-Item README.md dist\windows\
-          Copy-Item docs dist\windows\ -Recurse
-          Compress-Archive -Path dist\windows\* -DestinationPath video-compression-workbench-windows-x86_64.zip -Force
+        run: choco install nsis -y --no-progress
 
-      - name: Upload Windows release asset
+      - name: Bundle pinned FFmpeg and create Windows packages
+        shell: pwsh
+        run: ./scripts/package-windows.ps1
+
+      - name: Test Windows installer and bundled dependencies
+        shell: pwsh
+        run: ./scripts/test-windows-installer.ps1
+
+      - name: Upload Windows portable archive
         uses: actions/upload-artifact@v4
         with:
           name: video-compression-workbench-windows-x86_64
-          path: video-compression-workbench-windows-x86_64.zip
+          path: dist/video-compression-workbench-windows-x86_64.zip
+          if-no-files-found: error
+
+      - name: Upload Windows NSIS installer
+        uses: actions/upload-artifact@v4
+        with:
+          name: video-compression-workbench-windows-installer
+          path: dist/video-compression-workbench-*-windows-x64-setup.exe
           if-no-files-found: error
 
   release:
@@ -214,6 +224,12 @@ jobs:
           name: video-compression-workbench-windows-x86_64
           path: dist
 
+      - name: Download Windows NSIS installer
+        uses: actions/download-artifact@v4
+        with:
+          name: video-compression-workbench-windows-installer
+          path: dist
+
       - name: Publish verified GitHub Release
         shell: bash
         env:
@@ -237,6 +253,7 @@ jobs:
           gh release create "$tag" \
             dist/video-compression-workbench-linux-x86_64.tar.gz \
             dist/video-compression-workbench-windows-x86_64.zip \
+            dist/video-compression-workbench-"$version"-windows-x64-setup.exe \
             --repo "$GITHUB_REPOSITORY" \
             --target "$GITHUB_SHA" \
             --title "视频压缩工作台 $tag" \

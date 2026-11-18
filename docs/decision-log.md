@@ -175,6 +175,10 @@ ctest --test-dir build --output-on-failure
 - 增加 Windows Send To 命令行参数支持和 Windows/Linux 文件拖放。
 - 增加任务清单导入导出、编码设置持久化和压缩前后大小统计。
 - 增加 Linux 和 Windows CI。两个平台的构建与测试通过后，从经过测试的 `main` 提交创建与 CMake 版本一致的 GitHub Release；已经发布的版本不能被后续提交自动覆盖。
+- Windows 应用版本资源写入 Kenvix <i@kenvix.com> 作者和版权信息，安装程序通过 NSIS 生成，支持当前用户安装、开始菜单快捷方式和卸载。
+- Windows 安装版和便携 ZIP 一并提供经 SHA-256 校验的固定 FFmpeg 9.0.2 静态构建；程序在未设置路径环境变量时优先使用同目录 `bin` 下的 FFmpeg 和 ffprobe。
+- Windows 发布包包含 FFmpeg 原始许可证文件以及 vcpkg 静态依赖的许可证。安装包通过独立的自动化测试验证版本信息、内置 FFmpeg、自检和卸载。
+- Windows 暂停处理期间持续检查 FFmpeg 新创建的线程，将尚未暂停的工作线程加入暂停列表；恢复时释放所持线程句柄。
 - 增加真实 FFmpeg 进程暂停和继续测试。
 
 ## SSH 远程编码
