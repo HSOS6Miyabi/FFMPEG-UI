@@ -182,14 +182,20 @@ Layout makeLayout(int width, int height, double scale, int backendCount = 4,
     const int actualQueueY = queueFocused ? settingsY : queueY;
     l.queue = {leftX, actualQueueY, leftW, std::max(0, height - actualQueueY - pad)};
     l.failedOnly = {leftX + s(142), actualQueueY + s(9), s(102), s(26)};
-    l.overallCard = {rightX, top, rightW, s(220)};
-    l.overallTrack = {rightX + s(20), top + s(107), rightW - s(40), s(9)};
-    l.start = {rightX + s(20), top + s(160), rightW - s(40), s(42)};
+    const int availableRightHeight = std::max(0, height - top - pad);
+    const int statusHeight = std::clamp(availableRightHeight * 51 / 100, s(160), s(220));
+    const bool compactStatus = statusHeight < s(210);
+    const int actionY = compactStatus ? top + statusHeight - s(46) : top + s(160);
+    const int actionHeight = compactStatus ? s(38) : s(42);
+    l.overallCard = {rightX, top, rightW, statusHeight};
+    l.overallTrack = {rightX + s(20), compactStatus
+        ? top + statusHeight - s(88) : top + s(107), rightW - s(40), s(9)};
+    l.start = {rightX + s(20), actionY, rightW - s(40), actionHeight};
     const int actionGap = s(8), actionWidth = (rightW - s(40) - actionGap) / 2;
-    l.pause = {rightX + s(20), top + s(160), actionWidth, s(42)};
-    l.cancel = {rightX + s(20) + actionWidth + actionGap, top + s(160),
-                rightW - s(40) - actionWidth - actionGap, s(42)};
-    const int infoY = top + s(232);
+    l.pause = {rightX + s(20), actionY, actionWidth, actionHeight};
+    l.cancel = {rightX + s(20) + actionWidth + actionGap, actionY,
+                rightW - s(40) - actionWidth - actionGap, actionHeight};
+    const int infoY = top + statusHeight + s(12);
     const int infoButtonW = (rightW - s(46)) / 2;
     l.rescan = {rightX + s(18), infoY + s(197), infoButtonW, s(30)};
     l.diagnostic = {rightX + s(28) + infoButtonW, infoY + s(197),
@@ -1431,13 +1437,19 @@ private:
         drawButton(dc, l.ssh, L"SSH 服务器", c, smallFont, !settings_.remoteHost.empty());
         drawButton(dc, l.theme, dark_ ? L"浅色外观" : L"深色外观", c, smallFont);
 
-        drawButton(dc,l.addFiles,L"添加文件",c,normal,true); drawButton(dc,l.addFolder,L"添加文件夹",c,normal);
-        drawButton(dc,l.addArchive,L"添加 ZIP / PPTX",c,normal);
-        drawButton(dc,l.importQueue,L"导入清单",c,smallFont); drawButton(dc,l.exportQueue,L"导出清单",c,smallFont);
-        drawButton(dc,l.removeSelected,L"移除选中",c,smallFont,false,
-                   snap.running || selectedTask_ == 0);
-        drawButton(dc,l.clearDone,L"清除完成",c,smallFont,false,snap.running);
-        drawButton(dc,l.clearAll,L"清空列表",c,smallFont,false,snap.running || snap.tasks.empty());
+        const bool compactToolbar = l.importQueue.width < s(76);
+        drawButton(dc,l.addFiles,L"添加文件",c,normal,true);
+        drawButton(dc,l.addFolder,L"添加文件夹",c,normal);
+        drawButton(dc,l.addArchive,l.addArchive.width < s(118)
+                   ? L"ZIP/PPTX" : L"添加 ZIP / PPTX",c,smallFont);
+        drawButton(dc,l.importQueue,compactToolbar ? L"导入" : L"导入清单",c,smallFont);
+        drawButton(dc,l.exportQueue,compactToolbar ? L"导出" : L"导出清单",c,smallFont);
+        drawButton(dc,l.removeSelected,compactToolbar ? L"移除" : L"移除选中",
+                   c,smallFont,false,snap.running || selectedTask_ == 0);
+        drawButton(dc,l.clearDone,compactToolbar ? L"清除" : L"清除完成",
+                   c,smallFont,false,snap.running);
+        drawButton(dc,l.clearAll,compactToolbar ? L"清空" : L"清空列表",
+                   c,smallFont,false,snap.running || snap.tasks.empty());
 
         if (!queueFocused_) {
         const int leftX = l.queue.x, top = s(144), leftW = l.queue.width;
@@ -1611,24 +1623,32 @@ private:
         }
 
         drawCard(dc,l.queue,c);
-        drawText(dc,{l.queue.x+s(20),l.queue.y+s(10),s(112),s(26)},L"处理队列",c.text,heading);
-        drawButton(dc, l.failedOnly, failedOnly_ ? L"显示全部" : L"仅看失败",
-                   c, smallFont, failedOnly_);
+        const bool compactQueueHeader =
+            l.queue.width < s(775) && l.queue.height >= s(156);
+        const int queueHeaderHeight = compactQueueHeader ? s(72) : s(39);
+        drawText(dc,{l.queue.x+s(20),l.queue.y+s(10),s(112),s(26)},
+                 L"处理队列",c.text,heading);
+        drawButton(dc,l.failedOnly,failedOnly_ ? L"显示全部" : L"仅看失败",
+                   c,smallFont,failedOnly_);
         const std::wstring queueSummary =
             L"总计 " + std::to_wstring(snap.totalTasks) +
             L"  ·  运行 " + std::to_wstring(snap.runningTasks) +
             L"  ·  完成 " + std::to_wstring(snap.completedTasks) +
             L"  ·  失败 " + std::to_wstring(snap.failedTasks);
-        drawText(
-            dc,
-            {l.queue.x + l.queue.width - s(320), l.queue.y + s(13), s(300), s(22)},
-            queueSummary, c.muted, smallFont,
-            DT_RIGHT | DT_VCENTER | DT_SINGLELINE);
+        if (compactQueueHeader) {
+            drawText(dc,{l.queue.x+s(20),l.queue.y+s(40),
+                         l.queue.width-s(40),s(25)},
+                     queueSummary,c.muted,smallFont);
+        } else if (l.queue.width >= s(650)) {
+            drawText(dc,{l.queue.x+l.queue.width-s(320),l.queue.y+s(13),
+                         s(300),s(22)},queueSummary,c.muted,smallFont,
+                     DT_RIGHT|DT_VCENTER|DT_SINGLELINE);
+        }
         const auto rows = visibleRows(snap, failedOnly_);
         const int rowHeight = s(64);
-        const int listTop = l.queue.y + s(39);
-        const int visibleRowsCount =
-            std::max(0, (l.queue.height - s(42)) / rowHeight);
+        const int listTop = l.queue.y + queueHeaderHeight;
+        const int visibleRowsCount = std::max(0,
+            (l.queue.height - queueHeaderHeight - s(3)) / rowHeight);
         const int maxScroll = std::max(
             0, static_cast<int>(rows.size()) - visibleRowsCount);
         scrollOffset_ = std::clamp(scrollOffset_, 0, maxScroll);
@@ -1734,32 +1754,31 @@ private:
         }
 
         drawCard(dc,l.overallCard,c);
-        drawText(
-            dc,
-            {l.overallCard.x + s(22), l.overallCard.y + s(18),
-             l.overallCard.width - s(44), s(28)},
-            L"批量处理进度", c.text, heading);
-        drawText(
-            dc,
-            {l.overallCard.x + s(22), l.overallCard.y + s(54),
-             l.overallCard.width - s(44), s(24)},
-            wide(snap.status), c.text, normal);
-        drawText(
-            dc,
-            {l.overallCard.x + s(22), l.overallCard.y + s(78),
-             l.overallCard.width - s(44), s(22)},
-            wide(snap.detail), c.muted, smallFont);
+        const bool compactStatus = l.overallCard.height < s(210);
+        drawText(dc,{l.overallCard.x+s(22),
+                     l.overallCard.y+s(compactStatus ? 13 : 18),
+                     l.overallCard.width-s(44),s(28)},
+                 L"批量处理进度",c.text,heading);
+        drawText(dc,{l.overallCard.x+s(22),
+                     l.overallCard.y+s(compactStatus ? 43 : 54),
+                     l.overallCard.width-s(44),s(24)},
+                 wide(snap.status),c.text,normal);
+        drawText(dc,{l.overallCard.x+s(22),
+                     l.overallCard.y+s(compactStatus ? 64 : 78),
+                     l.overallCard.width-s(44),s(22)},
+                 wide(snap.detail),c.muted,smallFont);
         drawProgress(dc,l.overallTrack,snap.overallProgress,c);
         wchar_t percent[24]{}; swprintf_s(percent,L"%.1f%%",snap.overallProgress*100.0);
-        drawText(dc,{l.overallCard.x+s(22),l.overallCard.y+s(125),s(100),s(26)},percent,c.accent,heading);
+        const int numericY = compactStatus
+            ? l.overallTrack.y + s(14) : l.overallCard.y + s(125);
+        drawText(dc,{l.overallCard.x+s(22),numericY,s(100),s(26)},
+                 percent,c.accent,heading);
         const std::wstring completedLabel =
             L"完成 " + std::to_wstring(snap.completedTasks + snap.skippedTasks) +
             L" / " + std::to_wstring(snap.totalTasks);
-        drawText(
-            dc,
-            {l.overallCard.x + s(130), l.overallCard.y + s(125),
-             l.overallCard.width - s(152), s(24)},
-            completedLabel, c.muted, smallFont);
+        drawText(dc,{l.overallCard.x+s(130),numericY,
+                     l.overallCard.width-s(152),s(24)},
+                 completedLabel,c.muted,smallFont);
         if (!snap.running) {
             drawButton(dc,l.start,L"开始批量处理",c,normal,true,
                 snap.tasks.empty() || !snap.capabilities.supports(settings_.codec,settings_.backend));
@@ -1769,12 +1788,37 @@ private:
         }
 
         const int infoY=l.overallCard.y+l.overallCard.height+s(12);
-        const Rect info{l.overallCard.x,infoY,l.overallCard.width,height-infoY-s(28)};
+        const Rect info{l.overallCard.x,infoY,l.overallCard.width,
+                        std::max(0,height-infoY-s(28))};
         drawCard(dc,info,c);
+        const bool compactInformation = info.height < s(228);
+        const int informationClip = SaveDC(dc);
+        IntersectClipRect(dc,info.x+s(10),info.y+s(5),
+                          info.x+info.width-s(10),info.y+info.height-s(5));
         const auto selected = std::find_if(
             snap.tasks.begin(), snap.tasks.end(),
             [this](const BatchTaskSnapshot& task) { return task.id == selectedTask_; });
-        if (selected != snap.tasks.end()) {
+        if (selected != snap.tasks.end() && compactInformation) {
+            const int lineHeight = std::max(s(20),
+                std::min(s(26),(info.height-s(40))/5));
+            drawText(dc,{info.x+s(20),info.y+s(8),info.width-s(40),s(27)},
+                     L"当前选中任务",c.text,heading);
+            if(info.height>=s(60))
+                drawText(dc,{info.x+s(20),info.y+s(35),info.width-s(40),s(24)},
+                         wide(basename(selected->inputPath)),c.text,smallFont);
+            if(info.height>=s(93))
+                drawText(dc,{info.x+s(20),info.y+s(36)+lineHeight,
+                             info.width-s(40),s(22)},
+                         wide(taskStateName(selected->state)),c.muted,smallFont);
+            if(info.height>=s(120))
+                drawText(dc,{info.x+s(20),info.y+s(36)+lineHeight*2,
+                             info.width-s(40),s(22)},
+                         L"来源：" + wide(selected->inputPath),c.text,smallFont);
+            if(info.height>=s(148))
+                drawText(dc,{info.x+s(20),info.y+s(36)+lineHeight*3,
+                             info.width-s(40),s(22)},
+                         L"输出：" + wide(selected->outputPath),c.text,smallFont);
+        } else if (selected != snap.tasks.end()) {
             const int saved = SaveDC(dc);
             IntersectClipRect(dc, info.x + s(12), info.y + s(10),
                               info.x + info.width - s(12),
@@ -1813,6 +1857,36 @@ private:
                          DT_LEFT|DT_TOP|DT_WORDBREAK);
             }
             RestoreDC(dc, saved);
+        } else if (compactInformation) {
+            drawText(dc,{info.x+s(20),info.y+s(8),info.width-s(40),s(27)},
+                     L"设备与编码摘要",c.text,heading);
+            const int columnWidth = (info.width-s(55))/2;
+            const int secondX = info.x+s(27)+columnWidth;
+            const int lineHeight = std::max(s(21),
+                std::min(s(28),(info.height-s(67))/3));
+            const int topLine = info.y+s(43);
+            if(info.height>=s(80)) {
+                drawText(dc,{info.x+s(20),topLine,columnWidth,s(24)},
+                         L"格式 " + wide(codecName(settings_.codec)) + L" · " +
+                         wide(outputContainerName(settings_.outputContainer)),c.text,smallFont);
+                drawText(dc,{secondX,topLine,columnWidth,s(24)},
+                         L"设备 " + wide(backendName(settings_.backend)),c.text,smallFont);
+            }
+            if(info.height>=s(112)) {
+                drawText(dc,{info.x+s(20),topLine+lineHeight,columnWidth,s(24)},
+                         L"质量 " + std::to_wstring(settings_.crf) + L" · " +
+                         wide(compressionName(settings_.compression)),c.text,smallFont);
+                drawText(dc,{secondX,topLine+lineHeight,columnWidth,s(24)},
+                         L"音频 " + wide(audioModeName(settings_.audioMode)),c.text,smallFont);
+            }
+            if(info.height>=s(148)) {
+                drawText(dc,{info.x+s(20),topLine+lineHeight*2,columnWidth,s(24)},
+                         L"分辨率 " + wide(outputResolutionName(settings_.outputResolution)),
+                         c.text,smallFont);
+                drawText(dc,{secondX,topLine+lineHeight*2,columnWidth,s(24)},
+                         settings_.remoteHost.empty() ? L"计算设备 本机" :
+                         L"远程 " + wide(settings_.remoteHost),c.text,smallFont);
+            }
         } else {
         drawText(dc,{info.x+s(20),info.y+s(12),info.width-s(40),s(27)},
                  L"设备与编码摘要",c.text,heading);
@@ -1859,6 +1933,7 @@ private:
         }
 
         }
+        RestoreDC(dc,informationClip);
         DeleteObject(title); DeleteObject(normal); DeleteObject(smallFont); DeleteObject(heading);
         BitBlt(target, 0, 0, width, height, dc, 0, 0, SRCCOPY);
         SelectObject(dc, oldBitmap);
@@ -1874,9 +1949,13 @@ private:
         const Layout layout = makeLayout(
             client.right, client.bottom, scale(),
             static_cast<int>(backends.size()), advancedExpanded_, queueFocused_);
-        const int listTop = layout.queue.y + s(39);
+        const bool compactQueueHeader =
+            layout.queue.width < s(775) && layout.queue.height >= s(156);
+        const int headerHeight = compactQueueHeader ? s(72) : s(39);
+        const int listTop = layout.queue.y + headerHeight;
         const int rowHeight = s(64);
-        const int visibleCount = std::max(0, (layout.queue.height - s(42)) / rowHeight);
+        const int visibleCount = std::max(0,
+            (layout.queue.height - headerHeight - s(3)) / rowHeight);
         if (x < layout.queue.x || x >= layout.queue.x + layout.queue.width ||
             y < listTop || y >= listTop + visibleCount * rowHeight) {
             return false;
@@ -2221,9 +2300,13 @@ private:
 
         }
         
-        const int queueTop = layout.queue.y + s(39);
+        const bool compactQueueHeader =
+            layout.queue.width < s(775) && layout.queue.height >= s(156);
+        const int headerHeight = compactQueueHeader ? s(72) : s(39);
+        const int queueTop = layout.queue.y + headerHeight;
         const int rowHeight = s(64);
-        const int visibleCount = std::max(0, (layout.queue.height - s(42)) / rowHeight);
+        const int visibleCount = std::max(0,
+            (layout.queue.height - headerHeight - s(3)) / rowHeight);
         if (x >= layout.queue.x && x < layout.queue.x + layout.queue.width &&
             y >= queueTop && y < queueTop + visibleCount * rowHeight) {
             const int visibleIndex = (y - queueTop) / rowHeight + scrollOffset_;
