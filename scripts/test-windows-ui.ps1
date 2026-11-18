@@ -11,6 +11,12 @@ public static class WorkbenchCapture
     [DllImport("user32.dll", CharSet=CharSet.Unicode)]
     public static extern IntPtr FindWindow(string className, string title);
     [DllImport("user32.dll")]
+    public static extern IntPtr GetLastActivePopup(IntPtr hwnd);
+    [DllImport("user32.dll", CharSet=CharSet.Unicode)]
+    public static extern int GetClassName(IntPtr hwnd, System.Text.StringBuilder buffer, int length);
+    [DllImport("user32.dll", CharSet=CharSet.Unicode)]
+    public static extern int GetWindowText(IntPtr hwnd, System.Text.StringBuilder buffer, int length);
+    [DllImport("user32.dll")]
     [return: MarshalAs(UnmanagedType.Bool)]
     public static extern bool GetWindowRect(IntPtr hwnd, out Rect rectangle);
     [DllImport("user32.dll")]
@@ -145,6 +151,7 @@ try {
     Click-Window $handle $advancedX $advancedY
     Save-WindowScreenshot $handle (Join-Path $output 'video-compression-workbench-windows-expanded.png')
     Click-Window $handle $advancedX $advancedY
+    Save-WindowScreenshot $handle (Join-Path $output 'video-compression-workbench-windows-collapsed.png')
 
     $gridX = $pad + (& $S 18)
     $gridWidth = $leftWidth - (& $S 36)
@@ -155,15 +162,28 @@ try {
                                      $openWidth - $resetWidth) / 2)
     $openX = $gridX + 2 * ($trimWidth + $trimGap) + [int]($openWidth / 2)
     $openY = $settingsY + (& $S 232) + (& $S 15)
+    Write-Host "Clicking visual trimmer at client location ($openX, $openY)."
     Click-Window $handle $openX $openY
 
     $trimmer = [IntPtr]::Zero
     for ($i = 0; $i -lt 35; $i++) {
         Start-Sleep -Milliseconds 500
         $trimmer = [WorkbenchCapture]::FindWindow('VideoCompressionWorkbenchTrimmer', $null)
+        if ($trimmer -eq [IntPtr]::Zero) {
+            $trimmer = [WorkbenchCapture]::FindWindow($null, '可视化视频裁剪')
+        }
         if ($trimmer -ne [IntPtr]::Zero) { break }
     }
-    if ($trimmer -eq [IntPtr]::Zero) { throw 'The Windows trimmer window was not opened.' }
+    if ($trimmer -eq [IntPtr]::Zero) {
+        Save-WindowScreenshot $handle (Join-Path $output 'video-compression-workbench-windows-after-trimmer-click.png')
+        $popup = [WorkbenchCapture]::GetLastActivePopup($handle)
+        $popupClass = [System.Text.StringBuilder]::new(256)
+        $popupTitle = [System.Text.StringBuilder]::new(512)
+        [void] [WorkbenchCapture]::GetClassName($popup, $popupClass, $popupClass.Capacity)
+        [void] [WorkbenchCapture]::GetWindowText($popup, $popupTitle, $popupTitle.Capacity)
+        Write-Host "Last active dialog: $popup, class: $popupClass, title: $popupTitle"
+        throw 'The Windows trimmer window was not opened.'
+    }
     Save-WindowScreenshot $trimmer (Join-Path $output 'video-compression-workbench-windows-trimmer.png')
     [void] [WorkbenchCapture]::PostMessage($trimmer, 0x0010, [IntPtr]::Zero, [IntPtr]::Zero)
     Start-Sleep -Milliseconds 650
