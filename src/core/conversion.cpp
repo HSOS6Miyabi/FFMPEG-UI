@@ -691,6 +691,70 @@ int defaultCrf(VideoCodec codec) {
     return 23;
 }
 
+std::optional<double> parseTrimTime(std::string_view value) {
+    if (value.empty()) return std::nullopt;
+    std::vector<std::string_view> parts;
+    std::size_t start = 0;
+    for (std::size_t index = 0; index <= value.size(); ++index) {
+        if (index == value.size() || value[index] == ':') {
+            parts.push_back(value.substr(start, index - start));
+            start = index + 1;
+        }
+    }
+    if (parts.empty() || parts.size() > 3) return std::nullopt;
+    double seconds = 0.0;
+    for (std::size_t index = 0; index < parts.size(); ++index) {
+        const auto part = parts[index];
+        if (part.empty()) return std::nullopt;
+        const bool last = index + 1 == parts.size();
+        std::size_t dotCount = 0;
+        for (char ch : part) {
+            if (ch == '.') {
+                if (!last || ++dotCount > 1) return std::nullopt;
+            } else if (ch < '0' || ch > '9') return std::nullopt;
+        }
+        if (part.front() == '.' || part.back() == '.') return std::nullopt;
+        try {
+            std::size_t consumed = 0;
+            const double number = std::stod(std::string(part), &consumed);
+            if (consumed != part.size() || !std::isfinite(number)) return std::nullopt;
+            if (index != 0 && number >= 60.0) return std::nullopt;
+            const std::size_t remaining = parts.size() - index - 1;
+            seconds += number * (remaining == 2 ? 3600.0 : remaining == 1 ? 60.0 : 1.0);
+        } catch (...) { return std::nullopt; }
+    }
+    if (seconds < 0.0 || !std::isfinite(seconds) || seconds > 8640000.0) return std::nullopt;
+    return seconds;
+}
+
+std::string formatTrimTime(double seconds) {
+    const auto millis = static_cast<std::int64_t>(std::llround(std::max(0.0, seconds) * 1000.0));
+    std::ostringstream result;
+    result << std::setfill('0') << std::setw(2) << millis / 3600000 << ':'
+           << std::setw(2) << (millis / 60000) % 60 << ':'
+           << std::setw(2) << (millis / 1000) % 60 << '.'
+           << std::setw(3) << millis % 1000;
+    return result.str();
+}
+
+bool validTrimRange(double startSeconds, double endSeconds) {
+    return std::isfinite(startSeconds) && startSeconds >= 0.0 &&
+           std::isfinite(endSeconds) &&
+           (endSeconds == -1.0 || endSeconds > startSeconds);
+}
+
+namespace {
+std::optional<double> trimmedDuration(std::optional<double> sourceDuration,
+                                      double startSeconds, double endSeconds) {
+    if (endSeconds >= 0.0) {
+        return std::max(0.0, (sourceDuration
+            ? std::min(*sourceDuration, endSeconds) : endSeconds) - startSeconds);
+    }
+    if (sourceDuration) return std::max(0.0, *sourceDuration - startSeconds);
+    return std::nullopt;
+}
+} // namespace
+
 std::string settingsFingerprint(const ConversionSettings& settings) {
     std::ostringstream value;
     const std::string& source = settings.markerSourcePath.empty() ? settings.inputPath : settings.markerSourcePath;
@@ -701,6 +765,12 @@ std::string settingsFingerprint(const ConversionSettings& settings) {
           << ";audio_mode=" << static_cast<int>(settings.audioMode);
     if (settings.audioMode == AudioMode::Encode) {
         value << ";audio=" << settings.audioBitrateKbps;
+    }
+    if (settings.trimStartSeconds > 0.0 || settings.trimEndSeconds >= 0.0) {
+        value << ";trim=" << std::llround(settings.trimStartSeconds * 1000.0) << ":";
+        if (settings.trimEndSeconds >= 0.0)
+            value << std::llround(settings.trimEndSeconds * 1000.0);
+        else value << "end";
     }
     value << ";resolution=" << static_cast<int>(settings.outputResolution)
           << ";container=" << (settings.outputContainer == OutputContainer::MP4
@@ -729,9 +799,15 @@ std::string outputSuffix(const ConversionSettings& settings) {
     case OutputResolution::HD720: resolution = "_R720"; break;
     case OutputResolution::SD480: resolution = "_R480"; break;
     }
+    std::string trimSuffix;
+    if (settings.trimStartSeconds > 0.0 || settings.trimEndSeconds >= 0.0) {
+        trimSuffix = "_T" + std::to_string(std::llround(settings.trimStartSeconds * 1000.0)) +
+            "-" + (settings.trimEndSeconds >= 0.0
+                ? std::to_string(std::llround(settings.trimEndSeconds * 1000.0)) : "END");
+    }
     return "_" + codecShortName(settings.codec) + "_" + backendShortName(settings.backend) +
            "_" + qualityType + std::to_string(settings.crf) + "_" +
-           compressionName(settings.compression) + audio + resolution + container;
+           compressionName(settings.compression) + audio + resolution + trimSuffix + container;
 }
 
 namespace {
@@ -752,7 +828,8 @@ bool supportsLegacyMarker(const ConversionSettings& settings) {
     return (settings.outputContainer == OutputContainer::MP4 ||
             settings.outputContainer == OutputContainer::SameAsSource) &&
         settings.audioMode == AudioMode::Encode &&
-        settings.outputResolution == OutputResolution::Original;
+        settings.outputResolution == OutputResolution::Original &&
+        settings.trimStartSeconds == 0.0 && settings.trimEndSeconds == -1.0;
 }
 } // namespace
 
@@ -824,6 +901,8 @@ std::vector<std::string> buildFfmpegCommand(const ConversionSettings& settings,
                                             const EncoderCapabilities& capabilities,
                                             const std::string& ffmpegPath,
                                             const std::string& actualOutputPath) {
+    if (!validTrimRange(settings.trimStartSeconds, settings.trimEndSeconds))
+        throw std::invalid_argument("裁剪结束时间必须晚于起始时间，时间不能为负数。");
     if (!capabilities.supports(settings.codec, settings.backend))
         throw std::invalid_argument("当前 FFmpeg 环境不支持所选编码器。");
     if (settings.crf < 0 || settings.crf > crfMaximum(settings.codec))
@@ -843,10 +922,12 @@ std::vector<std::string> buildFfmpegCommand(const ConversionSettings& settings,
         throw std::invalid_argument("当前 FFmpeg 未提供该容器所需的音频编码器。");
     const bool useSvtAv1 = encoder == "libsvtav1";
     std::vector<std::string> command{
-        ffmpegPath, "-hide_banner", "-nostdin", "-loglevel", "error", "-y",
-        "-i", settings.inputPath,
-        "-map", "0:v:0"
+        ffmpegPath, "-hide_banner", "-nostdin", "-loglevel", "error", "-y"
     };
+    // Seek before opening the input; decoding then refines the position.
+    if (settings.trimStartSeconds > 0.0)
+        command.insert(command.end(), {"-ss", formatTrimTime(settings.trimStartSeconds)});
+    command.insert(command.end(), {"-i", settings.inputPath, "-map", "0:v:0"});
     if (settings.audioMode != AudioMode::Remove) {
         command.insert(command.end(), {"-map", "0:a?"});
     }
@@ -856,7 +937,8 @@ std::vector<std::string> buildFfmpegCommand(const ConversionSettings& settings,
     case EncoderBackend::CPU:
         if (settings.codec == VideoCodec::VP9) {
             command.insert(command.end(), {"-crf", std::to_string(settings.crf), "-b:v", "0",
-                "-deadline", "good", "-row-mt", "1",
+                "-deadline", settings.compression == CompressionLevel::Extreme ? "best" : "good",
+                "-row-mt", "1",
                 "-cpu-used", cpuPreset(settings.codec, settings.compression, false)});
         } else if (settings.codec == VideoCodec::H266) {
             command.insert(command.end(), {"-preset",
@@ -904,6 +986,11 @@ std::vector<std::string> buildFfmpegCommand(const ConversionSettings& settings,
             "-c:a", audioEncoder, "-b:a", std::to_string(settings.audioBitrateKbps) + "k"});
     } else if (settings.audioMode == AudioMode::Copy) {
         command.insert(command.end(), {"-c:a", "copy"});
+    }
+    if (settings.trimEndSeconds >= 0.0) {
+        // Output-side -t is a duration measured after input-side seeking.
+        command.insert(command.end(), {
+            "-t", formatTrimTime(settings.trimEndSeconds - settings.trimStartSeconds)});
     }
     command.insert(command.end(), {"-metadata", "comment=" + marker});
     const bool movFamily = outputExtension == ".mp4" || outputExtension == ".m4v" ||
