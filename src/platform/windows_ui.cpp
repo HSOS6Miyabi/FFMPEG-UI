@@ -75,6 +75,7 @@ Palette palette(bool dark) {
 struct Layout {
     Rect addFiles, addFolder, addArchive, importQueue, exportQueue, removeSelected, clearDone, clearAll;
     Rect outputField, outputBrowse;
+    Rect trimStart, trimEnd, trimOpen, trimReset;
     Rect container[4], codec[5], backend[4], crfTrack, crfValue;
     Rect compressionTrack, compressionValue, audio[6], resolution[6], audioMode[3];
     Rect parallel, recursive, skip, preserve, overwrite;
@@ -170,7 +171,14 @@ Layout makeLayout(int width, int height, double scale, int backendCount = 4,
     l.preserve = {leftX + s(20) + (optionWidth + optionGap) * 3, optionY, optionWidth, s(28)};
     l.overwrite = {leftX + s(20) + (optionWidth + optionGap) * 4, optionY, optionWidth, s(28)};
 
-    const int queueY = settingsY + s(expanded ? 425 : 233);
+    const int trimY = settingsY + s(expanded ? 424 : 232);
+    const int trimGap = s(7), openW = s(111), resetW = s(76);
+    const int trimW = (gridWidth - trimGap * 3 - openW - resetW) / 2;
+    l.trimStart = {gridX, trimY, trimW, s(31)};
+    l.trimEnd = {gridX + trimW + trimGap, trimY, trimW, s(31)};
+    l.trimOpen = {gridX + (trimW + trimGap) * 2, trimY, openW, s(31)};
+    l.trimReset = {gridX + gridWidth - resetW, trimY, resetW, s(31)};
+    const int queueY = settingsY + s(expanded ? 486 : 294);
     const int actualQueueY = queueFocused ? settingsY : queueY;
     l.queue = {leftX, actualQueueY, leftW, std::max(0, height - actualQueueY - pad)};
     l.failedOnly = {leftX + s(142), actualQueueY + s(9), s(102), s(26)};
@@ -1267,6 +1275,56 @@ private:
         editingCrf_ = false;
         crfEditText_.clear();
     }
+    bool commitTrimText() {
+        if (editingTrim_ == -1) return true;
+        const std::string raw = utf8FromWide(trimEditText_.c_str());
+        const auto parsed = raw.empty() && editingTrim_ == 1
+            ? std::optional<double>{-1.0} : parseTrimTime(raw.empty() ? "0" : raw);
+        if (!parsed) {
+            showTaskDialog(window_, L"裁剪时间格式错误",
+                           L"请输入秒数或 时:分:秒.毫秒，例如 00:01:23.500。",
+                           TDCBF_OK_BUTTON, TD_WARNING_ICON);
+            return false;
+        }
+        const double start = editingTrim_ == 0 ? *parsed : settings_.trimStartSeconds;
+        const double end = editingTrim_ == 1 ? *parsed : settings_.trimEndSeconds;
+        if (!validTrimRange(start, end)) {
+            showTaskDialog(window_, L"裁剪时间无效",
+                           L"裁剪结束时间必须晚于起始时间。",
+                           TDCBF_OK_BUTTON, TD_WARNING_ICON);
+            return false;
+        }
+        settings_.trimStartSeconds = start;
+        settings_.trimEndSeconds = end;
+        editingTrim_ = -1;
+        trimEditText_.clear();
+        updateSettings();
+        return true;
+    }
+
+    void openVideoTrimmer() {
+        const auto snapshot = controller_.snapshot();
+        if (snapshot.running) return;
+        const auto candidate = std::find_if(snapshot.tasks.begin(), snapshot.tasks.end(),
+            [this](const BatchTaskSnapshot& task) {
+                return task.kind == TaskKind::Video && task.id == selectedTask_;
+            });
+        auto first = candidate == snapshot.tasks.end()
+            ? std::find_if(snapshot.tasks.begin(), snapshot.tasks.end(),
+                [](const BatchTaskSnapshot& task) {
+                    return task.kind == TaskKind::Video;
+                }) : candidate;
+        if (first == snapshot.tasks.end()) {
+            showTaskDialog(window_, L"请选择视频",
+                           L"先添加独立视频，再选择可视化裁剪。ZIP 和 PPTX 任务可以直接填写裁剪时间。",
+                           TDCBF_OK_BUTTON, TD_INFORMATION_ICON);
+            return;
+        }
+        VideoTrimmerDialog dialog;
+        if (dialog.run(instance_, window_, controller_, first->inputPath, settings_, dark_))
+            updateSettings();
+    }
+
     void startOrCancel() {
         const auto snap = controller_.snapshot();
         if (!snap.running) {
@@ -1348,7 +1406,7 @@ private:
 
         if (!queueFocused_) {
         const int leftX = l.queue.x, top = s(144), leftW = l.queue.width;
-        drawCard(dc, {leftX, top, leftW, s(advancedExpanded_ ? 413 : 221)}, c);
+        drawCard(dc, {leftX, top, leftW, s(advancedExpanded_ ? 474 : 282)}, c);
         drawText(dc, {leftX + s(18), top + s(10), s(170), s(26)},
                  L"编码设置", c.text, heading);
         drawButton(dc, l.advancedToggle,
@@ -1500,7 +1558,21 @@ private:
                        settings_.overwrite ? L"覆盖文件✓" : L"保留文件",
                        c, smallFont, settings_.overwrite);
         }
-
+        drawText(dc, {l.trimStart.x, l.trimStart.y - s(20), l.trimStart.width, s(18)},
+                 L"裁剪起始时间", c.muted, smallFont);
+        drawText(dc, {l.trimEnd.x, l.trimEnd.y - s(20), l.trimEnd.width, s(18)},
+                 L"裁剪结束时间", c.muted, smallFont);
+        const std::wstring trimStartLabel = editingTrim_ == 0
+            ? trimEditText_ + L"|" : wide(formatTrimTime(settings_.trimStartSeconds));
+        const std::wstring trimEndLabel = editingTrim_ == 1
+            ? trimEditText_ + L"|" : settings_.trimEndSeconds < 0.0
+                ? L"直到片尾" : wide(formatTrimTime(settings_.trimEndSeconds));
+        drawButton(dc, l.trimStart, trimStartLabel, c, smallFont,
+                   editingTrim_ == 0, snap.running);
+        drawButton(dc, l.trimEnd, trimEndLabel, c, smallFont,
+                   editingTrim_ == 1, snap.running);
+        drawButton(dc, l.trimOpen, L"可视化裁剪", c, smallFont, false, snap.running);
+        drawButton(dc, l.trimReset, L"重置", c, smallFont, false, snap.running);
         }
 
         drawCard(dc,l.queue,c);
@@ -1918,6 +1990,27 @@ private:
             return;
         }
         if (!queueFocused_) {
+        if (!snapshot.running &&
+            (contains(layout.trimStart, x, y) || contains(layout.trimEnd, x, y))) {
+            if (!commitTrimText()) return;
+            editingTrim_ = contains(layout.trimStart, x, y) ? 0 : 1;
+            trimEditText_ = wide(editingTrim_ == 0
+                ? formatTrimTime(settings_.trimStartSeconds) :
+                settings_.trimEndSeconds < 0.0 ? "" : formatTrimTime(settings_.trimEndSeconds));
+            SetFocus(window_);
+            return;
+        }
+        if (!commitTrimText()) return;
+        if (!snapshot.running && contains(layout.trimOpen, x, y)) {
+            openVideoTrimmer();
+            return;
+        }
+        if (!snapshot.running && contains(layout.trimReset, x, y)) {
+            settings_.trimStartSeconds = 0.0;
+            settings_.trimEndSeconds = -1.0;
+            updateSettings();
+            return;
+        }
         if (contains(layout.outputBrowse, x, y)) {
             chooseOutput();
             return;
@@ -2169,6 +2262,22 @@ private:
             }
             return 0;
         case WM_CHAR:
+            if (editingTrim_ != -1) {
+                if ((wParam >= L'0' && wParam <= L'9') ||
+                    wParam == L':' || wParam == L'.') {
+                    if (trimEditText_.size() < 20)
+                        trimEditText_.push_back(static_cast<wchar_t>(wParam));
+                } else if (wParam == 8 && !trimEditText_.empty()) {
+                    trimEditText_.pop_back();
+                } else if (wParam == 13) {
+                    commitTrimText();
+                } else if (wParam == 27) {
+                    editingTrim_ = -1;
+                    trimEditText_.clear();
+                }
+                InvalidateRect(window_, nullptr, FALSE);
+                return 0;
+            }
             if (editingCrf_) {
                 if (wParam >= L'0' && wParam <= L'9' && crfEditText_.size() < 3) {
                     crfEditText_.push_back(static_cast<wchar_t>(wParam));
@@ -2186,6 +2295,14 @@ private:
             }
             break;
         case WM_KEYDOWN:
+            if (editingTrim_ != -1) {
+                if (wParam == VK_ESCAPE) {
+                    editingTrim_ = -1;
+                    trimEditText_.clear();
+                    InvalidateRect(window_, nullptr, FALSE);
+                }
+                return 0;
+            }
             if (!editingCrf_ && (GetKeyState(VK_CONTROL) & 0x8000) != 0) {
                 if (wParam == 'Q') {
                     queueFocused_ = !queueFocused_;
@@ -2313,6 +2430,8 @@ private:
     bool compressionFocused_{false};
     bool editingCrf_{false};
     std::wstring crfEditText_;
+    int editingTrim_{-1};
+    std::wstring trimEditText_;
     int scrollOffset_{0};
     bool advancedExpanded_{false};
     bool queueFocused_{false};
