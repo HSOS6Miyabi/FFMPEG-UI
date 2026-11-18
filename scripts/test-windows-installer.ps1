@@ -193,7 +193,7 @@ try {
     }
     Write-Host "Verified bundled FFmpeg discovery with the system FFmpeg path removed."
     $testOutput = Invoke-WorkbenchCommand $installedApp @("--self-test")
-    if ($testOutput -notmatch 'Self-test result: d+ passed, 0 failed') {
+    if ($testOutput -notmatch 'Self-test result: [0-9]+ passed, 0 failed') {
         throw "Installed application self-tests did not report success."
     }
 } finally {

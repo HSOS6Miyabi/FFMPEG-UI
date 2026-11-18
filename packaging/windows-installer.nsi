@@ -62,6 +62,11 @@ VIAddVersionKey /LANG=0 "LegalCopyright" "Copyright (C) 2026 Kenvix <i@kenvix.co
 VIAddVersionKey /LANG=0 "Comments" "Author: Kenvix <i@kenvix.com>"
 VIAddVersionKey /LANG=0 "OriginalFilename" "video-compression-workbench-setup.exe"
 
+!define MUI_WELCOMEPAGE_TITLE "欢迎安装视频压缩工作台"
+!define MUI_WELCOMEPAGE_TEXT "此向导将安装视频压缩工作台。$\r$\n$\r$\n请关闭已经运行的程序，然后点击“下一步”继续。"
+!define MUI_FINISHPAGE_TITLE "视频压缩工作台已安装"
+!define MUI_FINISHPAGE_TEXT "安装已完成。您可以通过开始菜单启动视频压缩工作台。"
+
 !insertmacro MUI_PAGE_WELCOME
 !insertmacro MUI_PAGE_COMPONENTS
 !insertmacro MUI_PAGE_DIRECTORY
