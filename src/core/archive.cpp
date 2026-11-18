@@ -245,6 +245,11 @@ bool writeArchive(const fs::path& sourceDirectory, const fs::path& destination,
     }
     archive_write_set_format_zip(writer);
     archive_write_set_format_option(writer, "zip", "compression", "deflate");
+    if (archive_write_set_format_option(writer, "zip", "hdrcharset", "UTF-8") != ARCHIVE_OK) {
+        error = "无法将 ZIP 文件名编码设置为 UTF-8：" + archiveError(writer, "未知错误");
+        archive_write_free(writer);
+        return false;
+    }
     if (openArchiveWriter(writer, destination) != ARCHIVE_OK) {
         error = "无法创建输出 ZIP 文件：" + archiveError(writer, "未知错误");
         archive_write_free(writer);

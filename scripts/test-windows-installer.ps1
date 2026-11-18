@@ -120,7 +120,11 @@ function Invoke-WorkbenchCommand([string]$Application, [string[]]$Arguments) {
             Get-Content -LiteralPath $errors -Raw -Encoding UTF8
         } else { '' }
         if ($process.ExitCode -ne 0) {
-            throw "Command $($Arguments -join ' ') failed with exit code $($process.ExitCode): $text $errorText"
+            Write-Host $text
+            if (-not [string]::IsNullOrWhiteSpace($errorText)) {
+                Write-Host $errorText
+            }
+            throw "Command $($Arguments -join ' ') failed with exit code $($process.ExitCode)"
         }
         Write-Host $text
         return $text
