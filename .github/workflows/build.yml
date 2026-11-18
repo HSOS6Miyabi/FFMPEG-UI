@@ -400,7 +400,6 @@ jobs:
 
       - name: Capture Windows desktop and trimmer screenshots
         shell: pwsh
-        continue-on-error: true
         run: ./scripts/test-windows-ui.ps1
 
       - name: Upload Windows UI screenshots
