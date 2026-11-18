@@ -150,7 +150,7 @@ jobs:
             grep -qx "trimStartSeconds=0.500000" "$FFMPEG_STUDIO_CONFIG_DIR/settings.ini"
 
             # Preview a real video and mark a two-second interval in the native trimmer.
-            xdotool mousemove --window "$window" 1000 608 click 1
+            xdotool mousemove --window "$window" 910 608 click 1
             dialog=""
             for attempt in $(seq 1 20); do
               dialog=$(xdotool search --name "可视化视频裁剪" 2>/dev/null | head -n 1 || true)
