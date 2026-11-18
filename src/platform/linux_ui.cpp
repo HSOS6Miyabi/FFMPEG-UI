@@ -1306,8 +1306,8 @@ private:
 
         const double dialogScale = std::max(0.65, std::min({
             scale_,
-            static_cast<double>(DisplayWidth(display_, screen_) - d(40)) / 946.0,
-            static_cast<double>(DisplayHeight(display_, screen_) - d(48)) / 794.0
+            static_cast<double>(DisplayWidth(display_, screen_) - s(40)) / 946.0,
+            static_cast<double>(DisplayHeight(display_, screen_) - s(48)) / 794.0
         }));
         const auto d = [dialogScale](int value) {
             return static_cast<int>(std::lround(value * dialogScale));
