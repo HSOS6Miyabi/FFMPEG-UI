@@ -154,8 +154,8 @@ Layout makeLayout(int width, int height, double scale, int backendCount = 4,
                 rightW - s(40) - actionWidth - actionGap, s(42)};
     const int infoY = top + s(232);
     const int infoButtonW = (rightW - s(46)) / 2;
-    l.rescan = {rightX + s(18), infoY + s(207), infoButtonW, s(30)};
-    l.diagnostic = {rightX + s(28) + infoButtonW, infoY + s(207),
+    l.rescan = {rightX + s(18), infoY + s(197), infoButtonW, s(30)};
+    l.diagnostic = {rightX + s(28) + infoButtonW, infoY + s(197),
                     infoButtonW, s(30)};
     l.ssh = {width - s(222), s(23), s(110), s(34)};
     l.theme = {width - s(102), s(23), s(80), s(34)};
@@ -1226,34 +1226,34 @@ private:
         drawText(dc,{info.x+s(20),info.y+s(40),info.width-s(40),s(22)},
                  L"格式  " + wide(codecName(settings_.codec)) +
                  L" · " + wide(outputContainerName(settings_.outputContainer)),c.text,normal);
-        drawText(dc,{info.x+s(20),info.y+s(64),info.width-s(40),s(22)},
+        drawText(dc,{info.x+s(20),info.y+s(62),info.width-s(40),s(22)},
                  L"编码器  " + wide(backendName(settings_.backend)),c.text,normal);
-        drawText(dc,{info.x+s(20),info.y+s(88),info.width-s(40),s(22)},
+        drawText(dc,{info.x+s(20),info.y+s(84),info.width-s(40),s(22)},
                  L"质量  " + std::to_wstring(settings_.crf) +
                  L" · " + wide(compressionName(settings_.compression)),c.text,normal);
-        drawText(dc,{info.x+s(20),info.y+s(112),info.width-s(40),s(22)},
+        drawText(dc,{info.x+s(20),info.y+s(106),info.width-s(40),s(22)},
                  L"音频  " + wide(audioModeName(settings_.audioMode)) +
                  (settings_.audioMode == AudioMode::Encode
                      ? L" · " + std::to_wstring(settings_.audioBitrateKbps) + L" kbps"
                      : L""),c.text,normal);
-        drawText(dc,{info.x+s(20),info.y+s(136),info.width-s(40),s(22)},
+        drawText(dc,{info.x+s(20),info.y+s(128),info.width-s(40),s(22)},
                  L"分辨率  " + wide(outputResolutionName(settings_.outputResolution)),
                  c.text,normal);
         const std::wstring computeTarget = settings_.remoteHost.empty()
             ? L"计算设备  本机" : L"计算设备  远程 · " + wide(settings_.remoteHost);
-        drawText(dc,{info.x+s(20),info.y+s(160),info.width-s(40),s(22)},
+        drawText(dc,{info.x+s(20),info.y+s(150),info.width-s(40),s(22)},
                  computeTarget,c.text,normal);
         const bool nvencReady = snap.capabilities.supports(
             settings_.codec, EncoderBackend::NVENC);
-        drawText(dc,{info.x+s(20),info.y+s(183),info.width-s(40),s(19)},
+        drawText(dc,{info.x+s(20),info.y+s(174),info.width-s(40),s(19)},
                  nvencReady ? L"NVIDIA NVENC 已检测到" : L"NVENC 未通过检测，可查看原因",
                  nvencReady ? c.green : c.muted,smallFont);
-        if (info.height >= s(238)) {
+        if (info.height >= s(228)) {
             drawButton(dc,l.rescan,L"重新检测",c,smallFont,false,snap.running);
             drawButton(dc,l.diagnostic,L"检测详情",c,smallFont);
         }
-        const int detailY = info.y + s(250);
-        const int availableDetail = info.height - s(263);
+        const int detailY = info.y + s(245);
+        const int availableDetail = info.height - s(258);
         if (availableDetail > s(26)) {
             if (!snap.error.empty()) {
                 drawText(dc,{info.x+s(20),detailY,info.width-s(40),availableDetail},
