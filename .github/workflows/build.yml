@@ -190,12 +190,15 @@ jobs:
 
   release:
     name: Publish GitHub Release
-    if: startsWith(github.ref, 'refs/tags/v')
+    if: github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v')
     needs: [linux, windows]
     runs-on: ubuntu-latest
     permissions:
       contents: write
     steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
       - name: Download Linux package
         uses: actions/download-artifact@v4
         with:
@@ -208,10 +211,30 @@ jobs:
           name: video-compression-workbench-windows-x86_64
           path: dist
 
-      - name: Publish release and attach packages
-        uses: softprops/action-gh-release@v2
-        with:
-          generate_release_notes: true
-          files: |
-            dist/video-compression-workbench-linux-x86_64.tar.gz
-            dist/video-compression-workbench-windows-x86_64.zip
+      - name: Publish verified GitHub Release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          version=$(sed -nE 's/^project\(VideoCompressionWorkbench VERSION ([0-9]+\.[0-9]+\.[0-9]+).*/\1/p' CMakeLists.txt)
+          if [[ ! "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo 'Could not read the project version from CMakeLists.txt' >&2
+            exit 1
+          fi
+          tag="v${version}"
+          if [[ "$GITHUB_REF_TYPE" == "tag" && "$GITHUB_REF_NAME" != "$tag" ]]; then
+            echo "Tag $GITHUB_REF_NAME does not match project version $tag" >&2
+            exit 1
+          fi
+          if gh release view "$tag" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "Release $tag already exists; increment the CMake project version for the next release."
+            exit 0
+          fi
+          gh release create "$tag" \
+            dist/video-compression-workbench-linux-x86_64.tar.gz \
+            dist/video-compression-workbench-windows-x86_64.zip \
+            --repo "$GITHUB_REPOSITORY" \
+            --target "$GITHUB_SHA" \
+            --title "视频压缩工作台 $tag" \
+            --generate-notes

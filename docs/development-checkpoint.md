@@ -54,7 +54,7 @@ ctest --preset windows-release
 
 ## 自动化测试
 
-GitHub Actions 在 Linux 和 Windows 上分别执行 CMake 配置、编译、核心单元测试、FFmpeg 媒体测试和发布包生成。
+GitHub Actions 在 Linux 和 Windows 上分别执行 CMake 配置、编译、核心单元测试、FFmpeg 媒体测试和发布包生成。两端测试都通过后，`main` 分支的发布任务会根据 CMake 项目版本号创建未发布版本的标签与 GitHub Release，并上传两个平台的程序包。
 
 Linux CI 会启动临时 OpenSSH 服务器，验证密钥认证、密码认证、SCP 文件传输、远程 FFmpeg 能力探测、远程编码、进度读取和临时目录清理。
 

@@ -31,7 +31,7 @@
 | `src/platform/linux_ui.cpp` | Linux X11/Xft 界面 |
 | `src/main.cpp` | 应用入口、命令行参数、自检和演示模式 |
 | `tests/core_tests.cpp` | 核心逻辑单元测试 |
-| `.github/workflows/build.yml` | Windows/Linux CI、打包和标签发布 |
+| `.github/workflows/build.yml` | Windows/Linux CI、桌面截图、打包和经测试的版本发布 |
 | `docs/architecture.md` | 组件结构和处理流程 |
 | `docs/decision-log.md` | 重要设计决策和维护约束 |
 | `docs/encoding.md` | 编码质量、预设、音频处理、分辨率和进度参数 |
@@ -131,8 +131,9 @@ scripts/lint-cpp.sh build/linux-release
 
 - 推送到 `main` 或创建针对 `main` 的 Pull Request 时，工作流会构建 Windows 和 Linux 版本，并执行单元测试及媒体自检。
 - `workflow_dispatch` 可手动运行工作流。
-- 创建并推送 `v*` 标签时，工作流在两个平台的构建和测试均成功后创建 GitHub Release，并上传 Windows ZIP 和 Linux tar.gz。
-- 未完成跨平台 CI 验证前，不要创建正式版本标签。
+- `main` 分支的 Linux 和 Windows 测试全部成功后，发布任务读取 `CMakeLists.txt` 中的版本号，从通过验证的提交创建版本标签和 GitHub Release，并上传 Windows ZIP 和 Linux tar.gz。
+- 已发布的版本不会被自动覆盖。需要发布新版本时，先更新 CMake 项目的版本号，再提交到 `main`。
+- 手动推送与 CMake 项目版本一致的 `v*` 标签时，也会执行完整验证；发布前必须确保两个平台的检查通过。
 
 ## 界面检查
 

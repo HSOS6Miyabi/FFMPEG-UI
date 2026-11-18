@@ -174,7 +174,7 @@ ctest --test-dir build --output-on-failure
 - 增加视频和容器临时输出、完整性检查和文件覆盖保护。
 - 增加 Windows Send To 命令行参数支持和 Windows/Linux 文件拖放。
 - 增加任务清单导入导出、编码设置持久化和压缩前后大小统计。
-- 增加 Linux 与 Windows CI，以及按版本标签自动发布 GitHub Release 的工作流。
+- 增加 Linux 和 Windows CI。两个平台的构建与测试通过后，从经过测试的 `main` 提交创建与 CMake 版本一致的 GitHub Release；已经发布的版本不能被后续提交自动覆盖。
 - 增加真实 FFmpeg 进程暂停和继续测试。
 
 ## SSH 远程编码

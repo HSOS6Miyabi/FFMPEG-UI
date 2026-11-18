@@ -33,6 +33,11 @@ bool containsPair(const std::vector<std::string>& command,
     return false;
 }
 
+std::string pathToUtf8(const std::filesystem::path& path) {
+    const auto encoded = path.u8string();
+    return std::string(reinterpret_cast<const char*>(encoded.data()), encoded.size());
+}
+
 } // namespace
 
 int main() {
@@ -544,6 +549,11 @@ int main() {
                 restoredRun.clearAll();
                 require(restoredRun.snapshot().totalTasks == 0,
                         "Clearing the task list must update the persisted queue.");
+            }
+            {
+                AppController cleanRun;
+                require(cleanRun.snapshot().totalTasks == 0,
+                        "A cleared task queue must remain empty after restart.");
             }
 #ifdef _WIN32
             _putenv_s("FFMPEG_STUDIO_CONFIG_DIR",

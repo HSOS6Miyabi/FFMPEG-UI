@@ -230,7 +230,7 @@ video-compression-workbench --demo
 
 ## 自动构建和发布
 
-GitHub Actions 会在提交到 `main`、创建 Pull Request 或手动触发时构建 Windows 和 Linux 版本，并执行单元测试及实际视频、ZIP、PPTX 测试。推送符合 `v*` 格式的标签（例如 `v1.2.0`）后，工作流会自动创建 GitHub Release，并附上 Windows ZIP 包和 Linux tar.gz 包。
+GitHub Actions 在提交到 `main`、创建 Pull Request 或手动触发时构建 Windows 和 Linux 版本，并执行单元测试及实际视频、ZIP、PPTX、SSH 测试。`main` 上两个平台的全部测试通过后，发布任务读取 `CMakeLists.txt` 中的版本号。如果该版本尚未发布，就从通过测试的提交创建版本标签和 GitHub Release，并上传 Windows ZIP 包和 Linux tar.gz 包。已经发布的版本不会被后续提交覆盖；发布下一版本时，需要先更新 CMake 项目版本号。手动推送与项目版本一致的 `v*` 标签，也可以触发相同的验证和发布流程。
 
 ## 维护要求
 
