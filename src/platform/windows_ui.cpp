@@ -1,4 +1,5 @@
 #include "ui.hpp"
+#include "windows_resources.h"
 
 #include "../core/app_controller.hpp"
 #include "../core/process.hpp"
@@ -26,6 +27,12 @@
 
 namespace ffmpegui {
 namespace {
+
+HICON loadApplicationIcon(HINSTANCE instance, int width, int height) {
+    return static_cast<HICON>(LoadImageW(
+        instance, MAKEINTRESOURCEW(IDI_VIDEO_WORKBENCH),
+        IMAGE_ICON, width, height, LR_SHARED));
+}
 
 struct Rect { int x{}, y{}, width{}, height{}; };
 bool contains(const Rect& r, int x, int y) {
@@ -245,13 +252,18 @@ public:
         instance_ = instance;
         controller_ = &controller;
 
-        WNDCLASSW windowClass{};
+        WNDCLASSEXW windowClass{};
+        windowClass.cbSize = sizeof(windowClass);
         windowClass.lpfnWndProc = &SshManagerDialog::windowProc;
         windowClass.hInstance = instance;
         windowClass.lpszClassName = L"VideoCompressionWorkbenchSshManager";
         windowClass.hCursor = LoadCursorW(nullptr, IDC_ARROW);
+        windowClass.hIcon = loadApplicationIcon(
+            instance, GetSystemMetrics(SM_CXICON), GetSystemMetrics(SM_CYICON));
+        windowClass.hIconSm = loadApplicationIcon(
+            instance, GetSystemMetrics(SM_CXSMICON), GetSystemMetrics(SM_CYSMICON));
         windowClass.hbrBackground = reinterpret_cast<HBRUSH>(COLOR_WINDOW + 1);
-        RegisterClassW(&windowClass);
+        RegisterClassExW(&windowClass);
 
         const UINT dpi = GetDpiForWindow(owner);
         scale_ = static_cast<double>(dpi == 0 ? 96 : dpi) / 96.0;
@@ -738,9 +750,18 @@ public:
     explicit WindowsWindow(AppController& controller) : controller_(controller) {}
     int run(HINSTANCE instance) {
         instance_ = instance;
-        WNDCLASSW wc{}; wc.lpfnWndProc = &WindowsWindow::windowProc; wc.hInstance = instance;
-        wc.lpszClassName = L"VideoCompressionWorkbenchWindow"; wc.hCursor = LoadCursorW(nullptr, IDC_ARROW);
-        wc.hbrBackground = nullptr; RegisterClassW(&wc);
+        WNDCLASSEXW wc{};
+        wc.cbSize = sizeof(wc);
+        wc.lpfnWndProc = &WindowsWindow::windowProc;
+        wc.hInstance = instance;
+        wc.lpszClassName = L"VideoCompressionWorkbenchWindow";
+        wc.hCursor = LoadCursorW(nullptr, IDC_ARROW);
+        wc.hIcon = loadApplicationIcon(
+            instance, GetSystemMetrics(SM_CXICON), GetSystemMetrics(SM_CYICON));
+        wc.hIconSm = loadApplicationIcon(
+            instance, GetSystemMetrics(SM_CXSMICON), GetSystemMetrics(SM_CYSMICON));
+        wc.hbrBackground = nullptr;
+        RegisterClassExW(&wc);
         const DWORD style = WS_OVERLAPPEDWINDOW | WS_CLIPCHILDREN;
         RECT rect{0, 0, 1500, 1020}; AdjustWindowRect(&rect, style, FALSE);
         window_ = CreateWindowExW(0, wc.lpszClassName, L"视频压缩工作台", style,

@@ -1,8 +1,14 @@
+<p align="center">
+  <img src="assets/icons/video-compression-workbench.png" alt="视频压缩工作台应用图标" width="128" height="128">
+</p>
+
 # 视频压缩工作台
 
 视频压缩工作台是一款面向 Windows 和 Linux 的桌面视频压缩工具，支持单文件、批量文件、文件夹、ZIP 压缩包和 PowerPoint 演示文稿。可以统一输出 MP4，也可以沿用源文件的容器格式；支持 H.264、H.265 和 AV1，并提供输出分辨率、音频处理方式、CRF 数值和压缩级别等设置。
 
 程序使用 C++20 编写。Windows 界面使用 Win32 API 和 GDI，Linux 界面使用 X11 和 Xft。程序通过 FFmpeg 和 ffprobe 完成视频编码，通过 libarchive 读取和生成 ZIP 文件。项目不使用 Qt、GTK、MFC、Electron 等桌面界面框架。默认在本机处理视频；选择 SSH 服务器后，程序只会临时传输当前任务所需的视频，完成后自动将结果下载到本机。
+
+图标资源：[SVG 矢量图](assets/icons/video-compression-workbench.svg) · [PNG 高清图](assets/icons/video-compression-workbench.png) · [Windows ICO 图标](assets/icons/video-compression-workbench.ico)。
 
 ## 功能概览
 

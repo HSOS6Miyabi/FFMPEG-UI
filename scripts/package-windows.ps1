@@ -107,11 +107,15 @@ if (-not (Test-Path -LiteralPath $nsis)) {
     $nsis = $nsisCommand.Source
 }
 
+$iconPath = Join-Path $repoRoot "assets/icons/video-compression-workbench.ico"
+if (-not (Test-Path -LiteralPath $iconPath -PathType Leaf)) {
+    throw "The Windows application icon is missing: $iconPath"
+}
 $installerPath = Join-Path $outputPath "video-compression-workbench-$version-windows-x64-setup.exe"
 if (Test-Path -LiteralPath $installerPath) {
     Remove-Item -LiteralPath $installerPath -Force
 }
-& $nsis "/INPUTCHARSET" "UTF8" "/V3" "/DPRODUCT_VERSION=$version" "/DPAYLOAD_DIR=$payloadPath" "/DOUTPUT_FILE=$installerPath" (Join-Path $repoRoot "packaging/windows-installer.nsi")
+& $nsis "/INPUTCHARSET" "UTF8" "/V3" "/DPRODUCT_VERSION=$version" "/DPAYLOAD_DIR=$payloadPath" "/DOUTPUT_FILE=$installerPath" "/DPRODUCT_ICON=$iconPath" (Join-Path $repoRoot "packaging/windows-installer.nsi")
 if ($LASTEXITCODE -ne 0 -or -not (Test-Path -LiteralPath $installerPath -PathType Leaf)) {
     throw "NSIS did not produce an installer."
 }

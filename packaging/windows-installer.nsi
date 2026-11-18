@@ -13,6 +13,12 @@ Unicode true
 !ifndef OUTPUT_FILE
   !error "Pass /DOUTPUT_FILE=absolute-path"
 !endif
+!ifndef PRODUCT_ICON
+  !error "Pass /DPRODUCT_ICON=absolute-path"
+!endif
+
+!define MUI_ICON "${PRODUCT_ICON}"
+!define MUI_UNICON "${PRODUCT_ICON}"
 
 !define PRODUCT_NAME "视频压缩工作台"
 !define PRODUCT_EXE "video-compression-workbench.exe"

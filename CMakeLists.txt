@@ -34,15 +34,26 @@ else()
 endif()
 
 if(WIN32)
+    set(APP_ICON_SOURCE "${CMAKE_CURRENT_SOURCE_DIR}/assets/icons/video-compression-workbench.ico")
+    set(APP_MANIFEST_SOURCE "${CMAKE_CURRENT_SOURCE_DIR}/src/platform/windows_app.manifest")
+    configure_file(
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/platform/windows_app.rc.in
+        ${CMAKE_CURRENT_BINARY_DIR}/windows_app.rc
+        @ONLY
+    )
     configure_file(
         ${CMAKE_CURRENT_SOURCE_DIR}/src/platform/windows_version.rc.in
         ${CMAKE_CURRENT_BINARY_DIR}/windows_version.rc
         @ONLY
     )
+    set_source_files_properties(
+        ${CMAKE_CURRENT_BINARY_DIR}/windows_app.rc
+        PROPERTIES OBJECT_DEPENDS "${APP_ICON_SOURCE}"
+    )
     add_executable(ffmpeg-ui
         src/main.cpp
         src/platform/windows_ui.cpp
-        src/platform/windows_app.rc
+        ${CMAKE_CURRENT_BINARY_DIR}/windows_app.rc
         ${CMAKE_CURRENT_BINARY_DIR}/windows_version.rc
     )
     target_include_directories(ffmpeg-ui PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src/platform)
