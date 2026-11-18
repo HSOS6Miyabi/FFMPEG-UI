@@ -230,7 +230,14 @@ jobs:
             # WebM selection must automatically select an available compatible encoder.
             xdotool mousemove --window "$window" 341 443 click 1
             sleep 1
-            grep -qx "outputContainer=3" "$FFMPEG_STUDIO_CONFIG_DIR/settings.ini"
+            if ! grep -qx "outputContainer=3" "$FFMPEG_STUDIO_CONFIG_DIR/settings.ini"; then
+              echo "HiDPI settings after selecting WebM:"
+              cat "$FFMPEG_STUDIO_CONFIG_DIR/settings.ini"
+              xrdb -query
+              xdotool getwindowgeometry "$window"
+              import -window "$window" artifacts/ui/video-compression-workbench-linux-hidpi-selection.png
+              exit 1
+            fi
             grep -qx "codec=3" "$FFMPEG_STUDIO_CONFIG_DIR/settings.ini"
 
             # With tasks restored on a very small HiDPI window, prioritize the queue.
@@ -255,6 +262,7 @@ jobs:
           '
 
       - name: Upload Linux interface screenshot
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: video-compression-workbench-ui-linux
@@ -262,6 +270,7 @@ jobs:
             artifacts/ui/video-compression-workbench-linux.png
             artifacts/ui/video-compression-workbench-linux-expanded.png
             artifacts/ui/video-compression-workbench-linux-trimmer.png
+            artifacts/ui/video-compression-workbench-linux-hidpi-selection.png
             artifacts/ui/video-compression-workbench-linux-queue-focus.png
             artifacts/ui/video-compression-workbench-linux-task-details.png
             artifacts/ui/video-compression-workbench-linux-failed-filter.png
@@ -270,7 +279,7 @@ jobs:
             artifacts/ui/video-compression-workbench-linux-compact-queue.png
             artifacts/ui/video-compression-workbench-linux-hidpi-150.png
             artifacts/ui/video-compression-workbench-linux-hidpi-compact-queue.png
-          if-no-files-found: error
+          if-no-files-found: warn
 
       - name: Package Linux application
         run: |
