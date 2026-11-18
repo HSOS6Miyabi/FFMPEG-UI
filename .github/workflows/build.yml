@@ -100,7 +100,7 @@ jobs:
         shell: bash
         run: |
           mkdir -p artifacts/ui
-          xvfb-run -a -s "-screen 0 1600x1100x24" bash -c '
+          xvfb-run -a -s "-screen 0 1600x1100x24 -noreset" bash -c '
             set -ex
             printf "Xft.dpi: 96\n" | xrdb -nocpp -load
             xrdb -query | grep -Eq "^Xft\\.dpi:[[:space:]]*96$"
