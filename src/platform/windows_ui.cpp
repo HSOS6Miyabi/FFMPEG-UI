@@ -999,7 +999,16 @@ private:
         HDC dc = CreateCompatibleDC(target);
         HBITMAP bitmap = CreateCompatibleBitmap(target, width, height);
         auto oldBitmap = SelectObject(dc, bitmap);
-        const Palette c = palette(dark_); const auto backends = availableBackends(snap.capabilities, settings_.codec);
+        const Palette c = palette(dark_);
+        const auto backends = availableBackends(snap.capabilities, settings_.codec);
+        const auto original = makeLayout(
+            width, height, scale(), static_cast<int>(backends.size()),
+            advancedExpanded_, queueFocused_);
+        if (!queueFocused_ && !autoFocusUsed_ && !snap.tasks.empty() &&
+            original.queue.height < s(110)) {
+            queueFocused_ = true;
+            autoFocusUsed_ = true;
+        }
         const auto l = makeLayout(width, height, scale(), static_cast<int>(backends.size()),
                                   advancedExpanded_, queueFocused_);
         HBRUSH backgroundBrush = CreateSolidBrush(c.background);
@@ -1545,6 +1554,7 @@ private:
         }
         if (contains(layout.focusQueue, x, y)) {
             queueFocused_ = !queueFocused_;
+            autoFocusUsed_ = true;
             scrollOffset_ = 0;
             compressionFocused_ = false;
             return;
@@ -1864,6 +1874,7 @@ private:
             if (!editingCrf_ && (GetKeyState(VK_CONTROL) & 0x8000) != 0) {
                 if (wParam == 'Q') {
                     queueFocused_ = !queueFocused_;
+                    autoFocusUsed_ = true;
                     compressionFocused_ = false;
                     scrollOffset_ = 0;
                     InvalidateRect(window_, nullptr, FALSE);
@@ -1990,6 +2001,7 @@ private:
     int scrollOffset_{0};
     bool advancedExpanded_{false};
     bool queueFocused_{false};
+    bool autoFocusUsed_{false};
     bool failedOnly_{false};
     std::uint64_t selectedTask_{0};
 };

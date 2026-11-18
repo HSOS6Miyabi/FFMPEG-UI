@@ -1279,6 +1279,14 @@ private:
     void draw() {
         const auto snapshot = controller_.snapshot();
         const auto backends = availableBackends(snapshot.capabilities, settings_.codec);
+        const auto original = makeLayout(
+            width_, height_, scale_, static_cast<int>(backends.size()),
+            advancedExpanded_, queueFocused_);
+        if (!queueFocused_ && !autoFocusUsed_ && !snapshot.tasks.empty() &&
+            original.queue.height < s(112)) {
+            queueFocused_ = true;
+            autoFocusUsed_ = true;
+        }
         const auto layout = makeLayout(
             width_, height_, scale_, static_cast<int>(backends.size()),
             advancedExpanded_, queueFocused_);
@@ -1785,6 +1793,7 @@ private:
         }
         if (contains(layout.focusQueue, x, y)) {
             queueFocused_ = !queueFocused_;
+            autoFocusUsed_ = true;
             scrollOffset_ = 0;
             compressionFocused_ = false;
             return;
@@ -2172,6 +2181,7 @@ private:
             }
             if (controlPressed && (key == XK_q || key == XK_Q)) {
                 queueFocused_ = !queueFocused_;
+                autoFocusUsed_ = true;
                 compressionFocused_ = false;
                 scrollOffset_ = 0;
                 return false;
@@ -2222,6 +2232,7 @@ private:
     bool compressionFocused_{false};
     bool advancedExpanded_{false};
     bool queueFocused_{false};
+    bool autoFocusUsed_{false};
     bool failedOnly_{false};
     bool editingCrf_{false};
     std::string crfEditText_;

@@ -554,7 +554,7 @@ void AppController::loadSettings() {
                     std::clamp(std::stoi(value), 0, 2));
             } else if (key == "outputResolution") {
                 settings_.outputResolution = static_cast<OutputResolution>(
-                    std::clamp(std::stoi(value), 0, 3));
+                    std::clamp(std::stoi(value), 0, 5));
             } else if (key == "maxParallelJobs") {
                 settings_.maxParallelJobs = std::stoi(value);
             } else if (key == "recursive") {

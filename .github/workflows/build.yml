@@ -189,6 +189,26 @@ jobs:
             sleep 1
             grep -qx "outputContainer=3" "$FFMPEG_STUDIO_CONFIG_DIR/settings.ini"
             grep -qx "codec=3" "$FFMPEG_STUDIO_CONFIG_DIR/settings.ini"
+
+            # With tasks restored on a very small HiDPI window, prioritize the queue.
+            kill "$app_pid" 2>/dev/null || true
+            wait "$app_pid" 2>/dev/null || true
+            printf "FFmpegStudioQueue/1\n%s\n" "$ui_file" > "$FFMPEG_STUDIO_CONFIG_DIR/queue.ffq"
+            ./build/linux-release/video-compression-workbench >/tmp/video-compression-workbench-hidpi-compact.log 2>&1 &
+            app_pid=$!
+            window=""
+            for attempt in $(seq 1 30); do
+              window=$(xdotool search --class "VideoCompressionWorkbench" 2>/dev/null | head -n 1 || true)
+              if [ -n "$window" ]; then break; fi
+              sleep 1
+            done
+            test -n "$window" || { cat /tmp/video-compression-workbench-hidpi-compact.log; exit 1; }
+            xdotool windowsize --sync "$window" 1280 720
+            sleep 2
+            import -window "$window" artifacts/ui/video-compression-workbench-linux-hidpi-compact-queue.png
+            dimensions=$(identify -format "%wx%h" artifacts/ui/video-compression-workbench-linux-hidpi-compact-queue.png)
+            test "$dimensions" = "1280x720"
+            kill -0 "$app_pid"
           '
 
       - name: Upload Linux interface screenshot
@@ -205,6 +225,7 @@ jobs:
             artifacts/ui/video-compression-workbench-linux-compact-settings.png
             artifacts/ui/video-compression-workbench-linux-compact-queue.png
             artifacts/ui/video-compression-workbench-linux-hidpi-150.png
+            artifacts/ui/video-compression-workbench-linux-hidpi-compact-queue.png
           if-no-files-found: error
 
       - name: Package Linux application
