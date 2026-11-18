@@ -1270,6 +1270,232 @@ private:
         crfEditText_.clear();
     }
 
+    void openVideoTrimmer() {
+        const auto snapshot = controller_.snapshot();
+        if (snapshot.running) return;
+        const auto selected = std::find_if(snapshot.tasks.begin(), snapshot.tasks.end(),
+            [this](const BatchTaskSnapshot& task) {
+                return task.kind == TaskKind::Video && task.id == selectedTask_;
+            });
+        const auto candidate = selected == snapshot.tasks.end()
+            ? std::find_if(snapshot.tasks.begin(), snapshot.tasks.end(),
+                [](const BatchTaskSnapshot& task) { return task.kind == TaskKind::Video; })
+            : selected;
+        if (candidate == snapshot.tasks.end()) {
+            trimError_ = "请先添加独立视频；ZIP 和 PPTX 任务可以直接填写裁剪时间。";
+            return;
+        }
+        const auto sourceDuration = controller_.videoDuration(candidate->inputPath);
+        if (!sourceDuration || *sourceDuration <= 0.0) {
+            trimError_ = "无法读取视频时长。请检查输入文件和 ffprobe。";
+            return;
+        }
+        const std::string source = candidate->inputPath;
+        const double duration = *sourceDuration;
+        double start = settings_.trimStartSeconds < duration ? settings_.trimStartSeconds : 0.0;
+        double end = settings_.trimEndSeconds < 0.0 ? -1.0 :
+            std::min(settings_.trimEndSeconds, duration);
+        if (!validTrimRange(start, end)) end = -1.0;
+        const double maximumCursor = std::max(0.0, duration - 0.05);
+        double cursor = std::clamp(start, 0.0, maximumCursor);
+        int editing = -1;
+        std::string entry;
+        std::string status;
+        bool accepted = false;
+
+        const int dialogWidth = s(946), dialogHeight = s(794);
+        Window dialog = XCreateSimpleWindow(display_, RootWindow(display_, screen_),
+            s(72), s(72), static_cast<unsigned int>(dialogWidth),
+            static_cast<unsigned int>(dialogHeight), 0,
+            BlackPixel(display_, screen_), WhitePixel(display_, screen_));
+        XStoreName(display_, dialog, "可视化视频裁剪");
+        XSetTransientForHint(display_, dialog, window_);
+        const Atom deleteMessage = XInternAtom(display_, "WM_DELETE_WINDOW", False);
+        XSetWMProtocols(display_, dialog, const_cast<Atom*>(&deleteMessage), 1);
+        XSelectInput(display_, dialog, ExposureMask | StructureNotifyMask |
+                     ButtonPressMask | KeyPressMask);
+        XMapRaised(display_, dialog);
+        auto canvas = std::make_unique<XftCanvas>(display_, dialog, scale_);
+        const Palette colors = palette(dark_);
+        const Rect previewRect{s(35), s(82), s(875), s(392)};
+        const Rect seekRect{s(45), s(506), s(840), s(12)};
+        const Rect backRect{s(45), s(556), s(134), s(38)};
+        const Rect nextRect{s(191), s(556), s(134), s(38)};
+        const Rect markInRect{s(410), s(556), s(185), s(38)};
+        const Rect markOutRect{s(607), s(556), s(185), s(38)};
+        const Rect startRect{s(45), s(656), s(270), s(39)};
+        const Rect endRect{s(327), s(656), s(270), s(39)};
+        const Rect clearRect{s(608), s(656), s(88), s(39)};
+        const Rect applyRect{s(708), s(656), s(102), s(39)};
+        const Rect cancelRect{s(822), s(656), s(88), s(39)};
+        std::optional<PreviewFrame> frame;
+        const auto refresh = [&]() {
+            frame = controller_.videoPreview(source, cursor,
+                std::min(1600, s(835)), std::min(900, s(355)));
+            if (!frame) status = "当前时间位置无法提取画面，可尝试向前跳转。";
+            else status.clear();
+        };
+        const auto jump = [&](double seconds) {
+            const double target = std::clamp(cursor + seconds, 0.0, maximumCursor);
+            if (std::abs(target - cursor) < 0.001) return;
+            cursor = target;
+            refresh();
+        };
+        const auto commit = [&]() -> bool {
+            if (editing == -1) return true;
+            const auto time = entry.empty() && editing == 1
+                ? std::optional<double>{-1.0} : parseTrimTime(entry.empty() ? "0" : entry);
+            if (!time) {
+                status = "请输入秒数或 时:分:秒.毫秒，例如 00:01:23.500。";
+                return false;
+            }
+            const double newStart = editing == 0 ? *time : start;
+            const double newEnd = editing == 1 ? *time : end;
+            if (!validTrimRange(newStart, newEnd) || newStart >= duration ||
+                (newEnd >= 0.0 && newEnd > duration + 0.05)) {
+                status = "裁剪时间必须位于视频时长内，且结束时间必须晚于起始时间。";
+                return false;
+            }
+            start = newStart;
+            end = newEnd;
+            editing = -1;
+            entry.clear();
+            status.clear();
+            return true;
+        };
+        const auto drawDialog = [&]() {
+            canvas->fill({0, 0, dialogWidth, dialogHeight}, colors.background);
+            canvas->text(s(35), s(41), "可视化视频裁剪", colors.text, 2);
+            canvas->textFit(s(36), s(69),
+                basename(source) + "  ·  时长 " + formatTrimTime(duration),
+                s(864), colors.muted, 0);
+            canvas->rounded(previewRect, "#0c111c", 12);
+            if (frame) {
+                const int previewX = previewRect.x + (previewRect.width - frame->width) / 2;
+                const int previewY = previewRect.y + (previewRect.height - frame->height) / 2;
+                canvas->image({previewX, previewY, frame->width, frame->height}, *frame);
+            } else {
+                canvas->text(s(360), s(275), "当前画面不可用", colors.white, 1);
+            }
+            canvas->progress(seekRect, cursor / duration, colors);
+            const int indicator = seekRect.x + static_cast<int>(
+                std::lround(seekRect.width * (cursor / duration)));
+            canvas->rounded({indicator - s(7), seekRect.y - s(5), s(14), s(22)},
+                            colors.accent, s(7));
+            canvas->text(s(45), s(543), "当前位置 " + formatTrimTime(cursor), colors.text, 1);
+            canvas->text(s(523), s(543), "← / → 跳转 1 秒；Shift 跳转 10 秒",
+                         colors.muted, 0);
+            canvas->button(backRect, "< 后退 1 秒", colors);
+            canvas->button(nextRect, "前进 1 秒 >", colors);
+            canvas->button(markInRect, "当前位置设为起点", colors);
+            canvas->button(markOutRect, "当前位置设为终点", colors);
+            canvas->text(s(45), s(640), "裁剪起始时间", colors.muted, 0);
+            canvas->text(s(327), s(640), "裁剪结束时间", colors.muted, 0);
+            canvas->button(startRect, editing == 0 ? entry + "|" : formatTrimTime(start),
+                           colors, editing == 0);
+            canvas->button(endRect, editing == 1 ? entry + "|" :
+                           end < 0 ? "直到片尾" : formatTrimTime(end),
+                           colors, editing == 1);
+            canvas->button(clearRect, "重置", colors);
+            canvas->button(applyRect, "应用裁剪", colors, true);
+            canvas->button(cancelRect, "取消", colors);
+            canvas->textFit(s(45), s(741),
+                status.empty() ? "点击时间可直接输入，结束时间留空表示保留到片尾。" : status,
+                s(855), status.empty() ? colors.muted : colors.red, 0);
+            canvas->flush();
+        };
+        refresh();
+        drawDialog();
+        bool finished = false;
+        while (!finished) {
+            if (!XPending(display_)) {
+                pollfd descriptor{ConnectionNumber(display_), POLLIN, 0};
+                poll(&descriptor, 1, 120);
+                if ((descriptor.revents & POLLIN) == 0) continue;
+            }
+            XEvent event{};
+            XNextEvent(display_, &event);
+            if (event.xany.window != dialog) continue;
+            if (event.type == ClientMessage &&
+                static_cast<Atom>(event.xclient.data.l[0]) == deleteMessage) {
+                finished = true;
+            } else if (event.type == Expose) {
+                drawDialog();
+            } else if (event.type == ButtonPress && event.xbutton.button == Button1) {
+                const int x = event.xbutton.x, y = event.xbutton.y;
+                if (contains(startRect, x, y) || contains(endRect, x, y)) {
+                    if (commit()) {
+                        editing = contains(startRect, x, y) ? 0 : 1;
+                        entry = editing == 0 ? formatTrimTime(start) :
+                            end >= 0 ? formatTrimTime(end) : "";
+                    }
+                } else if (commit()) {
+                    const Rect trackHit{seekRect.x, seekRect.y - s(14),
+                                        seekRect.width, seekRect.height + s(28)};
+                    if (contains(trackHit, x, y)) {
+                        cursor = std::clamp(duration * (x - seekRect.x) /
+                                            std::max(1, seekRect.width), 0.0, maximumCursor);
+                        refresh();
+                    } else if (contains(backRect, x, y)) jump(-1.0);
+                    else if (contains(nextRect, x, y)) jump(1.0);
+                    else if (contains(markInRect, x, y)) {
+                        if (end >= 0.0 && cursor >= end)
+                            status = "新的起始时间必须早于结束时间。";
+                        else { start = cursor; status.clear(); }
+                    } else if (contains(markOutRect, x, y)) {
+                        if (cursor <= start)
+                            status = "结束时间必须晚于起始时间。";
+                        else { end = cursor; status.clear(); }
+                    } else if (contains(clearRect, x, y)) {
+                        start = 0.0; end = -1.0; status.clear();
+                    } else if (contains(applyRect, x, y)) {
+                        accepted = true;
+                        finished = true;
+                    } else if (contains(cancelRect, x, y)) finished = true;
+                }
+                if (!finished) drawDialog();
+            } else if (event.type == KeyPress) {
+                const KeySym key = XLookupKeysym(&event.xkey, 0);
+                if (editing != -1) {
+                    if (key == XK_Return || key == XK_KP_Enter) commit();
+                    else if (key == XK_Escape) {
+                        editing = -1; entry.clear(); status.clear();
+                    } else if (key == XK_BackSpace && !entry.empty()) entry.pop_back();
+                    else {
+                        char text[16]{};
+                        KeySym symbol{};
+                        const int count = XLookupString(&event.xkey, text,
+                                                        sizeof(text), &symbol, nullptr);
+                        for (int i = 0; i < count && entry.size() < 20; ++i) {
+                            const char ch = text[i];
+                            if ((ch >= '0' && ch <= '9') || ch == ':' || ch == '.')
+                                entry.push_back(ch);
+                        }
+                    }
+                } else if (key == XK_Left || key == XK_Right) {
+                    const double seconds = (event.xkey.state & ShiftMask) ? 10.0 : 1.0;
+                    jump(key == XK_Left ? -seconds : seconds);
+                } else if (key == XK_Home) {
+                    cursor = 0.0; refresh();
+                } else if (key == XK_End) {
+                    cursor = maximumCursor; refresh();
+                } else if (key == XK_Return || key == XK_KP_Enter) {
+                    accepted = true; finished = true;
+                } else if (key == XK_Escape) finished = true;
+                if (!finished) drawDialog();
+            }
+        }
+        canvas.reset();
+        XDestroyWindow(display_, dialog);
+        XFlush(display_);
+        if (accepted) {
+            settings_.trimStartSeconds = start;
+            settings_.trimEndSeconds = end;
+            trimError_.clear();
+            updateSettings();
+        }
+    }
+
     bool commitTrimText() {
         if (editingTrim_ == -1) return true;
         const std::string raw = trimEditText_;
