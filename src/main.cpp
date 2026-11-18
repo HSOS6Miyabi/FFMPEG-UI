@@ -614,6 +614,7 @@ int runSelfTest(bool keepFiles) {
         std::atomic_bool pauseRequested{false};
         std::atomic_bool processFinished{false};
         std::atomic<long long> mediaTimeUs{0};
+        std::atomic<long long> processedFrames{0};
         ffmpegui::ProcessResult pauseResult;
 #ifdef _WIN32
         const std::string nullDevice = "NUL";
@@ -625,25 +626,49 @@ int runSelfTest(bool keepFiles) {
             "-progress", "pipe:1", "-stats_period", "0.1", "-nostats", "-f", "null", nullDevice};
         std::thread pauseWorker([&] {
             pauseResult = ffmpegui::runProcess(pauseCommand, nullptr, [&](std::string_view line) {
-                if (line.rfind("out_time_us=", 0) == 0) {
-                    try { mediaTimeUs.store(std::stoll(std::string(line.substr(12)))); } catch (...) {}
+                if (line.rfind("out_time_us=", 0) == 0 ||
+                    line.rfind("out_time_ms=", 0) == 0) {
+                    const auto separator = line.find('=');
+                    try {
+                        mediaTimeUs.store(std::stoll(std::string(line.substr(separator + 1))));
+                    } catch (...) {}
+                } else if (line.rfind("frame=", 0) == 0) {
+                    try {
+                        processedFrames.store(std::stoll(std::string(line.substr(6))));
+                    } catch (...) {}
                 }
             }, &pauseRequested);
             processFinished.store(true);
         });
         const auto progressDeadline = std::chrono::steady_clock::now() + std::chrono::seconds(3);
-        while (mediaTimeUs.load() < 500000 && !processFinished.load() &&
-               std::chrono::steady_clock::now() < progressDeadline)
+        while (mediaTimeUs.load() < 500000 && processedFrames.load() < 15 &&
+               !processFinished.load() && std::chrono::steady_clock::now() < progressDeadline) {
             std::this_thread::sleep_for(std::chrono::milliseconds(40));
+        }
+        const bool runningAtPause = !processFinished.load();
         pauseRequested.store(true);
         std::this_thread::sleep_for(std::chrono::milliseconds(500));
         const long long pausedAt = mediaTimeUs.load();
+        const long long pausedFrames = processedFrames.load();
         std::this_thread::sleep_for(std::chrono::milliseconds(500));
         const long long afterPause = mediaTimeUs.load();
+        const long long afterPauseFrames = processedFrames.load();
         pauseRequested.store(false);
         pauseWorker.join();
-        check("FFmpeg process pause and resume", pauseResult.exitCode == 0 && !pauseResult.cancelled &&
-            pausedAt > 0 && afterPause - pausedAt <= 200000 && processFinished.load());
+        const bool progressObserved = pausedAt > 0 || pausedFrames > 0;
+        const bool timeStopped = pausedAt == 0 || afterPause - pausedAt <= 200000;
+        const bool framesStopped = pausedFrames == 0 || afterPauseFrames - pausedFrames <= 6;
+        const bool pausePassed = pauseResult.exitCode == 0 && !pauseResult.cancelled &&
+            runningAtPause && progressObserved && timeStopped && framesStopped &&
+            processFinished.load();
+        if (!pausePassed) {
+            std::cout << "FFmpeg pause test details: exit=" << pauseResult.exitCode
+                      << ", runningAtPause=" << runningAtPause
+                      << ", timeUs=" << pausedAt << "/" << afterPause
+                      << ", frames=" << pausedFrames << "/" << afterPauseFrames
+                      << ", output=" << pauseResult.output.substr(0, 1200) << '\n';
+        }
+        check("FFmpeg process pause and resume", pausePassed);
     }
 
     if (capabilities.supports(ffmpegui::VideoCodec::H264, ffmpegui::EncoderBackend::CPU)) {
@@ -791,9 +816,20 @@ int runSelfTest(bool keepFiles) {
                   << maxRunning << " / " << expectedWorkers
                   << " expected workers\n";
         check("parallel worker count follows resource plan", maxRunning >= expectedWorkers && maxRunning <= 2);
-        check("custom output directory and folder structure",
-            fs::is_regular_file(batchOutput / "one_H264_CPU_CR30_慢速_A128.mp4") &&
-            fs::is_regular_file(batchOutput / "nested" / "three_H264_CPU_CR30_慢速_A128.mp4"));
+        const fs::path firstOutput = batchOutput /
+            pathFromUtf8("one_H264_CPU_CR30_慢速_A128.mp4");
+        const fs::path nestedOutput = batchOutput / "nested" /
+            pathFromUtf8("three_H264_CPU_CR30_慢速_A128.mp4");
+        const bool expectedFilesPresent =
+            fs::is_regular_file(firstOutput) && fs::is_regular_file(nestedOutput);
+        if (!expectedFilesPresent && fs::is_directory(batchOutput)) {
+            for (const auto& entry : fs::recursive_directory_iterator(batchOutput)) {
+                if (entry.is_regular_file()) {
+                    std::cout << "Batch output: " << pathToUtf8(entry.path()) << '\n';
+                }
+            }
+        }
+        check("custom output directory and folder structure", expectedFilesPresent);
         batch.shutdown();
 
         ffmpegui::AppController repeatBatch(service);
