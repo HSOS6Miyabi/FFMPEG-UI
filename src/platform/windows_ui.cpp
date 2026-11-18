@@ -1562,11 +1562,13 @@ private:
                     static_cast<double>(l.compressionTrack.width) * compressionIndex / 7.0));
             fillRound(dc, {compressionX - s(8), l.compressionTrack.y - s(6),
                            s(16), s(19)}, c.accent, c.accent, 8);
-            drawText(dc, {firstColumn, top + s(compactAdvanced ? 265 : 273), s(100), s(19)},
-                     L"极速", c.muted, smallFont);
-            drawText(dc, {firstColumn + firstWidth - s(100), top + s(compactAdvanced ? 265 : 273),
-                          s(100), s(19)}, L"极致压缩", c.muted, smallFont,
-                     DT_RIGHT | DT_SINGLELINE | DT_VCENTER);
+            if (!compactAdvanced) {
+                drawText(dc, {firstColumn, top + s(273), s(100), s(19)},
+                         L"极速", c.muted, smallFont);
+                drawText(dc, {firstColumn + firstWidth - s(100), top + s(273),
+                              s(100), s(19)}, L"极致压缩", c.muted, smallFont,
+                         DT_RIGHT | DT_SINGLELINE | DT_VCENTER);
+            }
 
             drawText(dc, {secondColumn, top + s(compactAdvanced ? 205 : 220), secondWidth, s(19)},
                      L"音频处理", c.muted, smallFont);
@@ -1608,15 +1610,20 @@ private:
                        settings_.overwrite ? L"覆盖文件✓" : L"保留文件",
                        c, smallFont, settings_.overwrite);
         }
-        drawText(dc, {l.trimStart.x, l.trimStart.y - s(20), l.trimStart.width, s(18)},
-                 L"裁剪起始时间", c.muted, smallFont);
-        drawText(dc, {l.trimEnd.x, l.trimEnd.y - s(20), l.trimEnd.width, s(18)},
-                 L"裁剪结束时间", c.muted, smallFont);
-        const std::wstring trimStartLabel = editingTrim_ == 0
-            ? trimEditText_ + L"|" : wide(formatTrimTime(settings_.trimStartSeconds));
-        const std::wstring trimEndLabel = editingTrim_ == 1
-            ? trimEditText_ + L"|" : settings_.trimEndSeconds < 0.0
-                ? L"直到片尾" : wide(formatTrimTime(settings_.trimEndSeconds));
+        if (!compactAdvanced) {
+            drawText(dc, {l.trimStart.x, l.trimStart.y - s(20),
+                          l.trimStart.width, s(18)}, L"裁剪起始时间", c.muted, smallFont);
+            drawText(dc, {l.trimEnd.x, l.trimEnd.y - s(20),
+                          l.trimEnd.width, s(18)}, L"裁剪结束时间", c.muted, smallFont);
+        }
+        const std::wstring trimStartLabel = (compactAdvanced ? L"起点 " : L"") +
+            (editingTrim_ == 0 ? trimEditText_ + L"|"
+                               : wide(formatTrimTime(settings_.trimStartSeconds)));
+        const std::wstring trimEndLabel = (compactAdvanced ? L"终点 " : L"") +
+            (editingTrim_ == 1 ? trimEditText_ + L"|"
+                               : settings_.trimEndSeconds < 0.0
+                                   ? L"直到片尾"
+                                   : wide(formatTrimTime(settings_.trimEndSeconds)));
         drawButton(dc, l.trimStart, trimStartLabel, c, smallFont,
                    editingTrim_ == 0, snap.running);
         drawButton(dc, l.trimEnd, trimEndLabel, c, smallFont,
