@@ -1680,8 +1680,8 @@ private:
 
         const int firstColumn = layout.container[0].x;
         const int secondColumn = layout.codec[0].x;
-        const int firstWidth = layout.container[1].x +
-            layout.container[1].width - firstColumn;
+        const int firstWidth = layout.container[3].x +
+            layout.container[3].width - firstColumn;
         canvas_->text(firstColumn, top + s(102), "输出容器", colors.muted, 0);
         canvas_->text(secondColumn, top + s(102), "视频编码", colors.muted, 0);
         const std::array<OutputContainer, 4> containers{
