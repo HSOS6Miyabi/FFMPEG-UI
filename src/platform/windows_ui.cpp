@@ -1494,11 +1494,17 @@ private:
             VideoCodec::AV1, VideoCodec::H266
         };
         const auto supportedCodecs = availableVideoCodecs(snap.capabilities);
-        for (std::size_t index = 0; index < codecs.size(); ++index)
-            drawButton(dc, l.codec[index], wide(codecName(codecs[index])), c, smallFont,
+        const std::array<std::wstring, 5> compactCodecNames{
+            L"264", L"265", L"VP9", L"AV1", L"266"
+        };
+        for (std::size_t index = 0; index < codecs.size(); ++index) {
+            const std::wstring label = l.codec[index].width < s(70)
+                ? compactCodecNames[index] : wide(codecName(codecs[index]));
+            drawButton(dc, l.codec[index], label, c, smallFont,
                        settings_.codec == codecs[index],
                        std::find(supportedCodecs.begin(), supportedCodecs.end(),
                                  codecs[index]) == supportedCodecs.end());
+        }
 
         drawText(dc, {firstColumn, top + s(155), firstWidth, s(19)},
                  L"编码设备", c.muted, smallFont);
@@ -1632,6 +1638,7 @@ private:
         drawButton(dc, l.trimReset, L"重置", c, smallFont, false, snap.running);
         }
 
+        if (l.queue.height >= s(90)) {
         drawCard(dc,l.queue,c);
         const bool compactQueueHeader =
             l.queue.width < s(775) && l.queue.height >= s(156);
@@ -1761,6 +1768,8 @@ private:
                  l.queue.y + l.queue.height - s(24), s(110), s(18)},
                 L"滚动查看更多", c.muted, smallFont,
                 DT_RIGHT | DT_VCENTER | DT_SINGLELINE);
+        }
+
         }
 
         drawCard(dc,l.overallCard,c);
