@@ -102,7 +102,8 @@ jobs:
           mkdir -p artifacts/ui
           xvfb-run -a -s "-screen 0 1600x1100x24" bash -c '
             set -ex
-            printf "Xft.dpi: 96\n" | xrdb -merge
+            printf "Xft.dpi: 96\n" | xrdb -nocpp -load
+            xrdb -query | grep -Eq "^Xft\\.dpi:[[:space:]]*96$"
             export FFMPEG_STUDIO_CONFIG_DIR="$RUNNER_TEMP/workbench-ui-config"
             mkdir -p "$FFMPEG_STUDIO_CONFIG_DIR" "$RUNNER_TEMP/ui-example"
             ui_file="$RUNNER_TEMP/ui-example/长文件名-羊只饲养记录-2026-11-18-4K摄像机原始素材-视频压缩任务.mp4"
@@ -209,7 +210,8 @@ jobs:
             # Test the 150% DPI geometry and direct format-selection interactions.
             kill "$app_pid" 2>/dev/null || true
             wait "$app_pid" 2>/dev/null || true
-            printf "Xft.dpi: 144\n" | xrdb -merge
+            printf "Xft.dpi: 144\n" | xrdb -nocpp -load
+            xrdb -query | grep -Eq "^Xft\\.dpi:[[:space:]]*144$"
             export FFMPEG_STUDIO_CONFIG_DIR="$RUNNER_TEMP/workbench-ui-hidpi-config"
             mkdir -p "$FFMPEG_STUDIO_CONFIG_DIR"
             ./build/linux-release/video-compression-workbench >/tmp/video-compression-workbench-hidpi.log 2>&1 &
