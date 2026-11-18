@@ -5,7 +5,7 @@
 ## 当前项目状态
 
 - 项目名称：视频压缩工作台。
-- 当前开发版本：1.2.2。
+- 当前开发版本：1.2.4。
 - 主要分支：`main`。
 - 目标平台：Windows x64、Linux x86_64。
 - 主要语言：C++20。
@@ -28,6 +28,7 @@
 | `src/core/archive.*` | ZIP/PPTX 解包、视频替换、引用更新、重新打包和完整性检查 |
 | `src/core/app_controller.*` | 输入扫描、任务队列自动恢复、并行调度、设置保存和任务状态 |
 | `src/platform/windows_ui.cpp` | Windows 原生界面 |
+| `src/core/archive.cpp` | ZIP/PPTX 文件的读取与生成、视频替换及媒体引用更新；Windows 使用宽字符路径访问压缩包 |
 | `src/platform/linux_ui.cpp` | Linux X11/Xft 界面 |
 | `src/main.cpp` | 应用入口、命令行参数、自检和演示模式 |
 | `tests/core_tests.cpp` | 核心逻辑单元测试 |

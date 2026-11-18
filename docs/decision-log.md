@@ -132,6 +132,13 @@
 - NSIS 安装程序与卸载程序使用同一 ICO 文件。开始菜单、桌面快捷方式和“应用和功能”列表使用主程序的内嵌图标。
 - 更换图标时，应同时更新三种资源，并检查 Windows 资源脚本、NSIS 打包参数和 README 的图片引用。
 
+## ZIP/PPTX 文件路径与任务错误信息
+
+- Windows 使用 `archive_read_open_filename_w` 和 `archive_write_open_filename_w` 读取、写入压缩包。Linux 使用平台的原生文件路径接口。压缩包内部文件名和媒体引用保持 UTF-8 编码。
+- 从 `std::filesystem::path` 获取压缩包内部的相对路径时，使用 `generic_u8string()`，保留 Unicode 字符并统一采用 `/` 作为路径分隔符。
+- 批量任务中的失败原因需要保存在任务对象的 `error` 和 `detail` 中。Windows 任务列表显示失败原因，双击任务可查看完整信息。任务列表在缩放后仍须保留足够的行间距。
+- 文件压缩集成测试需要覆盖中文 ZIP/PPTX 输入路径、中文输出路径和压缩包内部中文视频文件名，并验证 PPTX 媒体引用更新。
+
 ## Windows 安装和界面规范
 
 - Windows 主程序使用图形子系统。双击启动时不出现控制台窗口；`--encoders`、`--self-test` 等命令仍需保留标准输出与标准错误的重定向能力。

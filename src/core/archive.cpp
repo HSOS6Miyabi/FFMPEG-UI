@@ -41,6 +41,41 @@ fs::path pathFromUtf8(std::string_view value) {
     return fs::path(encoded);
 }
 
+std::string genericPathToUtf8(const fs::path& path) {
+    const auto value = path.generic_u8string();
+    return std::string(reinterpret_cast<const char*>(value.data()), value.size());
+}
+
+int openArchiveReader(archive* reader, const fs::path& path) {
+#ifdef _WIN32
+    return archive_read_open_filename_w(reader, path.c_str(), 10240);
+#else
+    const std::string nativePath = path.string();
+    return archive_read_open_filename(reader, nativePath.c_str(), 10240);
+#endif
+}
+
+int openArchiveWriter(archive* writer, const fs::path& path) {
+#ifdef _WIN32
+    return archive_write_open_filename_w(writer, path.c_str());
+#else
+    const std::string nativePath = path.string();
+    return archive_write_open_filename(writer, nativePath.c_str());
+#endif
+}
+
+std::string archiveEntryPath(archive_entry* entry) {
+    if (const char* utf8 = archive_entry_pathname_utf8(entry))
+        return std::string(utf8);
+#ifdef _WIN32
+    if (const wchar_t* wide = archive_entry_pathname_w(entry))
+        return pathToUtf8(fs::path(wide));
+#endif
+    if (const char* name = archive_entry_pathname(entry))
+        return std::string(name);
+    return {};
+}
+
 std::string lower(std::string value) {
     std::transform(value.begin(), value.end(), value.begin(), [](unsigned char c) {
         return static_cast<char>(std::tolower(c));
@@ -94,8 +129,7 @@ bool extractArchive(const fs::path& source, const fs::path& destination, std::st
     }
     archive_read_support_filter_all(reader);
     archive_read_support_format_zip(reader);
-    const std::string sourceUtf8 = pathToUtf8(source);
-    if (archive_read_open_filename(reader, sourceUtf8.c_str(), 10240) != ARCHIVE_OK) {
+    if (openArchiveReader(reader, source) != ARCHIVE_OK) {
         error = "无法打开 ZIP 文件：" + archiveError(reader, "未知错误");
         archive_read_free(reader);
         return false;
@@ -115,10 +149,9 @@ bool extractArchive(const fs::path& source, const fs::path& destination, std::st
             success = false;
             break;
         }
-        const char* rawName = archive_entry_pathname_utf8(entry);
-        if (rawName == nullptr) rawName = archive_entry_pathname(entry);
+        const std::string rawName = archiveEntryPath(entry);
         fs::path relative;
-        if (rawName == nullptr || !safeArchivePath(rawName, relative)) {
+        if (rawName.empty() || !safeArchivePath(rawName, relative)) {
             error = "ZIP 文件包含不安全的路径，已停止处理。";
             success = false;
             break;
@@ -212,8 +245,12 @@ bool writeArchive(const fs::path& sourceDirectory, const fs::path& destination,
     }
     archive_write_set_format_zip(writer);
     archive_write_set_format_option(writer, "zip", "compression", "deflate");
-    const std::string destinationUtf8 = pathToUtf8(destination);
-    if (archive_write_open_filename(writer, destinationUtf8.c_str()) != ARCHIVE_OK) {
+    if (archive_write_set_format_option(writer, "zip", "hdrcharset", "UTF-8") != ARCHIVE_OK) {
+        error = "无法将 ZIP 文件名编码设置为 UTF-8：" + archiveError(writer, "未知错误");
+        archive_write_free(writer);
+        return false;
+    }
+    if (openArchiveWriter(writer, destination) != ARCHIVE_OK) {
         error = "无法创建输出 ZIP 文件：" + archiveError(writer, "未知错误");
         archive_write_free(writer);
         return false;
@@ -229,7 +266,7 @@ bool writeArchive(const fs::path& sourceDirectory, const fs::path& destination,
         if (it->is_symlink(fsError)) continue;
         const fs::path relative = fs::relative(it->path(), sourceDirectory, fsError);
         if (fsError) break;
-        const std::string archiveName = pathToUtf8(relative.generic_string());
+        const std::string archiveName = genericPathToUtf8(relative);
         archive_entry* entry = archive_entry_new();
         if (entry == nullptr) {
             error = "无法创建 ZIP 条目。";
@@ -302,17 +339,15 @@ bool readManifest(const fs::path& archivePath, const std::string& manifestName,
     if (reader == nullptr) return false;
     archive_read_support_filter_all(reader);
     archive_read_support_format_zip(reader);
-    const std::string source = pathToUtf8(archivePath);
-    if (archive_read_open_filename(reader, source.c_str(), 10240) != ARCHIVE_OK) {
+    if (openArchiveReader(reader, archivePath) != ARCHIVE_OK) {
         archive_read_free(reader);
         return false;
     }
     archive_entry* entry = nullptr;
     bool found = false;
     while (archive_read_next_header(reader, &entry) == ARCHIVE_OK) {
-        const char* name = archive_entry_pathname_utf8(entry);
-        if (name == nullptr) name = archive_entry_pathname(entry);
-        if (name != nullptr && manifestName == name) {
+        const std::string name = archiveEntryPath(entry);
+        if (!name.empty() && manifestName == name) {
             std::array<char, 4096> buffer{};
             la_ssize_t bytes = 0;
             while ((bytes = archive_read_data(reader, buffer.data(), buffer.size())) > 0)
@@ -363,7 +398,7 @@ std::vector<fs::path> findVideos(const fs::path& root) {
 }
 
 std::string relativeName(const fs::path& path, const fs::path& root) {
-    return pathToUtf8(fs::relative(path, root).generic_string());
+    return genericPathToUtf8(fs::relative(path, root));
 }
 
 std::string replaceAll(std::string value, const std::string& from, const std::string& to) {
@@ -403,8 +438,8 @@ void updateReferences(const fs::path& root,
                 const fs::path sourceDirectory = relsPath.parent_path().parent_path();
                 const fs::path oldTarget = pathFromUtf8(oldPath).lexically_relative(sourceDirectory);
                 const fs::path newTarget = pathFromUtf8(newPath).lexically_relative(sourceDirectory);
-                text = replaceAll(std::move(text), pathToUtf8(oldTarget.generic_string()),
-                                  pathToUtf8(newTarget.generic_string()));
+                text = replaceAll(std::move(text), genericPathToUtf8(oldTarget),
+                                  genericPathToUtf8(newTarget));
                 text = replaceAll(std::move(text), "/" + oldPath, "/" + newPath);
             }
         }
@@ -570,7 +605,7 @@ ArchiveResult ArchiveService::process(const std::string& inputPath,
         fs::path candidate = pathFromUtf8(oldRelative);
         if (settings.outputContainer == OutputContainer::MP4) candidate.replace_extension(".mp4");
         auto targetKey = [](const fs::path& value) {
-            return lower(pathToUtf8(value.lexically_normal().generic_string()));
+            return lower(genericPathToUtf8(value.lexically_normal()));
         };
         if (candidate != pathFromUtf8(oldRelative) &&
             (reservedTargets.contains(targetKey(candidate)) || fs::exists(extracted / candidate))) {
@@ -701,7 +736,7 @@ ArchiveResult ArchiveService::process(const std::string& inputPath,
             if (source != target) fs::remove(source, moveError);
             if (source != target) {
                 std::lock_guard lock(resultMutex);
-                replacements.emplace_back(oldRelative, pathToUtf8(newRelative.generic_string()));
+                replacements.emplace_back(oldRelative, genericPathToUtf8(newRelative));
             }
             { std::lock_guard lock(resultMutex); ++result.processedVideos; }
             ConversionProgress done;

@@ -11,6 +11,7 @@
 #include <array>
 #include <atomic>
 #include <chrono>
+#include <clocale>
 #include <cstdlib>
 #include <cstdio>
 #include <filesystem>
@@ -34,6 +35,23 @@
 
 namespace {
 namespace fs = std::filesystem;
+
+// libarchive converts ZIP entry names using the active character locale.
+// Initialize UTF-8 handling before opening documents containing Unicode names.
+void configureArchiveFilenameLocale() {
+#ifdef _WIN32
+    if (std::setlocale(LC_CTYPE, ".UTF8") == nullptr)
+        std::setlocale(LC_CTYPE, "");
+#else
+    const char* locale = std::setlocale(LC_CTYPE, "");
+    const std::string_view name = locale == nullptr ? "" : locale;
+    if (name.find("UTF-8") == std::string_view::npos &&
+        name.find("UTF8") == std::string_view::npos &&
+        name.find("utf8") == std::string_view::npos) {
+        std::setlocale(LC_CTYPE, "C.UTF-8");
+    }
+#endif
+}
 
 std::string pathToUtf8(const fs::path& path) {
     const auto value = path.u8string();
@@ -115,8 +133,17 @@ bool createZip(const fs::path& archivePath, const std::vector<std::pair<std::str
     if (!writer) return false;
     archive_write_set_format_zip(writer);
     archive_write_set_format_option(writer, "zip", "compression", "deflate");
-    const std::string archiveName = pathToUtf8(archivePath);
-    if (archive_write_open_filename(writer, archiveName.c_str()) != ARCHIVE_OK) {
+    if (archive_write_set_format_option(writer, "zip", "hdrcharset", "UTF-8") != ARCHIVE_OK) {
+        archive_write_free(writer);
+        return false;
+    }
+#ifdef _WIN32
+    const int openStatus = archive_write_open_filename_w(writer, archivePath.c_str());
+#else
+    const std::string archiveName = archivePath.string();
+    const int openStatus = archive_write_open_filename(writer, archiveName.c_str());
+#endif
+    if (openStatus != ARCHIVE_OK) {
         archive_write_free(writer);
         return false;
     }
@@ -157,8 +184,13 @@ std::optional<std::string> readZipEntry(const fs::path& archivePath, const std::
     if (!reader) return std::nullopt;
     archive_read_support_filter_all(reader);
     archive_read_support_format_zip(reader);
-    const std::string source = pathToUtf8(archivePath);
-    if (archive_read_open_filename(reader, source.c_str(), 10240) != ARCHIVE_OK) {
+#ifdef _WIN32
+    const int openStatus = archive_read_open_filename_w(reader, archivePath.c_str(), 10240);
+#else
+    const std::string source = archivePath.string();
+    const int openStatus = archive_read_open_filename(reader, source.c_str(), 10240);
+#endif
+    if (openStatus != ARCHIVE_OK) {
         archive_read_free(reader);
         return std::nullopt;
     }
@@ -782,6 +814,78 @@ int runSelfTest(bool keepFiles) {
             "PPTX MP4 content type added",
             updatedTypes &&
                 updatedTypes->find("Extension=\"mp4\"") != std::string::npos);
+
+        const fs::path unicodeZipInput = work / pathFromUtf8("羊群记录(1).zip");
+        const fs::path unicodeZipOutput = work / pathFromUtf8("羊群记录(1)-压缩.zip");
+        fs::copy_file(zipInput, unicodeZipInput, fs::copy_options::overwrite_existing);
+        const auto unicodeZipResult = archives.process(
+            pathToUtf8(unicodeZipInput), pathToUtf8(unicodeZipOutput), false,
+            settings, capabilities, 2, 2, {}, nullptr);
+        if (!unicodeZipResult.success)
+            std::cout << "Unicode ZIP detail: " << unicodeZipResult.message << '\n';
+        check("ZIP Chinese source and destination names", unicodeZipResult.success &&
+              unicodeZipResult.processedVideos == 3 &&
+              readZipEntry(unicodeZipOutput, "media/clip.mp4").has_value());
+        const auto repeatUnicodeZip = archives.process(
+            pathToUtf8(unicodeZipInput), pathToUtf8(unicodeZipOutput), false,
+            settings, capabilities, 1, 2, {}, nullptr);
+        check("ZIP Chinese filename repeat processing",
+              repeatUnicodeZip.success && repeatUnicodeZip.skipped);
+
+        const fs::path unicodePptxInput =
+            work / pathFromUtf8("基于计算机视觉的羊只智慧畜牧研究-合肥(1).pptx");
+        const fs::path unicodePptxOutput =
+            work / pathFromUtf8("基于计算机视觉的羊只智慧畜牧研究-合肥(1)-压缩.pptx");
+        fs::copy_file(pptxInput, unicodePptxInput, fs::copy_options::overwrite_existing);
+        const auto unicodePptxResult = archives.process(
+            pathToUtf8(unicodePptxInput), pathToUtf8(unicodePptxOutput), true,
+            settings, capabilities, 2, 2, {}, nullptr);
+        if (!unicodePptxResult.success)
+            std::cout << "Unicode PPTX detail: " << unicodePptxResult.message << '\n';
+        check("PPTX Chinese source and destination names",
+              unicodePptxResult.success && unicodePptxResult.processedVideos == 2 &&
+              readZipEntry(unicodePptxOutput, "ppt/media/clip.mp4").has_value());
+        const auto repeatUnicodePptx = archives.process(
+            pathToUtf8(unicodePptxInput), pathToUtf8(unicodePptxOutput), true,
+            settings, capabilities, 1, 2, {}, nullptr);
+        check("PPTX Chinese filename repeat processing",
+              repeatUnicodePptx.success && repeatUnicodePptx.skipped);
+
+        const fs::path chineseMedia = work / pathFromUtf8("羊只录像.mov");
+        fs::copy_file(source, chineseMedia, fs::copy_options::overwrite_existing);
+        const fs::path chineseRels = work / "chinese-media-relationships.xml";
+        {
+            std::ofstream rels(chineseRels, std::ios::binary);
+            rels << "<?xml version=\"1.0\"?><Relationships>"
+                 << "<Relationship Id=\"rId1\" Type=\"video\" "
+                 << "Target=\"../media/羊只录像.mov\"/>"
+                 << "</Relationships>";
+        }
+        const fs::path internalChineseInput = work / pathFromUtf8("带中文视频名称.pptx");
+        const fs::path internalChineseOutput = work / pathFromUtf8("带中文视频名称-压缩.pptx");
+        const bool createdChinese = createZip(internalChineseInput, {
+            {"[Content_Types].xml", types},
+            {"ppt/presentation.xml", presentation},
+            {"ppt/slides/_rels/slide1.xml.rels", chineseRels},
+            {"ppt/media/羊只录像.mov", chineseMedia}
+        });
+        check("create PPTX with a Chinese media entry", createdChinese);
+        if (createdChinese) {
+            const auto internalChineseResult = archives.process(
+                pathToUtf8(internalChineseInput), pathToUtf8(internalChineseOutput),
+                true, settings, capabilities, 1, 2, {}, nullptr);
+            if (!internalChineseResult.success)
+                std::cout << "PPTX Chinese media detail: "
+                          << internalChineseResult.message << '\n';
+            const auto renamedMedia = readZipEntry(
+                internalChineseOutput, "ppt/media/羊只录像.mp4");
+            const auto rewrittenRels = readZipEntry(
+                internalChineseOutput, "ppt/slides/_rels/slide1.xml.rels");
+            check("PPTX Chinese media path and references",
+                  internalChineseResult.success && internalChineseResult.processedVideos == 1 &&
+                  renamedMedia.has_value() && rewrittenRels.has_value() &&
+                  rewrittenRels->find("../media/羊只录像.mp4") != std::string::npos);
+        }
     }
 
     const auto plan = ffmpegui::recommendResourcePlan(12, ffmpegui::EncoderBackend::CPU,
@@ -1029,6 +1133,7 @@ void attachCliConsole(const std::vector<std::string>& arguments) {
 #endif
 
 int main(int argc, char** argv) {
+    configureArchiveFilenameLocale();
     if (ffmpegui::environmentVariable("FFMPEG_STUDIO_SSH_ASKPASS_ALIAS")) {
         return runSshAskpass();
     }
