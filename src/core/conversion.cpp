@@ -1216,6 +1216,60 @@ std::optional<double> FfmpegService::probeDuration(const std::string& inputPath)
     return std::nullopt;
 }
 
+std::optional<PreviewFrame> FfmpegService::previewFrame(const std::string& inputPath,
+                                                         double timeSeconds,
+                                                         int maximumWidth,
+                                                         int maximumHeight) const {
+    namespace fs = std::filesystem;
+    if (!std::isfinite(timeSeconds) || timeSeconds < 0.0 ||
+        maximumWidth < 1 || maximumHeight < 1 ||
+        maximumWidth > 2048 || maximumHeight > 2048) return std::nullopt;
+    std::error_code error;
+    const auto directory = fs::temp_directory_path(error);
+    if (error) return std::nullopt;
+    const auto output = makeTemporaryPath(directory / "video-preview.ppm");
+    const std::string scale = "scale=" + std::to_string(maximumWidth) + ":" +
+        std::to_string(maximumHeight) +
+        ":force_original_aspect_ratio=decrease:force_divisible_by=2,format=rgb24";
+    const auto result = runProcess({ffmpegPath_, "-hide_banner", "-nostdin",
+        "-loglevel", "error", "-y", "-ss", formatTrimTime(timeSeconds),
+        "-i", inputPath, "-map", "0:v:0", "-frames:v", "1",
+        "-vf", scale, "-f", "image2", "-c:v", "ppm", pathToUtf8(output)});
+    if (result.exitCode != 0) {
+        fs::remove(output, error);
+        return std::nullopt;
+    }
+    std::ifstream file(output, std::ios::binary);
+    PreviewFrame frame;
+    std::string magic;
+    int maximumValue = 0;
+    if (!(file >> magic >> frame.width >> frame.height >> maximumValue) ||
+        magic != "P6" || maximumValue != 255 ||
+        frame.width <= 0 || frame.height <= 0 ||
+        frame.width > maximumWidth || frame.height > maximumHeight) {
+        file.close();
+        fs::remove(output, error);
+        return std::nullopt;
+    }
+    char separator = 0;
+    file.get(separator);
+    if (separator != '\n' && separator != ' ' && separator != '\r') {
+        file.close();
+        fs::remove(output, error);
+        return std::nullopt;
+    }
+    const std::size_t bytes = static_cast<std::size_t>(frame.width) *
+        static_cast<std::size_t>(frame.height) * 3U;
+    frame.rgb.resize(bytes);
+    file.read(reinterpret_cast<char*>(frame.rgb.data()),
+              static_cast<std::streamsize>(bytes));
+    const bool complete = file.gcount() == static_cast<std::streamsize>(bytes);
+    file.close();
+    fs::remove(output, error);
+    if (!complete) return std::nullopt;
+    return frame;
+}
+
 bool FfmpegService::isAlreadyProcessed(const std::string& inputPath,
                                        const ConversionSettings& settings) const {
     const std::filesystem::path path = pathFromUtf8(inputPath);
@@ -1474,7 +1528,13 @@ ConversionResult FfmpegService::convertRemote(
 
     progress.status = "正在远程编码";
     progress.detail = "正在读取远程 FFmpeg 编码进度";
-    progress.durationSeconds = duration;
+    const auto effectiveDuration = trimmedDuration(
+        duration, settings.trimStartSeconds, settings.trimEndSeconds);
+    if (duration && settings.trimStartSeconds >= *duration) {
+        result.message = "裁剪起始时间已经超出视频时长。";
+        return result;
+    }
+    progress.durationSeconds = effectiveDuration;
     if (onProgress) {
         onProgress(progress);
     }
@@ -1593,13 +1653,13 @@ ConversionResult FfmpegService::convertRemote(
                     progress.detail = "正在检查容器和编码信息";
                     onProgress(progress);
                 } else if (value == "continue") {
-                    if (duration && progress.currentTimeSeconds) {
-                        progress.durationSeconds = duration;
+                    if (effectiveDuration && *effectiveDuration > 0.0 && progress.currentTimeSeconds) {
+                        progress.durationSeconds = effectiveDuration;
                         progress.fraction = std::clamp(
-                            *progress.currentTimeSeconds / *duration, 0.0, 0.995);
+                            *progress.currentTimeSeconds / *effectiveDuration, 0.0, 0.995);
                         if (progress.speed && *progress.speed > 0.0) {
                             progress.etaSeconds = std::max(
-                                0.0, (*duration - *progress.currentTimeSeconds) / *progress.speed);
+                                0.0, (*effectiveDuration - *progress.currentTimeSeconds) / *progress.speed);
                         }
                     }
 
@@ -1830,10 +1890,16 @@ ConversionResult FfmpegService::convert(const ConversionSettings& settings,
     result.inputSizeBytes = fs::file_size(inputPath, filesystemError);
     const fs::path temporaryPath = makeTemporaryPath(outputPath);
     const auto duration = probeDuration(settings.inputPath);
+    if (duration && settings.trimStartSeconds >= *duration) {
+        result.message = "裁剪起始时间已经超出视频时长。";
+        return result;
+    }
+    const auto effectiveDuration = trimmedDuration(
+        duration, settings.trimStartSeconds, settings.trimEndSeconds);
     ConversionProgress progressState;
     progressState.status = "正在准备编码";
     progressState.detail = "正在检查输入文件和编码参数";
-    progressState.durationSeconds = duration;
+    progressState.durationSeconds = effectiveDuration;
     if (onProgress) onProgress(progressState);
 
     std::vector<std::string> command;
@@ -1876,12 +1942,13 @@ ConversionResult FfmpegService::convert(const ConversionSettings& settings,
                 progressState.detail = "正在验证输出文件并保存到目标位置";
                 onProgress(progressState);
             } else if (value == "continue") {
-                if (duration && progressState.currentTimeSeconds) {
-                    progressState.durationSeconds = duration;
-                    progressState.fraction = std::clamp(*progressState.currentTimeSeconds / *duration, 0.0, 0.995);
+                if (effectiveDuration && *effectiveDuration > 0.0 && progressState.currentTimeSeconds) {
+                    progressState.durationSeconds = effectiveDuration;
+                    progressState.fraction = std::clamp(
+                        *progressState.currentTimeSeconds / *effectiveDuration, 0.0, 0.995);
                     if (progressState.speed && *progressState.speed > 0.0) {
                         progressState.etaSeconds = std::max(0.0,
-                            (*duration - *progressState.currentTimeSeconds) / *progressState.speed);
+                            (*effectiveDuration - *progressState.currentTimeSeconds) / *progressState.speed);
                     }
                 }
                 progressState.status = "正在转换视频";
