@@ -1309,7 +1309,17 @@ private:
             s(72), s(72), static_cast<unsigned int>(dialogWidth),
             static_cast<unsigned int>(dialogHeight), 0,
             BlackPixel(display_, screen_), WhitePixel(display_, screen_));
-        XStoreName(display_, dialog, "可视化视频裁剪");
+        const std::string dialogTitle = "可视化视频裁剪";
+        XStoreName(display_, dialog, dialogTitle.c_str());
+        const Atom utf8String = XInternAtom(display_, "UTF8_STRING", False);
+        const Atom netWmName = XInternAtom(display_, "_NET_WM_NAME", False);
+        XChangeProperty(display_, dialog, netWmName, utf8String, 8, PropModeReplace,
+                        reinterpret_cast<const unsigned char*>(dialogTitle.data()),
+                        static_cast<int>(dialogTitle.size()));
+        XClassHint dialogClass{};
+        dialogClass.res_name = const_cast<char*>("video-compression-workbench-trimmer");
+        dialogClass.res_class = const_cast<char*>("VideoCompressionWorkbenchTrimmer");
+        XSetClassHint(display_, dialog, &dialogClass);
         XSetTransientForHint(display_, dialog, window_);
         const Atom deleteMessage = XInternAtom(display_, "WM_DELETE_WINDOW", False);
         XSetWMProtocols(display_, dialog, const_cast<Atom*>(&deleteMessage), 1);
