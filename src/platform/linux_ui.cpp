@@ -14,6 +14,7 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <cstdlib>
 #include <cstdio>
 #include <filesystem>
 #include <iostream>
@@ -59,6 +60,7 @@ Palette palette(bool dark) {
 struct Layout {
     Rect addFiles, addFolder, addArchive, importQueue, exportQueue, removeSelected, clearDone;
     Rect outputField, outputBrowse, container[4], codec[5], backend[4], crfTrack, crfValue;
+    Rect trimStart, trimEnd, trimOpen, trimReset;
     Rect compressionTrack, compressionValue, audio[6], resolution[6], audioMode[3];
     Rect parallel, recursive, skip, preserve, overwrite;
     Rect queue, overallCard, overallTrack, start, pause, cancel, ssh, theme, advancedToggle;
@@ -138,7 +140,14 @@ Layout makeLayout(int width, int height, double scale, int backendCount = 4,
     l.preserve = {leftX + s(20) + (optionWidth + optionGap) * 3, optionY, optionWidth, s(28)};
     l.overwrite = {leftX + s(20) + (optionWidth + optionGap) * 4, optionY, optionWidth, s(28)};
 
-    const int queueY = sy + s(expanded ? 425 : 233);
+    const int trimY = sy + s(expanded ? 424 : 232);
+    const int trimGap = s(7), openW = s(111), resetW = s(76);
+    const int trimW = (gridWidth - trimGap * 3 - openW - resetW) / 2;
+    l.trimStart = {gridX, trimY, trimW, s(31)};
+    l.trimEnd = {gridX + trimW + trimGap, trimY, trimW, s(31)};
+    l.trimOpen = {gridX + (trimW + trimGap) * 2, trimY, openW, s(31)};
+    l.trimReset = {gridX + gridWidth - resetW, trimY, resetW, s(31)};
+    const int queueY = sy + s(expanded ? 486 : 294);
     const int actualQueueY = queueFocused ? sy : queueY;
     l.queue = {leftX, actualQueueY, leftW, std::max(0, height - actualQueueY - pad)};
     l.failedOnly = {leftX + s(142), actualQueueY + s(10), s(102), s(28)};
@@ -384,6 +393,44 @@ public:
                 {rectangle.x, rectangle.y, filledWidth, rectangle.height},
                 colors.accent, 5);
         }
+    }
+
+    void image(Rect rectangle, const PreviewFrame& frame) {
+        if (frame.width < 1 || frame.height < 1 ||
+            frame.rgb.size() != static_cast<std::size_t>(frame.width * frame.height * 3))
+            return;
+        const int depth = DefaultDepth(display_, screen_);
+        XImage* ximage = XCreateImage(display_, visual_, depth, ZPixmap,
+                                      0, nullptr, frame.width, frame.height, 32, 0);
+        if (ximage == nullptr) return;
+        const std::size_t bytes = static_cast<std::size_t>(ximage->bytes_per_line) *
+                                  static_cast<std::size_t>(frame.height);
+        ximage->data = static_cast<char*>(std::calloc(bytes, 1));
+        if (!ximage->data) {
+            XDestroyImage(ximage);
+            return;
+        }
+        const auto maskPixel = [](unsigned char sample, unsigned long mask) {
+            if (mask == 0) return 0UL;
+            unsigned int shift = 0;
+            while (((mask >> shift) & 1UL) == 0UL) ++shift;
+            const unsigned long maximum = mask >> shift;
+            return ((static_cast<unsigned long>(sample) * maximum + 127UL) / 255UL << shift) & mask;
+        };
+        for (int y = 0; y < frame.height; ++y) {
+            for (int x = 0; x < frame.width; ++x) {
+                const std::size_t index = static_cast<std::size_t>((y * frame.width + x) * 3);
+                const unsigned long pixelValue =
+                    maskPixel(frame.rgb[index], ximage->red_mask) |
+                    maskPixel(frame.rgb[index + 1], ximage->green_mask) |
+                    maskPixel(frame.rgb[index + 2], ximage->blue_mask);
+                XPutPixel(ximage, x, y, pixelValue);
+            }
+        }
+        XPutImage(display_, window_, gc(), ximage, 0, 0, rectangle.x, rectangle.y,
+                  static_cast<unsigned int>(frame.width),
+                  static_cast<unsigned int>(frame.height));
+        XDestroyImage(ximage);
     }
 
     void flush() {
@@ -1223,6 +1270,30 @@ private:
         crfEditText_.clear();
     }
 
+    bool commitTrimText() {
+        if (editingTrim_ == -1) return true;
+        const std::string raw = trimEditText_;
+        const auto parsed = raw.empty() && editingTrim_ == 1
+            ? std::optional<double>{-1.0} : parseTrimTime(raw.empty() ? "0" : raw);
+        if (!parsed) {
+            trimError_ = "请输入秒数或 时:分:秒.毫秒，例如 00:01:23.500。";
+            return false;
+        }
+        const double start = editingTrim_ == 0 ? *parsed : settings_.trimStartSeconds;
+        const double end = editingTrim_ == 1 ? *parsed : settings_.trimEndSeconds;
+        if (!validTrimRange(start, end)) {
+            trimError_ = "裁剪结束时间必须晚于起始时间。";
+            return false;
+        }
+        settings_.trimStartSeconds = start;
+        settings_.trimEndSeconds = end;
+        editingTrim_ = -1;
+        trimEditText_.clear();
+        trimError_.clear();
+        updateSettings();
+        return true;
+    }
+
     void addFiles(bool archiveOnly = false) {
         const auto files = chooseFiles(archiveOnly);
         if (!files.empty()) {
@@ -1317,7 +1388,7 @@ private:
         if (!queueFocused_) {
         const int left = layout.queue.x, top = s(168);
         canvas_->card({left, top, layout.queue.width,
-                       s(advancedExpanded_ ? 413 : 221)}, colors);
+                       s(advancedExpanded_ ? 474 : 282)}, colors);
         canvas_->text(left + s(20), top + s(30), "编码设置", colors.text, 1);
         canvas_->button(layout.advancedToggle,
                         advancedExpanded_ ? "收起高级设置" : "展开高级设置", colors);
@@ -1457,6 +1528,21 @@ private:
                             settings_.overwrite ? "覆盖文件✓" : "保留文件",
                             colors, settings_.overwrite);
         }
+        canvas_->text(layout.trimStart.x, layout.trimStart.y - s(4),
+                      "裁剪起始时间", colors.muted, 0);
+        canvas_->text(layout.trimEnd.x, layout.trimEnd.y - s(4),
+                      "裁剪结束时间", colors.muted, 0);
+        const std::string startLabel = editingTrim_ == 0
+            ? trimEditText_ + "|" : formatTrimTime(settings_.trimStartSeconds);
+        const std::string endLabel = editingTrim_ == 1
+            ? trimEditText_ + "|" : settings_.trimEndSeconds < 0.0
+                ? "直到片尾" : formatTrimTime(settings_.trimEndSeconds);
+        canvas_->button(layout.trimStart, startLabel, colors,
+                        editingTrim_ == 0, snapshot.running);
+        canvas_->button(layout.trimEnd, endLabel, colors,
+                        editingTrim_ == 1, snapshot.running);
+        canvas_->button(layout.trimOpen, "可视化裁剪", colors, false, snapshot.running);
+        canvas_->button(layout.trimReset, "重置", colors, false, snapshot.running);
 
         }
 
@@ -1821,6 +1907,27 @@ private:
             return;
         }
         if (!queueFocused_) {
+        if (!snapshot.running &&
+            (contains(layout.trimStart, x, y) || contains(layout.trimEnd, x, y))) {
+            if (!commitTrimText()) return;
+            editingTrim_ = contains(layout.trimStart, x, y) ? 0 : 1;
+            trimEditText_ = editingTrim_ == 0
+                ? formatTrimTime(settings_.trimStartSeconds)
+                : settings_.trimEndSeconds < 0.0 ? "" : formatTrimTime(settings_.trimEndSeconds);
+            XSetInputFocus(display_, window_, RevertToParent, CurrentTime);
+            return;
+        }
+        if (!commitTrimText()) return;
+        if (!snapshot.running && contains(layout.trimOpen, x, y)) {
+            openVideoTrimmer();
+            return;
+        }
+        if (!snapshot.running && contains(layout.trimReset, x, y)) {
+            settings_.trimStartSeconds = 0.0;
+            settings_.trimEndSeconds = -1.0;
+            updateSettings();
+            return;
+        }
         if (contains(layout.outputBrowse, x, y)) {
             chooseOutput();
             return;
@@ -2140,6 +2247,29 @@ private:
             const KeySym key = XLookupKeysym(&event.xkey, 0);
             const bool controlPressed = (event.xkey.state & ControlMask) != 0;
 
+            if (editingTrim_ != -1) {
+                if (key == XK_Return || key == XK_KP_Enter) {
+                    commitTrimText();
+                } else if (key == XK_BackSpace && !trimEditText_.empty()) {
+                    trimEditText_.pop_back();
+                } else if (key == XK_Escape) {
+                    editingTrim_ = -1;
+                    trimEditText_.clear();
+                    trimError_.clear();
+                } else {
+                    char buffer[16]{};
+                    KeySym symbol{};
+                    const int count = XLookupString(&event.xkey, buffer,
+                                                    sizeof(buffer), &symbol, nullptr);
+                    for (int index = 0; index < count && trimEditText_.size() < 20; ++index) {
+                        const char ch = buffer[index];
+                        if ((ch >= '0' && ch <= '9') || ch == ':' || ch == '.')
+                            trimEditText_.push_back(ch);
+                    }
+                }
+                return false;
+            }
+
             if (editingCrf_) {
                 if (key == XK_Return || key == XK_KP_Enter) {
                     commitCrfText();
@@ -2236,6 +2366,9 @@ private:
     bool failedOnly_{false};
     bool editingCrf_{false};
     std::string crfEditText_;
+    int editingTrim_{-1};
+    std::string trimEditText_;
+    std::string trimError_;
     int scrollOffset_{0};
     std::uint64_t selectedTask_{0};
     Atom wmDelete_{};
