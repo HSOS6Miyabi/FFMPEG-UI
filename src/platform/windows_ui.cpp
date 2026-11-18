@@ -79,6 +79,7 @@ struct Layout {
     Rect compressionTrack, compressionValue, audio[6], resolution[6], audioMode[3];
     Rect parallel, recursive, skip, preserve, overwrite;
     Rect queue, overallCard, overallTrack, start, pause, cancel, ssh, theme, advancedToggle, rescan, diagnostic;
+    Rect focusQueue, failedOnly;
 };
 
 std::vector<EncoderBackend> availableBackends(const EncoderCapabilities& capabilities, VideoCodec codec) {
@@ -89,7 +90,7 @@ std::vector<EncoderBackend> availableBackends(const EncoderCapabilities& capabil
 }
 
 Layout makeLayout(int width, int height, double scale, int backendCount = 4,
-                  bool expanded = false) {
+                  bool expanded = false, bool queueFocused = false) {
     const auto s = [scale](int v) { return static_cast<int>(std::lround(v * scale)); };
     const int pad = s(22), gap = s(14);
     const int rightW = std::clamp(width / 3, s(340), s(400));
@@ -170,7 +171,9 @@ Layout makeLayout(int width, int height, double scale, int backendCount = 4,
     l.overwrite = {leftX + s(20) + (optionWidth + optionGap) * 4, optionY, optionWidth, s(28)};
 
     const int queueY = settingsY + s(expanded ? 425 : 233);
-    l.queue = {leftX, queueY, leftW, std::max(0, height - queueY - pad)};
+    const int actualQueueY = queueFocused ? settingsY : queueY;
+    l.queue = {leftX, actualQueueY, leftW, std::max(0, height - actualQueueY - pad)};
+    l.failedOnly = {leftX + s(142), actualQueueY + s(9), s(102), s(26)};
     l.overallCard = {rightX, top, rightW, s(220)};
     l.overallTrack = {rightX + s(20), top + s(107), rightW - s(40), s(9)};
     l.start = {rightX + s(20), top + s(160), rightW - s(40), s(42)};
@@ -183,6 +186,7 @@ Layout makeLayout(int width, int height, double scale, int backendCount = 4,
     l.rescan = {rightX + s(18), infoY + s(197), infoButtonW, s(30)};
     l.diagnostic = {rightX + s(28) + infoButtonW, infoY + s(197),
                     infoButtonW, s(30)};
+    l.focusQueue = {width - s(382), s(23), s(142), s(34)};
     l.ssh = {width - s(222), s(23), s(110), s(34)};
     l.theme = {width - s(102), s(23), s(80), s(34)};
     return l;
@@ -960,9 +964,10 @@ private:
         } else if (snap.paused) controller_.resumeBatch();
         else controller_.pauseBatch();
     }
-    std::vector<std::pair<BatchTaskSnapshot, BatchItemSnapshot>> visibleRows(const AppSnapshot& snap) const {
+    std::vector<std::pair<BatchTaskSnapshot, BatchItemSnapshot>> visibleRows(const AppSnapshot& snap, bool failedOnly = false) const {
         std::vector<std::pair<BatchTaskSnapshot, BatchItemSnapshot>> rows;
         for (const auto& task : snap.tasks) {
+            if (failedOnly && task.state != TaskState::Failed) continue;
             if (task.kind == TaskKind::Video) {
                 BatchItemSnapshot item;
                 if (!task.items.empty()) item = task.items.front();
@@ -996,7 +1001,7 @@ private:
         auto oldBitmap = SelectObject(dc, bitmap);
         const Palette c = palette(dark_); const auto backends = availableBackends(snap.capabilities, settings_.codec);
         const auto l = makeLayout(width, height, scale(), static_cast<int>(backends.size()),
-                                  advancedExpanded_);
+                                  advancedExpanded_, queueFocused_);
         HBRUSH backgroundBrush = CreateSolidBrush(c.background);
         RECT fullRectangle{0, 0, width, height};
         FillRect(dc, &fullRectangle, backgroundBrush);
@@ -1004,6 +1009,8 @@ private:
         HFONT title = font(25, FW_BOLD), normal = font(14), smallFont = font(12), heading = font(16, FW_SEMIBOLD);
         drawText(dc, {s(30),s(22),s(420),s(38)}, L"视频压缩工作台", c.text, title);
         drawText(dc, {s(31),s(60),s(700),s(24)}, L"批量视频压缩 · ZIP / PPTX 媒体处理 · CPU 与硬件编码", c.muted, smallFont);
+        drawButton(dc, l.focusQueue, queueFocused_ ? L"返回编码设置" : L"专注处理队列",
+                   c, smallFont, queueFocused_);
         drawButton(dc, l.ssh, L"SSH 服务器", c, smallFont, !settings_.remoteHost.empty());
         drawButton(dc, l.theme, dark_ ? L"浅色外观" : L"深色外观", c, smallFont);
 
@@ -1015,6 +1022,7 @@ private:
         drawButton(dc,l.clearDone,L"清除完成",c,smallFont,false,snap.running);
         drawButton(dc,l.clearAll,L"清空列表",c,smallFont,false,snap.running || snap.tasks.empty());
 
+        if (!queueFocused_) {
         const int leftX = l.queue.x, top = s(144), leftW = l.queue.width;
         drawCard(dc, {leftX, top, leftW, s(advancedExpanded_ ? 413 : 221)}, c);
         drawText(dc, {leftX + s(18), top + s(10), s(170), s(26)},
@@ -1155,8 +1163,12 @@ private:
                        c, smallFont, settings_.overwrite);
         }
 
+        }
+
         drawCard(dc,l.queue,c);
-        drawText(dc,{l.queue.x+s(20),l.queue.y+s(10),s(230),s(26)},L"处理队列",c.text,heading);
+        drawText(dc,{l.queue.x+s(20),l.queue.y+s(10),s(112),s(26)},L"处理队列",c.text,heading);
+        drawButton(dc, l.failedOnly, failedOnly_ ? L"显示全部" : L"仅看失败",
+                   c, smallFont, failedOnly_);
         const std::wstring queueSummary =
             L"总计 " + std::to_wstring(snap.totalTasks) +
             L"  ·  运行 " + std::to_wstring(snap.runningTasks) +
@@ -1167,7 +1179,7 @@ private:
             {l.queue.x + l.queue.width - s(320), l.queue.y + s(13), s(300), s(22)},
             queueSummary, c.muted, smallFont,
             DT_RIGHT | DT_VCENTER | DT_SINGLELINE);
-        const auto rows = visibleRows(snap);
+        const auto rows = visibleRows(snap, failedOnly_);
         const int rowHeight = s(50);
         const int listTop = l.queue.y + s(39);
         const int visibleRowsCount =
@@ -1180,8 +1192,11 @@ private:
                           l.queue.x + l.queue.width - s(10),
                           l.queue.y + l.queue.height - s(12));
         if(rows.empty()) {
+            const std::wstring emptyText = failedOnly_
+                ? L"当前没有失败的任务。可以切换为“显示全部”查看其他任务。"
+                : L"将视频、ZIP 或 PPTX 文件拖到窗口中，或使用上方按钮添加文件和文件夹。";
             drawText(dc,{l.queue.x+s(30),listTop+s(36),l.queue.width-s(60),s(100)},
-                L"将视频、ZIP 或 PPTX 文件拖到窗口中，或使用上方按钮添加文件和文件夹。",c.muted,normal,DT_CENTER|DT_VCENTER|DT_WORDBREAK);
+                     emptyText,c.muted,normal,DT_CENTER|DT_VCENTER|DT_WORDBREAK);
         } else {
             for (int i = 0;
                  i < visibleRowsCount &&
@@ -1316,6 +1331,49 @@ private:
         const int infoY=l.overallCard.y+l.overallCard.height+s(12);
         const Rect info{l.overallCard.x,infoY,l.overallCard.width,height-infoY-s(28)};
         drawCard(dc,info,c);
+        const auto selected = std::find_if(
+            snap.tasks.begin(), snap.tasks.end(),
+            [this](const BatchTaskSnapshot& task) { return task.id == selectedTask_; });
+        if (selected != snap.tasks.end()) {
+            const int saved = SaveDC(dc);
+            IntersectClipRect(dc, info.x + s(12), info.y + s(10),
+                              info.x + info.width - s(12),
+                              info.y + info.height - s(12));
+            drawText(dc,{info.x+s(20),info.y+s(12),info.width-s(40),s(27)},
+                     L"当前选中任务",c.text,heading);
+            drawText(dc,{info.x+s(20),info.y+s(46),info.width-s(40),s(26)},
+                     wide(basename(selected->inputPath)),c.text,normal);
+            const COLORREF stateColor = selected->state == TaskState::Failed
+                ? c.red : selected->state == TaskState::Completed ? c.green : c.muted;
+            drawText(dc,{info.x+s(20),info.y+s(77),info.width-s(40),s(21)},
+                     wide(taskStateName(selected->state)) + L"  ·  " +
+                     wide(taskKindName(selected->kind)),stateColor,smallFont);
+            const std::wstring amount = formatTaskSize(
+                selected->inputSizeBytes, selected->outputSizeBytes);
+            if (!amount.empty())
+                drawText(dc,{info.x+s(20),info.y+s(102),info.width-s(40),s(21)},
+                         amount,c.muted,smallFont);
+            drawText(dc,{info.x+s(20),info.y+s(132),info.width-s(40),s(20)},
+                     L"来源文件",c.muted,smallFont);
+            drawText(dc,{info.x+s(20),info.y+s(153),info.width-s(40),s(25)},
+                     wide(selected->inputPath),c.text,smallFont);
+            drawText(dc,{info.x+s(20),info.y+s(193),info.width-s(40),s(20)},
+                     L"输出位置",c.muted,smallFont);
+            drawText(dc,{info.x+s(20),info.y+s(214),info.width-s(40),s(25)},
+                     wide(selected->outputPath),c.text,smallFont);
+            const std::wstring details = wide(
+                !selected->error.empty() ? selected->error : selected->detail);
+            if (!details.empty() && info.height > s(285)) {
+                drawText(dc,{info.x+s(20),info.y+s(255),info.width-s(40),s(19)},
+                         selected->error.empty() ? L"当前状态" : L"失败原因",
+                         c.muted,smallFont);
+                drawText(dc,{info.x+s(20),info.y+s(278),info.width-s(40),
+                             std::max(0, info.height-s(306))},
+                         details,selected->error.empty()?c.text:c.red,smallFont,
+                         DT_LEFT|DT_TOP|DT_WORDBREAK);
+            }
+            RestoreDC(dc, saved);
+        } else {
         drawText(dc,{info.x+s(20),info.y+s(12),info.width-s(40),s(27)},
                  L"设备与编码摘要",c.text,heading);
         drawText(dc,{info.x+s(20),info.y+s(40),info.width-s(40),s(22)},
@@ -1360,6 +1418,7 @@ private:
             }
         }
 
+        }
         DeleteObject(title); DeleteObject(normal); DeleteObject(smallFont); DeleteObject(heading);
         BitBlt(target, 0, 0, width, height, dc, 0, 0, SRCCOPY);
         SelectObject(dc, oldBitmap);
@@ -1374,7 +1433,7 @@ private:
         const auto backends = availableBackends(snapshot.capabilities, settings_.codec);
         const Layout layout = makeLayout(
             client.right, client.bottom, scale(),
-            static_cast<int>(backends.size()), advancedExpanded_);
+            static_cast<int>(backends.size()), advancedExpanded_, queueFocused_);
         const int listTop = layout.queue.y + s(39);
         const int rowHeight = s(50);
         const int visibleCount = std::max(0, (layout.queue.height - s(42)) / rowHeight);
@@ -1382,7 +1441,7 @@ private:
             y < listTop || y >= listTop + visibleCount * rowHeight) {
             return false;
         }
-        const auto rows = visibleRows(snapshot);
+        const auto rows = visibleRows(snapshot, failedOnly_);
         const int rowIndex = (y - listTop) / rowHeight + scrollOffset_;
         if (rowIndex < 0 || rowIndex >= static_cast<int>(rows.size())) return false;
         const auto& [task, item] = rows[static_cast<std::size_t>(rowIndex)];
@@ -1412,7 +1471,7 @@ private:
         const auto backends = availableBackends(snapshot.capabilities, settings_.codec);
         const Layout layout = makeLayout(
             clientRectangle.right, clientRectangle.bottom,
-            scale(), static_cast<int>(backends.size()), advancedExpanded_);
+            scale(), static_cast<int>(backends.size()), advancedExpanded_, queueFocused_);
         compressionFocused_ = false;
 
         if (editingCrf_ && !contains(layout.crfValue, x, y)) {
@@ -1475,7 +1534,19 @@ private:
             }
             return;
         }
-        if (contains(layout.advancedToggle, x, y)) {
+        if (contains(layout.focusQueue, x, y)) {
+            queueFocused_ = !queueFocused_;
+            scrollOffset_ = 0;
+            compressionFocused_ = false;
+            return;
+        }
+        if (contains(layout.failedOnly, x, y)) {
+            failedOnly_ = !failedOnly_;
+            selectedTask_ = 0;
+            scrollOffset_ = 0;
+            return;
+        }
+        if (!queueFocused_ && contains(layout.advancedToggle, x, y)) {
             advancedExpanded_ = !advancedExpanded_;
             compressionFocused_ = false;
             scrollOffset_ = 0;
@@ -1496,10 +1567,6 @@ private:
             showTaskDialog(window_, L"NVENC 编码器检测", detail.c_str(), TDCBF_OK_BUTTON, TD_INFORMATION_ICON);
             return;
         }
-        if (contains(layout.outputBrowse, x, y)) {
-            chooseOutput();
-            return;
-        }
         if (!snapshot.running && contains(layout.start, x, y)) {
             startOrCancel();
             return;
@@ -1514,6 +1581,11 @@ private:
         }
         if (snapshot.running && contains(layout.cancel, x, y)) {
             controller_.cancelBatch();
+            return;
+        }
+        if (!queueFocused_) {
+        if (contains(layout.outputBrowse, x, y)) {
+            chooseOutput();
             return;
         }
         if (contains(layout.crfValue, x, y)) {
@@ -1654,13 +1726,15 @@ private:
             return;
         }
 
+        }
+        
         const int queueTop = layout.queue.y + s(39);
         const int rowHeight = s(50);
         const int visibleCount = std::max(0, (layout.queue.height - s(42)) / rowHeight);
         if (x >= layout.queue.x && x < layout.queue.x + layout.queue.width &&
             y >= queueTop && y < queueTop + visibleCount * rowHeight) {
             const int visibleIndex = (y - queueTop) / rowHeight + scrollOffset_;
-            const auto visibleItems = visibleRows(controller_.snapshot());
+            const auto visibleItems = visibleRows(controller_.snapshot(), failedOnly_);
             if (visibleIndex >= 0 &&
                 visibleIndex < static_cast<int>(visibleItems.size())) {
                 selectedTask_ = visibleItems[static_cast<std::size_t>(visibleIndex)].first.id;
@@ -1712,7 +1786,7 @@ private:
                 GetClientRect(window_, &clientRectangle);
                 const Layout layout = makeLayout(
                     clientRectangle.right, clientRectangle.bottom, scale(), 4,
-                    advancedExpanded_);
+                    advancedExpanded_, queueFocused_);
                 if (draggingCrf_)
                     commitCrf(GET_X_LPARAM(lParam), layout);
                 if (draggingCompression_)
@@ -1745,6 +1819,32 @@ private:
             }
             break;
         case WM_KEYDOWN:
+            if (!editingCrf_ && (GetKeyState(VK_CONTROL) & 0x8000) != 0) {
+                if (wParam == 'Q') {
+                    queueFocused_ = !queueFocused_;
+                    compressionFocused_ = false;
+                    scrollOffset_ = 0;
+                    InvalidateRect(window_, nullptr, FALSE);
+                    return 0;
+                }
+                if (wParam == 'O') {
+                    addFiles();
+                    InvalidateRect(window_, nullptr, FALSE);
+                    return 0;
+                }
+                if (wParam == 'D' && !controller_.snapshot().running) {
+                    controller_.clearCompleted();
+                    selectedTask_ = 0;
+                    scrollOffset_ = 0;
+                    InvalidateRect(window_, nullptr, FALSE);
+                    return 0;
+                }
+                if (wParam == VK_RETURN && !controller_.snapshot().running) {
+                    controller_.startBatch();
+                    InvalidateRect(window_, nullptr, FALSE);
+                    return 0;
+                }
+            }
             if (compressionFocused_ && advancedExpanded_ && !editingCrf_ &&
                 !controller_.snapshot().running &&
                 (wParam == VK_LEFT || wParam == VK_RIGHT ||
@@ -1781,11 +1881,23 @@ private:
                 return 0;
             }
             break;
-        case WM_MOUSEWHEEL:
-            scrollOffset_ = std::max(
-                0, scrollOffset_ + (GET_WHEEL_DELTA_WPARAM(wParam) > 0 ? -3 : 3));
-            InvalidateRect(window_, nullptr, FALSE);
+        case WM_MOUSEWHEEL: {
+            POINT cursor{GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam)};
+            ScreenToClient(window_, &cursor);
+            RECT client{};
+            GetClientRect(window_, &client);
+            const auto backends = availableBackends(
+                controller_.snapshot().capabilities, settings_.codec);
+            const Layout layout = makeLayout(
+                client.right, client.bottom, scale(),
+                static_cast<int>(backends.size()), advancedExpanded_, queueFocused_);
+            if (contains(layout.queue, cursor.x, cursor.y)) {
+                scrollOffset_ = std::max(
+                    0, scrollOffset_ + (GET_WHEEL_DELTA_WPARAM(wParam) > 0 ? -3 : 3));
+                InvalidateRect(window_, nullptr, FALSE);
+            }
             return 0;
+        }
         case WM_DROPFILES: {
             const HDROP drop = reinterpret_cast<HDROP>(wParam);
             const UINT count = DragQueryFileW(drop, 0xFFFFFFFF, nullptr, 0);
@@ -1835,6 +1947,8 @@ private:
     std::wstring crfEditText_;
     int scrollOffset_{0};
     bool advancedExpanded_{false};
+    bool queueFocused_{false};
+    bool failedOnly_{false};
     std::uint64_t selectedTask_{0};
 };
 
