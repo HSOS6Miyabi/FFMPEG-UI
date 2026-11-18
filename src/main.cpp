@@ -11,6 +11,7 @@
 #include <array>
 #include <atomic>
 #include <chrono>
+#include <clocale>
 #include <cstdlib>
 #include <cstdio>
 #include <filesystem>
@@ -34,6 +35,23 @@
 
 namespace {
 namespace fs = std::filesystem;
+
+// libarchive converts ZIP entry names using the active character locale.
+// Initialize UTF-8 handling before opening documents containing Unicode names.
+void configureArchiveFilenameLocale() {
+#ifdef _WIN32
+    if (std::setlocale(LC_CTYPE, ".UTF8") == nullptr)
+        std::setlocale(LC_CTYPE, "");
+#else
+    const char* locale = std::setlocale(LC_CTYPE, "");
+    const std::string_view name = locale == nullptr ? "" : locale;
+    if (name.find("UTF-8") == std::string_view::npos &&
+        name.find("UTF8") == std::string_view::npos &&
+        name.find("utf8") == std::string_view::npos) {
+        std::setlocale(LC_CTYPE, "C.UTF-8");
+    }
+#endif
+}
 
 std::string pathToUtf8(const fs::path& path) {
     const auto value = path.u8string();
@@ -1115,6 +1133,7 @@ void attachCliConsole(const std::vector<std::string>& arguments) {
 #endif
 
 int main(int argc, char** argv) {
+    configureArchiveFilenameLocale();
     if (ffmpegui::environmentVariable("FFMPEG_STUDIO_SSH_ASKPASS_ALIAS")) {
         return runSshAskpass();
     }
