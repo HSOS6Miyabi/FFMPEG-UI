@@ -773,6 +773,321 @@ private:
     std::vector<SshServer> servers_;
 };
 
+
+class VideoTrimmerDialog {
+public:
+    bool run(HINSTANCE instance, HWND owner, AppController& controller,
+             const std::string& inputPath, BatchSettings& settings, bool dark) {
+        instance_ = instance;
+        controller_ = &controller;
+        path_ = inputPath;
+        start_ = settings.trimStartSeconds;
+        end_ = settings.trimEndSeconds;
+        dark_ = dark;
+        const auto duration = controller.videoDuration(inputPath);
+        if (!duration || *duration <= 0.0) {
+            showTaskDialog(owner, L"无法打开视频裁剪器",
+                           L"无法读取所选视频的时长。请检查输入文件和 ffprobe。",
+                           TDCBF_OK_BUTTON, TD_WARNING_ICON);
+            return false;
+        }
+        duration_ = *duration;
+        cursor_ = std::clamp(start_, 0.0, std::max(0.0, duration_ - 0.05));
+        if (start_ >= duration_) start_ = 0.0;
+        if (end_ > duration_) end_ = duration_;
+        if (!validTrimRange(start_, end_)) end_ = -1.0;
+        scale_ = std::max(1.0, static_cast<double>(GetDpiForWindow(owner)) / 96.0);
+        WNDCLASSEXW wc{};
+        wc.cbSize = sizeof(wc);
+        wc.lpfnWndProc = &VideoTrimmerDialog::windowProc;
+        wc.hInstance = instance_;
+        wc.hCursor = LoadCursorW(nullptr, IDC_ARROW);
+        wc.hIcon = loadApplicationIcon(instance_, GetSystemMetrics(SM_CXICON),
+                                       GetSystemMetrics(SM_CYICON));
+        wc.lpszClassName = L"VideoCompressionWorkbenchTrimmer";
+        RegisterClassExW(&wc);
+        RECT parent{};
+        GetWindowRect(owner, &parent);
+        const int width = s(920), height = s(755);
+        const int x = parent.left + std::max(0, ((parent.right - parent.left) - width) / 2);
+        const int y = parent.top + std::max(0, ((parent.bottom - parent.top) - height) / 2);
+        hwnd_ = CreateWindowExW(
+            WS_EX_DLGMODALFRAME, wc.lpszClassName, L"可视化视频裁剪",
+            WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_CLIPCHILDREN,
+            x, y, width, height, owner, nullptr, instance_, this);
+        if (!hwnd_) return false;
+        font_ = CreateFontW(-s(15), 0, 0, 0, FW_NORMAL, FALSE, FALSE, FALSE,
+                            DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS,
+                            CLEARTYPE_QUALITY, DEFAULT_PITCH, L"Segoe UI");
+        heading_ = CreateFontW(-s(21), 0, 0, 0, FW_SEMIBOLD, FALSE, FALSE, FALSE,
+                               DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS,
+                               CLEARTYPE_QUALITY, DEFAULT_PITCH, L"Segoe UI");
+        refreshPreview();
+        EnableWindow(owner, FALSE);
+        ShowWindow(hwnd_, SW_SHOW);
+        UpdateWindow(hwnd_);
+        MSG msg{};
+        while (IsWindow(hwnd_) && GetMessageW(&msg, nullptr, 0, 0) > 0) {
+            TranslateMessage(&msg);
+            DispatchMessageW(&msg);
+        }
+        EnableWindow(owner, TRUE);
+        SetForegroundWindow(owner);
+        if (font_) DeleteObject(font_);
+        if (heading_) DeleteObject(heading_);
+        if (accepted_) {
+            settings.trimStartSeconds = start_;
+            settings.trimEndSeconds = end_;
+        }
+        return accepted_;
+    }
+
+private:
+    int s(int value) const {
+        return static_cast<int>(std::lround(value * scale_));
+    }
+    Rect previewRect() const { return {s(30), s(84), s(844), s(384)}; }
+    Rect seekRect() const { return {s(42), s(504), s(820), s(10)}; }
+    Rect backRect() const { return {s(42), s(548), s(120), s(36)}; }
+    Rect nextRect() const { return {s(172), s(548), s(120), s(36)}; }
+    Rect inRect() const { return {s(394), s(548), s(166), s(36)}; }
+    Rect outRect() const { return {s(570), s(548), s(166), s(36)}; }
+    Rect startRect() const { return {s(42), s(636), s(255), s(38)}; }
+    Rect endRect() const { return {s(316), s(636), s(255), s(38)}; }
+    Rect clearRect() const { return {s(587), s(636), s(92), s(38)}; }
+    Rect applyRect() const { return {s(689), s(636), s(92), s(38)}; }
+    Rect cancelRect() const { return {s(789), s(636), s(92), s(38)}; }
+
+    void refreshPreview() {
+        const auto frame = controller_->videoPreview(path_, cursor_, 800, 374);
+        pixels_.clear();
+        if (!frame || frame->width <= 0 || frame->height <= 0) {
+            frameWidth_ = frameHeight_ = 0;
+            status_ = L"当前时间位置无法提取画面。可以尝试向前跳转。";
+        } else {
+            frameWidth_ = frame->width;
+            frameHeight_ = frame->height;
+            pixels_.resize(static_cast<std::size_t>(frameWidth_ * frameHeight_));
+            for (std::size_t i = 0; i < pixels_.size(); ++i) {
+                const auto* rgb = frame->rgb.data() + i * 3;
+                pixels_[i] = (static_cast<std::uint32_t>(rgb[0]) << 16) |
+                             (static_cast<std::uint32_t>(rgb[1]) << 8) | rgb[2];
+            }
+            status_.clear();
+        }
+        if (hwnd_) InvalidateRect(hwnd_, nullptr, FALSE);
+    }
+    void jump(double delta) {
+        const double target = std::clamp(cursor_ + delta, 0.0,
+                                          std::max(0.0, duration_ - 0.05));
+        if (std::abs(target - cursor_) > 0.001) {
+            cursor_ = target;
+            refreshPreview();
+        }
+    }
+    bool commitField() {
+        if (editing_ == -1) return true;
+        const std::string raw = utf8FromWide(editText_.c_str());
+        const auto time = raw.empty() && editing_ == 1
+            ? std::optional<double>{-1.0} : parseTrimTime(raw.empty() ? "0" : raw);
+        if (!time) {
+            status_ = L"请输入秒数或 时:分:秒.毫秒，例如 00:01:23.500。";
+            return false;
+        }
+        const double candidateStart = editing_ == 0 ? *time : start_;
+        const double candidateEnd = editing_ == 1 ? *time : end_;
+        if (!validTrimRange(candidateStart, candidateEnd) ||
+            candidateStart >= duration_ || (candidateEnd >= 0 && candidateEnd > duration_ + 0.05)) {
+            status_ = L"请确保起始时间早于结束时间，并且位于视频时长以内。";
+            return false;
+        }
+        start_ = candidateStart;
+        end_ = candidateEnd;
+        editing_ = -1;
+        editText_.clear();
+        status_.clear();
+        return true;
+    }
+    void click(int x, int y) {
+        if (contains(startRect(), x, y) || contains(endRect(), x, y)) {
+            if (!commitField()) return;
+            editing_ = contains(startRect(), x, y) ? 0 : 1;
+            editText_ = wide(editing_ == 0 ? formatTrimTime(start_) :
+                            end_ >= 0.0 ? formatTrimTime(end_) : "");
+            return;
+        }
+        if (!commitField()) return;
+        if (contains(seekRect(), x, y)) {
+            cursor_ = std::clamp(duration_ * (x - seekRect().x) /
+                                 std::max(1, seekRect().width), 0.0,
+                                 std::max(0.0, duration_ - 0.05));
+            refreshPreview();
+        } else if (contains(backRect(), x, y)) jump(-1.0);
+        else if (contains(nextRect(), x, y)) jump(1.0);
+        else if (contains(inRect(), x, y)) {
+            if (end_ >= 0 && cursor_ >= end_) {
+                status_ = L"新的起始位置必须早于结束位置。";
+            } else {
+                start_ = cursor_;
+                status_.clear();
+            }
+        } else if (contains(outRect(), x, y)) {
+            if (cursor_ <= start_) {
+                status_ = L"结束位置必须晚于起始位置。";
+            } else {
+                end_ = cursor_;
+                status_.clear();
+            }
+        } else if (contains(clearRect(), x, y)) {
+            start_ = 0.0; end_ = -1.0; status_.clear();
+        } else if (contains(applyRect(), x, y)) {
+            if (validTrimRange(start_, end_)) {
+                accepted_ = true;
+                DestroyWindow(hwnd_);
+            }
+        } else if (contains(cancelRect(), x, y)) DestroyWindow(hwnd_);
+    }
+
+    void paint(HDC dc) {
+        RECT client{};
+        GetClientRect(hwnd_, &client);
+        const Palette c = palette(dark_);
+        RECT background{0, 0, client.right, client.bottom};
+        HBRUSH backgroundBrush = CreateSolidBrush(c.background);
+        FillRect(dc, &background, backgroundBrush);
+        DeleteObject(backgroundBrush);
+        drawText(dc, {s(30), s(20), s(844), s(32)}, L"可视化视频裁剪",
+                 c.text, heading_);
+        drawText(dc, {s(30), s(52), s(844), s(22)},
+                 wide(basename(path_)) + L"  ·  总时长 " + wide(formatTrimTime(duration_)),
+                 c.muted, font_);
+        const Rect preview = previewRect();
+        fillRound(dc, preview, RGB(12, 17, 28), c.border, 12);
+        if (!pixels_.empty()) {
+            BITMAPINFO bitmapInfo{};
+            bitmapInfo.bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
+            bitmapInfo.bmiHeader.biWidth = frameWidth_;
+            bitmapInfo.bmiHeader.biHeight = -frameHeight_;
+            bitmapInfo.bmiHeader.biPlanes = 1;
+            bitmapInfo.bmiHeader.biBitCount = 32;
+            bitmapInfo.bmiHeader.biCompression = BI_RGB;
+            const int imageX = preview.x + (preview.width - s(frameWidth_)) / 2;
+            const int imageY = preview.y + (preview.height - s(frameHeight_)) / 2;
+            StretchDIBits(dc, imageX, imageY, s(frameWidth_), s(frameHeight_),
+                          0, 0, frameWidth_, frameHeight_, pixels_.data(),
+                          &bitmapInfo, DIB_RGB_COLORS, SRCCOPY);
+        } else {
+            drawText(dc, preview, L"当前画面不可用", c.white, heading_,
+                     DT_CENTER | DT_VCENTER | DT_SINGLELINE);
+        }
+        const Rect track = seekRect();
+        fillRound(dc, track, c.track, c.track, 5);
+        const int position = static_cast<int>(std::lround(
+            track.width * (cursor_ / duration_)));
+        fillRound(dc, {track.x, track.y, std::max(1, position), track.height},
+                  c.accent, c.accent, 5);
+        fillRound(dc, {track.x + position - s(7), track.y - s(5),
+                       s(14), s(20)}, c.accent, c.accent, 7);
+        drawText(dc, {s(42), s(520), s(440), s(22)},
+                 L"当前位置：" + wide(formatTrimTime(cursor_)),
+                 c.text, font_);
+        drawText(dc, {s(510), s(520), s(352), s(22)},
+                 L"方向键跳转 1 秒，Shift 加方向键跳转 10 秒",
+                 c.muted, font_, DT_RIGHT | DT_VCENTER | DT_SINGLELINE);
+        drawButton(dc, backRect(), L"<  前退 1 秒", c, font_);
+        drawButton(dc, nextRect(), L"前进 1 秒  >", c, font_);
+        drawButton(dc, inRect(), L"当前位置设为起点", c, font_);
+        drawButton(dc, outRect(), L"当前位置设为终点", c, font_);
+        drawText(dc, {s(42), s(600), s(255), s(26)}, L"裁剪起始时间",
+                 c.muted, font_);
+        drawText(dc, {s(316), s(600), s(255), s(26)}, L"裁剪结束时间",
+                 c.muted, font_);
+        drawButton(dc, startRect(), editing_ == 0 ? editText_ + L"|" :
+                   wide(formatTrimTime(start_)), c, font_, editing_ == 0);
+        drawButton(dc, endRect(), editing_ == 1 ? editText_ + L"|" :
+                   end_ >= 0.0 ? wide(formatTrimTime(end_)) : L"直到片尾",
+                   c, font_, editing_ == 1);
+        drawButton(dc, clearRect(), L"重置", c, font_);
+        drawButton(dc, applyRect(), L"应用裁剪", c, font_, true);
+        drawButton(dc, cancelRect(), L"取消", c, font_);
+        drawText(dc, {s(42), s(689), s(830), s(25)},
+                 status_.empty() ? L"点击时间可以直接编辑；结束时间留空表示保留到片尾。" : status_,
+                 status_.empty() ? c.muted : c.red, font_);
+    }
+    static LRESULT CALLBACK windowProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
+        auto* self = reinterpret_cast<VideoTrimmerDialog*>(
+            GetWindowLongPtrW(hwnd, GWLP_USERDATA));
+        if (msg == WM_NCCREATE) {
+            auto* creation = reinterpret_cast<CREATESTRUCTW*>(lp);
+            self = static_cast<VideoTrimmerDialog*>(creation->lpCreateParams);
+            self->hwnd_ = hwnd;
+            SetWindowLongPtrW(hwnd, GWLP_USERDATA, reinterpret_cast<LONG_PTR>(self));
+        }
+        if (!self) return DefWindowProcW(hwnd, msg, wp, lp);
+        switch (msg) {
+        case WM_ERASEBKGND: return 1;
+        case WM_LBUTTONDOWN:
+            self->click(GET_X_LPARAM(lp), GET_Y_LPARAM(lp));
+            if (IsWindow(hwnd)) InvalidateRect(hwnd, nullptr, FALSE);
+            return 0;
+        case WM_KEYDOWN:
+            if (self->editing_ == -1) {
+                const double jump = (GetKeyState(VK_SHIFT) & 0x8000) ? 10.0 : 1.0;
+                if (wp == VK_LEFT) self->jump(-jump);
+                if (wp == VK_RIGHT) self->jump(jump);
+                if (wp == VK_HOME) { self->cursor_ = 0.0; self->refreshPreview(); }
+                if (wp == VK_END) {
+                    self->cursor_ = std::max(0.0, self->duration_ - 0.05);
+                    self->refreshPreview();
+                }
+                if (wp == VK_RETURN) self->click(self->applyRect().x + 1, self->applyRect().y + 1);
+                if (wp == VK_ESCAPE) DestroyWindow(hwnd);
+                return 0;
+            }
+            break;
+        case WM_CHAR:
+            if (self->editing_ != -1) {
+                if (wp == 13) self->commitField();
+                else if (wp == 27) { self->editing_ = -1; self->editText_.clear(); }
+                else if (wp == 8 && !self->editText_.empty()) self->editText_.pop_back();
+                else if (((wp >= L'0' && wp <= L'9') || wp == L':' || wp == L'.') &&
+                         self->editText_.size() < 18) self->editText_.push_back(static_cast<wchar_t>(wp));
+                InvalidateRect(hwnd, nullptr, FALSE);
+                return 0;
+            }
+            break;
+        case WM_PAINT: {
+            PAINTSTRUCT ps{};
+            HDC dc = BeginPaint(hwnd, &ps);
+            self->paint(dc);
+            EndPaint(hwnd, &ps);
+            return 0;
+        }
+        case WM_CLOSE: DestroyWindow(hwnd); return 0;
+        }
+        return DefWindowProcW(hwnd, msg, wp, lp);
+    }
+    HINSTANCE instance_{};
+    HWND hwnd_{};
+    AppController* controller_{};
+    std::string path_;
+    double duration_{1.0};
+    double start_{0.0};
+    double end_{-1.0};
+    double cursor_{0.0};
+    double scale_{1.0};
+    bool dark_{false};
+    bool accepted_{false};
+    int editing_{-1};
+    std::wstring editText_;
+    std::wstring status_;
+    HFONT font_{};
+    HFONT heading_{};
+    int frameWidth_{0};
+    int frameHeight_{0};
+    std::vector<std::uint32_t> pixels_;
+};
+
 class WindowsWindow {
 public:
     explicit WindowsWindow(AppController& controller) : controller_(controller) {}
