@@ -1595,6 +1595,9 @@ private:
             s(31), s(82),
             "批量视频压缩 · ZIP / PPTX 媒体处理 · CPU 与硬件编码",
             colors.muted, 0);
+        if (!trimError_.empty())
+            canvas_->textFit(s(31), s(104), trimError_,
+                             width_ - s(450), colors.red, 0);
         canvas_->button(
             layout.focusQueue, queueFocused_ ? "返回编码设置" : "专注处理队列",
             colors, queueFocused_);
