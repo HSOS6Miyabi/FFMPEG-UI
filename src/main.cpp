@@ -108,8 +108,10 @@ void printUsage() {
 
 int listEncoders(const ffmpegui::EncoderCapabilities& capabilities) {
     std::cout << capabilities.ffmpegVersion << '\n';
-    const std::array<ffmpegui::VideoCodec, 3> codecs{
-        ffmpegui::VideoCodec::H264, ffmpegui::VideoCodec::H265, ffmpegui::VideoCodec::AV1};
+    const std::array<ffmpegui::VideoCodec, 5> codecs{
+        ffmpegui::VideoCodec::H264, ffmpegui::VideoCodec::H265,
+        ffmpegui::VideoCodec::VP9, ffmpegui::VideoCodec::AV1,
+        ffmpegui::VideoCodec::H266};
     const std::array<ffmpegui::EncoderBackend, 4> backends{
         ffmpegui::EncoderBackend::CPU, ffmpegui::EncoderBackend::NVENC,
         ffmpegui::EncoderBackend::QSV, ffmpegui::EncoderBackend::AMF};
@@ -249,6 +251,58 @@ int runSelfTest(bool keepFiles) {
     };
     const std::array<ffmpegui::VideoCodec, 3> codecs{
         ffmpegui::VideoCodec::H264, ffmpegui::VideoCodec::H265, ffmpegui::VideoCodec::AV1};
+    if (capabilities.supports(ffmpegui::VideoCodec::VP9, ffmpegui::EncoderBackend::CPU)) {
+        ffmpegui::ConversionSettings vp9Settings;
+        vp9Settings.inputPath = pathToUtf8(source);
+        vp9Settings.outputPath = pathToUtf8(work / "encoded-vp9.webm");
+        vp9Settings.codec = ffmpegui::VideoCodec::VP9;
+        vp9Settings.backend = ffmpegui::EncoderBackend::CPU;
+        vp9Settings.outputContainer = ffmpegui::OutputContainer::WebM;
+        vp9Settings.crf = 30;
+        vp9Settings.compression = ffmpegui::CompressionLevel::Fastest;
+        vp9Settings.audioMode = ffmpegui::AudioMode::Remove;
+        const auto vp9Result = service.convert(vp9Settings, capabilities, {}, nullptr);
+        if (!vp9Result.success)
+            std::cout << "VP9 WebM conversion: " << vp9Result.message << '\n';
+        const auto vp9Probe = vp9Result.success
+            ? ffmpegui::runProcess({service.ffprobePath(), "-v", "error",
+                "-show_entries", "stream=codec_name:format=format_name",
+                "-of", "default=noprint_wrappers=1", vp9Result.outputPath})
+            : ffmpegui::ProcessResult{};
+        check("VP9 output in WebM container",
+              vp9Result.success &&
+              vp9Probe.output.find("codec_name=vp9") != std::string::npos &&
+              vp9Probe.output.find("format_name=matroska,webm") != std::string::npos);
+    }
+    if (capabilities.supports(ffmpegui::VideoCodec::H266, ffmpegui::EncoderBackend::CPU)) {
+        const fs::path vvcSource = work / "vvc-input.mp4";
+        const auto tinyVideo = ffmpegui::runProcess({
+            service.ffmpegPath(), "-hide_banner", "-loglevel", "error", "-y",
+            "-f", "lavfi", "-i", "testsrc2=size=320x180:rate=5:duration=0.4",
+            "-an", "-c:v", "mpeg4", "-q:v", "6", pathToUtf8(vvcSource)
+        });
+        ffmpegui::ConversionSettings vvcSettings;
+        vvcSettings.inputPath = pathToUtf8(vvcSource);
+        vvcSettings.outputPath = pathToUtf8(work / "encoded-h266.mkv");
+        vvcSettings.outputContainer = ffmpegui::OutputContainer::MKV;
+        vvcSettings.codec = ffmpegui::VideoCodec::H266;
+        vvcSettings.backend = ffmpegui::EncoderBackend::CPU;
+        vvcSettings.crf = 32;
+        vvcSettings.compression = ffmpegui::CompressionLevel::Fastest;
+        vvcSettings.audioMode = ffmpegui::AudioMode::Remove;
+        const auto result = tinyVideo.exitCode == 0
+            ? service.convert(vvcSettings, capabilities, {}, nullptr)
+            : ffmpegui::ConversionResult{};
+        if (!result.success)
+            std::cout << "H.266 integration detail: " << result.message << '\n';
+        const auto probe = result.success
+            ? ffmpegui::runProcess({service.ffprobePath(), "-v", "error",
+                "-show_entries", "stream=codec_name",
+                "-of", "default=noprint_wrappers=1", result.outputPath})
+            : ffmpegui::ProcessResult{};
+        check("H.266 encoding with libvvenc",
+              result.success && probe.output.find("codec_name=vvc") != std::string::npos);
+    }
     if (capabilities.supports(ffmpegui::VideoCodec::H264, ffmpegui::EncoderBackend::CPU)) {
         const fs::path resolutionSource = work / "resolution-source.mp4";
         const auto resolutionSourceGenerated = ffmpegui::runProcess({
@@ -302,6 +356,45 @@ int runSelfTest(bool keepFiles) {
         check("audio removal",
             mutedResult.success &&
             mutedProbe.output.find("codec_type=audio") == std::string::npos);
+
+        // Verify portrait-oriented videos remain portrait and use the short-side
+        // resolution limit, while a lower preset never enlarges the source.
+        const fs::path portraitSource = work / "portrait-1080x1920.mp4";
+        const auto portraitGenerated = ffmpegui::runProcess({
+            service.ffmpegPath(), "-hide_banner", "-loglevel", "error", "-y",
+            "-f", "lavfi", "-i", "testsrc2=size=1080x1920:rate=6:duration=0.5",
+            "-an", "-c:v", "mpeg4", "-q:v", "8", pathToUtf8(portraitSource)
+        });
+        const auto portraitCheck = [&](ffmpegui::OutputResolution resolution,
+                                       std::string_view stem,
+                                       int width, int height) {
+            if (portraitGenerated.exitCode != 0) return false;
+            auto settingsForPortrait = scaledSettings;
+            settingsForPortrait.inputPath = pathToUtf8(portraitSource);
+            settingsForPortrait.outputPath = pathToUtf8(
+                work / (std::string(stem) + ".mp4"));
+            settingsForPortrait.audioMode = ffmpegui::AudioMode::Remove;
+            settingsForPortrait.outputResolution = resolution;
+            auto result = service.convert(settingsForPortrait, capabilities, {}, nullptr);
+            if (!result.success) {
+                std::cout << "Portrait conversion: " << result.message << '\n';
+                return false;
+            }
+            const auto probe = ffmpegui::runProcess({
+                service.ffprobePath(), "-v", "error", "-select_streams", "v:0",
+                "-show_entries", "stream=width,height",
+                "-of", "default=noprint_wrappers=1", result.outputPath
+            });
+            return probe.exitCode == 0 &&
+                   probe.output.find("width=" + std::to_string(width)) != std::string::npos &&
+                   probe.output.find("height=" + std::to_string(height)) != std::string::npos;
+        };
+        check("Portrait 1080p preserves 1080x1920",
+              portraitCheck(ffmpegui::OutputResolution::FullHD1080,
+                            "portrait-1080p", 1080, 1920));
+        check("Portrait 480p limits the short side to 480",
+              portraitCheck(ffmpegui::OutputResolution::SD480,
+                            "portrait-480p", 480, 854));
 
         const fs::path sameContainerSource = work / "source.mkv";
         const fs::path sameContainerOutput = work / "same-container.mkv";

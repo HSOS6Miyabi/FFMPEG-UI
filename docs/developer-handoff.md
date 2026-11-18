@@ -5,18 +5,18 @@
 ## 当前项目状态
 
 - 项目名称：视频压缩工作台。
-- 当前开发版本：1.2.5。
+- 当前开发版本：1.2.6。
 - 主要分支：`main`。
 - 目标平台：Windows x64、Linux x86_64。
 - 主要语言：C++20。
 - 界面：Windows 原生 Win32/GDI；Linux X11/Xft。
 - 视频处理：通过 FFmpeg 和 ffprobe 命令行程序完成。
 - 远程处理：通过本机 OpenSSH 客户端调用远程 Linux 服务器上的 FFmpeg。
-- 输出容器：支持统一输出 MP4，也支持每个视频沿用源文件的容器格式。
+- 输出容器：支持 MP4、MKV、WebM 和沿用源文件的容器格式。
 - ZIP/PPTX：通过 libarchive 读取和生成。
 - 项目不使用 Qt、GTK、MFC 或 Electron 等桌面界面框架。
 
-当前版本包含独立视频、文件夹、ZIP 和 PPTX 批量处理；MP4 和源文件容器两种输出模式；H.264、H.265、AV1；CPU、NVIDIA NVENC、Intel Quick Sync 和 AMD AMF 编码器探测；八档压缩级别；六档输出分辨率；自动编码、保留原音频和移除音频三种音频处理方式；SSH 远程编码；任务进度、暂停、继续和取消；自适应并行调度；重复处理检查；任务列表自动恢复和手动导入导出；Windows 命令行文件参数和文件拖放。
+当前版本包含独立视频、文件夹、ZIP 和 PPTX 批量处理；MP4、MKV、WebM 和原格式四种输出模式；H.264、H.265、VP9、AV1 及条件支持的 H.266；CPU、NVIDIA NVENC、Intel Quick Sync 和 AMD AMF 编码器探测；八档压缩级别；六档输出分辨率；自动编码、保留原音频和移除音频三种音频处理方式；SSH 远程编码；任务进度、暂停、继续和取消；自适应并行调度；重复处理检查；任务列表自动恢复和手动导入导出；Windows 命令行文件参数和文件拖放。
 
 ## 目录说明
 
@@ -132,6 +132,14 @@ scripts/lint-cpp.sh build/linux-release
 ```
 
 需要格式化代码时执行 `scripts/format-cpp.sh --write`。这些检查由开发者在本地执行，不放入 GitHub Actions。
+
+## 格式兼容与竖屏处理
+
+- `VideoCodec` 枚举保留旧数值：H.264=0、H.265=1、AV1=2。VP9=3、H.266=4。界面按 H.264、H.265、VP9、AV1、H.266 排列。
+- `OutputContainer` 枚举保留 MP4=0 和 SameAsSource=1，新增 MKV=2 和 WebM=3。旧设置文件可继续读取。
+- H.266 仅在 FFmpeg 提供 `libvvenc` 时启用，使用 QP 与 10-bit 像素格式。VP9 使用 `libvpx-vp9`。容器兼容性检查和音频选择由共享核心处理。
+- 分辨率设置根据输入画面宽高决定横竖屏限制，保持宽高比，不放大画面。测试需包含 1080×1920 输入在 1080p 和 480p 档位下的实际输出。
+- Windows 和 Linux 的控件宽度随 DPI 计算，队列状态与完整进度信息分行显示；调整队列布局时同步修改鼠标选中行与双击位置的计算。
 
 ## CI 与发布
 

@@ -26,7 +26,7 @@ jobs:
       - name: Install build and media dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y build-essential cmake ninja-build libx11-dev libxft-dev libfontconfig1 libarchive-dev ffmpeg fonts-noto-cjk openssh-server xvfb xdotool imagemagick
+          sudo apt-get install -y build-essential cmake ninja-build libx11-dev libxft-dev libfontconfig1 libarchive-dev ffmpeg fonts-noto-cjk openssh-server xvfb xdotool imagemagick x11-xserver-utils
 
       - name: Start disposable SSH test server
         shell: bash
@@ -162,6 +162,33 @@ jobs:
             import -window "$window" artifacts/ui/video-compression-workbench-linux-compact-queue.png
             dimensions=$(identify -format "%wx%h" artifacts/ui/video-compression-workbench-linux-compact-queue.png)
             test "$dimensions" = "1280x720"
+
+            # Test the 150% DPI geometry and direct format-selection interactions.
+            kill "$app_pid" 2>/dev/null || true
+            wait "$app_pid" 2>/dev/null || true
+            printf "Xft.dpi: 144\n" | xrdb -merge
+            export FFMPEG_STUDIO_CONFIG_DIR="$RUNNER_TEMP/workbench-ui-hidpi-config"
+            mkdir -p "$FFMPEG_STUDIO_CONFIG_DIR"
+            ./build/linux-release/video-compression-workbench >/tmp/video-compression-workbench-hidpi.log 2>&1 &
+            app_pid=$!
+            window=""
+            for attempt in $(seq 1 30); do
+              window=$(xdotool search --class "VideoCompressionWorkbench" 2>/dev/null | head -n 1 || true)
+              if [ -n "$window" ]; then break; fi
+              sleep 1
+            done
+            test -n "$window" || { cat /tmp/video-compression-workbench-hidpi.log; exit 1; }
+            xdotool windowsize --sync "$window" 1600 900
+            sleep 2
+            import -window "$window" artifacts/ui/video-compression-workbench-linux-hidpi-150.png
+            dimensions=$(identify -format "%wx%h" artifacts/ui/video-compression-workbench-linux-hidpi-150.png)
+            test "$dimensions" = "1600x900"
+
+            # WebM selection must automatically select an available compatible encoder.
+            xdotool mousemove --window "$window" 341 443 click 1
+            sleep 1
+            grep -qx "outputContainer=3" "$FFMPEG_STUDIO_CONFIG_DIR/settings.ini"
+            grep -qx "codec=3" "$FFMPEG_STUDIO_CONFIG_DIR/settings.ini"
           '
 
       - name: Upload Linux interface screenshot
@@ -177,6 +204,7 @@ jobs:
             artifacts/ui/video-compression-workbench-linux-restored.png
             artifacts/ui/video-compression-workbench-linux-compact-settings.png
             artifacts/ui/video-compression-workbench-linux-compact-queue.png
+            artifacts/ui/video-compression-workbench-linux-hidpi-150.png
           if-no-files-found: error
 
       - name: Package Linux application
