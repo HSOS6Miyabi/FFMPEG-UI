@@ -804,7 +804,20 @@ public:
         if (start_ >= duration_) start_ = 0.0;
         if (end_ > duration_) end_ = duration_;
         if (!validTrimRange(start_, end_)) end_ = -1.0;
-        scale_ = std::max(1.0, static_cast<double>(GetDpiForWindow(owner)) / 96.0);
+        MONITORINFO monitor{};
+        monitor.cbSize = sizeof(monitor);
+        if (!GetMonitorInfoW(MonitorFromWindow(owner, MONITOR_DEFAULTTONEAREST), &monitor)) {
+            SystemParametersInfoW(SPI_GETWORKAREA, 0, &monitor.rcWork, 0);
+        }
+        const int availableWidth = std::max(1L,
+            monitor.rcWork.right - monitor.rcWork.left - 32L);
+        const int availableHeight = std::max(1L,
+            monitor.rcWork.bottom - monitor.rcWork.top - 40L);
+        scale_ = std::max(0.65, std::min({
+            static_cast<double>(std::max(96U, GetDpiForWindow(owner))) / 96.0,
+            static_cast<double>(availableWidth) / 920.0,
+            static_cast<double>(availableHeight) / 755.0
+        }));
         WNDCLASSEXW wc{};
         wc.cbSize = sizeof(wc);
         wc.lpfnWndProc = &VideoTrimmerDialog::windowProc;
@@ -817,10 +830,18 @@ public:
         RECT parent{};
         GetWindowRect(owner, &parent);
         const int width = s(920), height = s(755);
-        const int x = static_cast<int>(parent.left) + std::max(
-            0, (static_cast<int>(parent.right - parent.left) - width) / 2);
-        const int y = static_cast<int>(parent.top) + std::max(
-            0, (static_cast<int>(parent.bottom - parent.top) - height) / 2);
+        const int x = std::clamp(
+            static_cast<int>(parent.left) +
+                (static_cast<int>(parent.right - parent.left) - width) / 2,
+            static_cast<int>(monitor.rcWork.left),
+            std::max(static_cast<int>(monitor.rcWork.left),
+                     static_cast<int>(monitor.rcWork.right) - width));
+        const int y = std::clamp(
+            static_cast<int>(parent.top) +
+                (static_cast<int>(parent.bottom - parent.top) - height) / 2,
+            static_cast<int>(monitor.rcWork.top),
+            std::max(static_cast<int>(monitor.rcWork.top),
+                     static_cast<int>(monitor.rcWork.bottom) - height));
         hwnd_ = CreateWindowExW(
             WS_EX_DLGMODALFRAME, wc.lpszClassName, L"可视化视频裁剪",
             WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_CLIPCHILDREN,
