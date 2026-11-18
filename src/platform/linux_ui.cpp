@@ -2003,12 +2003,12 @@ private:
                     taskStateName(selected->state) + " · " + taskKindName(selected->kind),
                     maximumWidth, selected->state == TaskState::Failed ? colors.red : colors.muted, 0);
             }
-            if (information.height >= s(165)) {
+            if (information.height >= s(111)) {
                 canvas_->textFit(labelX, baseY + step * 3,
                                  "来源：" + selected->inputPath, maximumWidth,
                                  colors.muted, 0);
             }
-            if (information.height >= s(195)) {
+            if (information.height >= s(128)) {
                 canvas_->textFit(labelX, baseY + step * 4,
                                  "输出：" + selected->outputPath, maximumWidth,
                                  selected->state == TaskState::Failed ? colors.red : colors.text, 0);
@@ -2079,7 +2079,7 @@ private:
                 canvas_->textFit(secondX, startY + step,
                     "音频 " + audioModeName(settings_.audioMode), columnWidth, colors.text, 0);
             }
-            if (information.height >= s(162)) {
+            if (information.height >= s(128)) {
                 canvas_->textFit(labelX, startY + step * 2,
                     "分辨率 " + outputResolutionName(settings_.outputResolution),
                     columnWidth, colors.text, 0);
