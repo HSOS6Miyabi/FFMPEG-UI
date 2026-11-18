@@ -95,6 +95,45 @@ std::filesystem::path queueFilePath() {
     return settingsFilePath().parent_path() / "queue.ffq";
 }
 
+bool selectAvailableEncoder(BatchSettings& settings,
+                            const EncoderCapabilities& capabilities) {
+    if (capabilities.supports(settings.codec, settings.backend)) return true;
+    const auto available = availableVideoCodecs(capabilities);
+    if (available.empty()) return false;
+
+    const auto chooseBackend = [&](VideoCodec codec) {
+        for (const auto backend : {EncoderBackend::CPU, EncoderBackend::NVENC,
+                                   EncoderBackend::QSV, EncoderBackend::AMF}) {
+            if (!capabilities.supports(codec, backend)) continue;
+            settings.backend = backend;
+            return true;
+        }
+        return false;
+    };
+    if (!chooseBackend(settings.codec)) {
+        // Preserve a WebM output choice when a different FFmpeg build is loaded.
+        const std::string extension =
+            outputVideoExtension(settings.outputContainer, "source.mp4");
+        for (const auto candidate : available) {
+            if (settings.outputContainer != OutputContainer::SameAsSource &&
+                !containerSupportsVideoCodec(extension, candidate)) continue;
+            settings.codec = candidate;
+            break;
+        }
+        if (!chooseBackend(settings.codec)) {
+            settings.codec = available.front();
+            if (!chooseBackend(settings.codec)) return false;
+        }
+        settings.crf = defaultCrf(settings.codec);
+    }
+    if (settings.outputContainer != OutputContainer::SameAsSource &&
+        !containerSupportsVideoCodec(
+            outputVideoExtension(settings.outputContainer, "source.mp4"),
+            settings.codec))
+        settings.outputContainer = OutputContainer::MKV;
+    return true;
+}
+
 
 } // namespace
 
@@ -133,19 +172,7 @@ void AppController::initialize() {
     remoteResources_ = remoteResources;
     settings_.remoteHost = selectedRemote;
 
-    if (!capabilities_.supports(settings_.codec, settings_.backend)) {
-        for (const auto candidate : {
-                 EncoderBackend::CPU,
-                 EncoderBackend::NVENC,
-                 EncoderBackend::QSV,
-                 EncoderBackend::AMF
-             }) {
-            if (capabilities_.supports(settings_.codec, candidate)) {
-                settings_.backend = candidate;
-                break;
-            }
-        }
-    }
+    (void)selectAvailableEncoder(settings_, capabilities_);
 
     saveSettingsLocked();
 
@@ -282,25 +309,9 @@ bool AppController::selectRemoteServer(const std::string& alias, std::string& er
         return false;
     }
 
-    if (!remote.capabilities.supports(settings_.codec, settings_.backend)) {
-        bool foundSupportedBackend = false;
-        for (const auto candidate : {
-                 EncoderBackend::CPU,
-                 EncoderBackend::NVENC,
-                 EncoderBackend::QSV,
-                 EncoderBackend::AMF
-             }) {
-            if (remote.capabilities.supports(settings_.codec, candidate)) {
-                settings_.backend = candidate;
-                foundSupportedBackend = true;
-                break;
-            }
-        }
-
-        if (!foundSupportedBackend) {
-            error = "远程服务器没有可用于当前视频编码格式的编码器。";
-            return false;
-        }
+    if (!selectAvailableEncoder(settings_, remote.capabilities)) {
+        error = "远程服务器没有可用于转换视频的编码器。";
+        return false;
     }
 
     settings_.remoteHost = alias;
@@ -336,19 +347,7 @@ void AppController::selectLocalEncoder() {
     remoteResources_ = {};
     capabilities_ = localCapabilities;
 
-    if (!capabilities_.supports(settings_.codec, settings_.backend)) {
-        for (const auto candidate : {
-                 EncoderBackend::CPU,
-                 EncoderBackend::NVENC,
-                 EncoderBackend::QSV,
-                 EncoderBackend::AMF
-             }) {
-            if (capabilities_.supports(settings_.codec, candidate)) {
-                settings_.backend = candidate;
-                break;
-            }
-        }
-    }
+    (void)selectAvailableEncoder(settings_, capabilities_);
 
     refreshOutputPathsLocked();
     saveSettingsLocked();
@@ -400,6 +399,14 @@ void AppController::updateSettings(const BatchSettings& settings) {
     std::lock_guard lock(mutex_);
     if (running_) return;
     settings_ = settings;
+    settings_.outputContainer = static_cast<OutputContainer>(
+        std::clamp(static_cast<int>(settings_.outputContainer), 0, 3));
+    settings_.codec = static_cast<VideoCodec>(
+        std::clamp(static_cast<int>(settings_.codec), 0, 4));
+    settings_.outputContainer = static_cast<OutputContainer>(
+        std::clamp(static_cast<int>(settings_.outputContainer), 0, 3));
+    settings_.codec = static_cast<VideoCodec>(
+        std::clamp(static_cast<int>(settings_.codec), 0, 4));
     settings_.crf = std::clamp(settings_.crf, 0, crfMaximum(settings_.codec));
     settings_.audioBitrateKbps = std::clamp(settings_.audioBitrateKbps, 64, 320);
     settings_.audioMode = static_cast<AudioMode>(
@@ -528,10 +535,10 @@ void AppController::loadSettings() {
         try {
             if (key == "outputContainer") {
                 settings_.outputContainer = static_cast<OutputContainer>(
-                    std::clamp(std::stoi(value), 0, 1));
+                    std::clamp(std::stoi(value), 0, 3));
             } else if (key == "codec") {
                 settings_.codec = static_cast<VideoCodec>(
-                    std::clamp(std::stoi(value), 0, 2));
+                    std::clamp(std::stoi(value), 0, 4));
             } else if (key == "backend") {
                 settings_.backend = static_cast<EncoderBackend>(
                     std::clamp(std::stoi(value), 0, 3));

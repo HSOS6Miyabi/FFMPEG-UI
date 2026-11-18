@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.25)
-project(VideoCompressionWorkbench VERSION 1.2.5 LANGUAGES CXX)
+project(VideoCompressionWorkbench VERSION 1.2.6 LANGUAGES CXX)
 
 if(WIN32)
     enable_language(RC)

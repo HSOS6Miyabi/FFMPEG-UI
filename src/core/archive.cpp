@@ -555,6 +555,13 @@ ArchiveResult ArchiveService::process(const std::string& inputPath,
         return result;
     }
     result.inputSizeBytes = fs::file_size(input, fsError);
+    // PowerPoint media playback is reliably supported with MP4. Allow
+    // the existing source-container mode for legacy presentations.
+    if (isPowerPoint && (settings.outputContainer == OutputContainer::MKV ||
+                         settings.outputContainer == OutputContainer::WebM)) {
+        result.message = "PowerPoint 内嵌视频请使用 MP4 输出或选择原格式。";
+        return result;
+    }
     if (manifestMatches(output, marker, input, settings)) {
         std::string validationError;
         if (validateArchive(output, isPowerPoint, validationError)) {
@@ -603,7 +610,9 @@ ArchiveResult ArchiveService::process(const std::string& inputPath,
     for (std::size_t index = 0; index < videos.size(); ++index) {
         const std::string oldRelative = relativeName(videos[index], extracted);
         fs::path candidate = pathFromUtf8(oldRelative);
-        if (settings.outputContainer == OutputContainer::MP4) candidate.replace_extension(".mp4");
+        if (settings.outputContainer != OutputContainer::SameAsSource)
+            candidate.replace_extension(
+                outputVideoExtension(settings.outputContainer, oldRelative));
         auto targetKey = [](const fs::path& value) {
             return lower(genericPathToUtf8(value.lexically_normal()));
         };

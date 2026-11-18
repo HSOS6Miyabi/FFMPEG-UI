@@ -61,7 +61,9 @@ std::string encoderFor(VideoCodec codec, EncoderBackend backend,
         switch (codec) {
         case VideoCodec::H264: return "libx264";
         case VideoCodec::H265: return "libx265";
+        case VideoCodec::VP9: return "libvpx-vp9";
         case VideoCodec::AV1: return capabilities.cpuAv1Encoder();
+        case VideoCodec::H266: return "libvvenc";
         }
         break;
     case EncoderBackend::NVENC:
@@ -69,6 +71,8 @@ std::string encoderFor(VideoCodec codec, EncoderBackend backend,
         case VideoCodec::H264: return "h264_nvenc";
         case VideoCodec::H265: return "hevc_nvenc";
         case VideoCodec::AV1: return "av1_nvenc";
+        case VideoCodec::VP9:
+        case VideoCodec::H266: return {};
         }
         break;
     case EncoderBackend::QSV:
@@ -76,6 +80,8 @@ std::string encoderFor(VideoCodec codec, EncoderBackend backend,
         case VideoCodec::H264: return "h264_qsv";
         case VideoCodec::H265: return "hevc_qsv";
         case VideoCodec::AV1: return "av1_qsv";
+        case VideoCodec::VP9:
+        case VideoCodec::H266: return {};
         }
         break;
     case EncoderBackend::AMF:
@@ -83,6 +89,8 @@ std::string encoderFor(VideoCodec codec, EncoderBackend backend,
         case VideoCodec::H264: return "h264_amf";
         case VideoCodec::H265: return "hevc_amf";
         case VideoCodec::AV1: return "av1_amf";
+        case VideoCodec::VP9:
+        case VideoCodec::H266: return {};
         }
         break;
     }
@@ -97,6 +105,16 @@ std::string cpuPreset(VideoCodec codec, CompressionLevel level, bool useSvtAv1) 
     const auto index = static_cast<std::size_t>(level);
     if (codec == VideoCodec::AV1) {
         return std::to_string(useSvtAv1 ? svtPresets[index] : aomCpuUsed[index]);
+    }
+    if (codec == VideoCodec::VP9) {
+        static constexpr int vp9CpuUsed[] = {8, 7, 6, 4, 3, 2, 1, 0};
+        return std::to_string(vp9CpuUsed[index]);
+    }
+    if (codec == VideoCodec::H266) {
+        static constexpr const char* vvencPresets[] = {
+            "faster", "faster", "fast", "medium",
+            "medium", "slow", "slower", "slower"};
+        return vvencPresets[index];
     }
     return presets[index];
 }
@@ -231,7 +249,9 @@ std::string expectedStreamCodec(VideoCodec codec) {
     switch (codec) {
     case VideoCodec::H264: return "h264";
     case VideoCodec::H265: return "hevc";
+    case VideoCodec::VP9: return "vp9";
     case VideoCodec::AV1: return "av1";
+    case VideoCodec::H266: return "vvc";
     }
     return {};
 }
@@ -262,9 +282,14 @@ std::string outputScaleFilter(OutputResolution resolution) {
     case OutputResolution::HD720: maximumWidth = 1280; maximumHeight = 720; break;
     case OutputResolution::SD480: maximumWidth = 854; maximumHeight = 480; break;
     }
-    return "scale=w='min(iw," + std::to_string(maximumWidth) +
-        ")':h='min(ih," + std::to_string(maximumHeight) +
-        ")':force_original_aspect_ratio=decrease:force_divisible_by=2";
+    const std::string widthLandscape = std::to_string(maximumWidth);
+    const std::string heightLandscape = std::to_string(maximumHeight);
+    // The selected p-level refers to the short side. A portrait input keeps
+    // its orientation, with width and height limits exchanged.
+    return "scale=w='min(iw,if(gte(iw,ih)," + widthLandscape +
+        "," + heightLandscape + "))':h='min(ih,if(gte(iw,ih)," +
+        heightLandscape + "," + widthLandscape +
+        "))':force_original_aspect_ratio=decrease:force_divisible_by=2";
 }
 
 std::pair<int, int> outputResolutionBounds(OutputResolution resolution) {
@@ -297,8 +322,10 @@ bool outputResolutionMatches(const std::string& format, OutputResolution resolut
     if (maximumWidth == 0 || maximumHeight == 0) return true;
     const auto width = integerFieldValue(format, "width=");
     const auto height = integerFieldValue(format, "height=");
-    return width && height && *width > 0 && *height > 0 &&
-        *width <= maximumWidth && *height <= maximumHeight;
+    if (!width || !height || *width <= 0 || *height <= 0) return false;
+    if (*height > *width)
+        return *width <= maximumHeight && *height <= maximumWidth;
+    return *width <= maximumWidth && *height <= maximumHeight;
 }
 
 std::string audioEncoderForExtension(const std::string& extension,
@@ -313,13 +340,24 @@ std::string audioEncoderForExtension(const std::string& extension,
     return "aac";
 }
 
-bool containerSupportsVideoCodec(const std::string& extension, VideoCodec codec) {
+bool isCompatibleContainerCodec(const std::string& extension, VideoCodec codec) {
     if (extension == ".ogv") return false;
-    if (extension == ".webm") return codec == VideoCodec::AV1;
-    if (extension == ".mov") return codec != VideoCodec::AV1;
-    if (extension == ".wmv") return codec != VideoCodec::H265;
-    if (extension == ".3gp") return codec == VideoCodec::H264;
-    return true;
+    if (extension == ".webm") return codec == VideoCodec::VP9 || codec == VideoCodec::AV1;
+    if (extension == ".mp4" || extension == ".m4v")
+        return codec != VideoCodec::VP9;
+    if (extension == ".mkv") return true;
+    if (extension == ".mov") return codec == VideoCodec::H264 || codec == VideoCodec::H265;
+    if (extension == ".ts" || extension == ".m2ts" || extension == ".mts" ||
+        extension == ".mpegts")
+        return codec == VideoCodec::H264 || codec == VideoCodec::H265;
+    if (extension == ".wmv") return codec == VideoCodec::H264;
+    if (extension == ".3gp" || extension == ".flv")
+        return codec == VideoCodec::H264;
+    if (extension == ".avi" || extension == ".mpg" ||
+        extension == ".mpeg" || extension == ".vob")
+        return codec == VideoCodec::H264 || codec == VideoCodec::H265;
+    return codec == VideoCodec::H264 || codec == VideoCodec::H265 ||
+           codec == VideoCodec::AV1;
 }
 
 std::string sourceFingerprint(const std::string& inputPath) {
@@ -375,7 +413,9 @@ std::string codecShortName(VideoCodec codec) {
     switch (codec) {
     case VideoCodec::H264: return "H264";
     case VideoCodec::H265: return "H265";
+    case VideoCodec::VP9: return "VP9";
     case VideoCodec::AV1: return "AV1";
+    case VideoCodec::H266: return "H266";
     }
     return "VIDEO";
 }
@@ -431,7 +471,9 @@ bool outputDescriptionMatches(const std::string& format,
         : expectedAudioCodec == "copy" ||
             !hasAudio ||
             format.find("codec_name=" + expectedAudioCodec) != std::string::npos;
-    const bool markerMatches = format.find(marker) != std::string::npos;
+    // MPEG-TS cannot reliably preserve container-level comment metadata.
+    const bool markerMatches = extension == ".ts" || extension == ".m2ts" ||
+        extension == ".mts" || format.find(marker) != std::string::npos;
     const bool resolutionMatches = outputResolutionMatches(format, resolution);
 
     return hasVideo && hasExpectedContainer && audioMatches &&
@@ -459,13 +501,38 @@ std::uint64_t parseRemoteSize(const std::string& value) {
 
 } // namespace
 
+bool containerSupportsVideoCodec(const std::string& extension, VideoCodec codec) {
+    return isCompatibleContainerCodec(lower(extension), codec);
+}
+
+std::vector<VideoCodec> availableVideoCodecs(const EncoderCapabilities& capabilities) {
+    std::vector<VideoCodec> codecs;
+    // Chronological order: H.264 (2003), H.265 (2013), VP9 (2013),
+    // AV1 (2018), H.266 (2020).
+    for (const auto codec : {VideoCodec::H264, VideoCodec::H265,
+                             VideoCodec::VP9, VideoCodec::AV1, VideoCodec::H266}) {
+        bool available = false;
+        for (const auto backend : {EncoderBackend::CPU, EncoderBackend::NVENC,
+                                   EncoderBackend::QSV, EncoderBackend::AMF}) {
+            if (capabilities.supports(codec, backend)) {
+                available = true;
+                break;
+            }
+        }
+        if (available) codecs.push_back(codec);
+    }
+    return codecs;
+}
+
 bool EncoderCapabilities::supports(VideoCodec codec, EncoderBackend backend) const {
     switch (backend) {
     case EncoderBackend::CPU:
         switch (codec) {
         case VideoCodec::H264: return libx264;
         case VideoCodec::H265: return libx265;
+        case VideoCodec::VP9: return libvpxVp9;
         case VideoCodec::AV1: return libsvtav1 || libaomAv1;
+        case VideoCodec::H266: return libvvenc;
         }
         break;
     case EncoderBackend::NVENC:
@@ -473,6 +540,8 @@ bool EncoderCapabilities::supports(VideoCodec codec, EncoderBackend backend) con
         case VideoCodec::H264: return h264Nvenc;
         case VideoCodec::H265: return hevcNvenc;
         case VideoCodec::AV1: return av1Nvenc;
+        case VideoCodec::VP9:
+        case VideoCodec::H266: return false;
         }
         break;
     case EncoderBackend::QSV:
@@ -480,6 +549,8 @@ bool EncoderCapabilities::supports(VideoCodec codec, EncoderBackend backend) con
         case VideoCodec::H264: return h264Qsv;
         case VideoCodec::H265: return hevcQsv;
         case VideoCodec::AV1: return av1Qsv;
+        case VideoCodec::VP9:
+        case VideoCodec::H266: return false;
         }
         break;
     case EncoderBackend::AMF:
@@ -487,6 +558,8 @@ bool EncoderCapabilities::supports(VideoCodec codec, EncoderBackend backend) con
         case VideoCodec::H264: return h264Amf;
         case VideoCodec::H265: return hevcAmf;
         case VideoCodec::AV1: return av1Amf;
+        case VideoCodec::VP9:
+        case VideoCodec::H266: return false;
         }
         break;
     }
@@ -503,12 +576,19 @@ std::string outputContainerName(OutputContainer container) {
     switch (container) {
     case OutputContainer::MP4: return "MP4";
     case OutputContainer::SameAsSource: return "与源文件相同";
+    case OutputContainer::MKV: return "MKV";
+    case OutputContainer::WebM: return "WebM";
     }
     return "MP4";
 }
 
 std::string outputVideoExtension(OutputContainer container, const std::string& sourcePath) {
-    if (container == OutputContainer::MP4) return ".mp4";
+    switch (container) {
+    case OutputContainer::MP4: return ".mp4";
+    case OutputContainer::MKV: return ".mkv";
+    case OutputContainer::WebM: return ".webm";
+    case OutputContainer::SameAsSource: break;
+    }
     const auto extension = pathFromUtf8(sourcePath).extension();
     std::string value = pathToUtf8(extension);
     std::transform(value.begin(), value.end(), value.begin(), [](unsigned char c) {
@@ -521,7 +601,9 @@ std::string codecName(VideoCodec codec) {
     switch (codec) {
     case VideoCodec::H264: return "H.264";
     case VideoCodec::H265: return "H.265";
+    case VideoCodec::VP9: return "VP9";
     case VideoCodec::AV1: return "AV1";
+    case VideoCodec::H266: return "H.266";
     }
     return "未知编码";
 }
@@ -593,13 +675,18 @@ std::string taskStateName(TaskState state) {
 }
 
 int compressionLevelCount() { return 8; }
-int crfMaximum(VideoCodec codec) { return codec == VideoCodec::AV1 ? 63 : 51; }
+int crfMaximum(VideoCodec codec) {
+    return codec == VideoCodec::AV1 || codec == VideoCodec::VP9 ||
+                   codec == VideoCodec::H266 ? 63 : 51;
+}
 
 int defaultCrf(VideoCodec codec) {
     switch (codec) {
     case VideoCodec::H264: return 23;
     case VideoCodec::H265: return 28;
+    case VideoCodec::VP9: return 30;
     case VideoCodec::AV1: return 30;
+    case VideoCodec::H266: return 32;
     }
     return 23;
 }
@@ -617,13 +704,19 @@ std::string settingsFingerprint(const ConversionSettings& settings) {
     }
     value << ";resolution=" << static_cast<int>(settings.outputResolution)
           << ";container=" << (settings.outputContainer == OutputContainer::MP4
-                ? "mp4" : "source:" + outputVideoExtension(settings.outputContainer, source));
+                ? "mp4" : settings.outputContainer == OutputContainer::SameAsSource
+                    ? "source:" + outputVideoExtension(settings.outputContainer, source)
+                    : outputVideoExtension(settings.outputContainer, source));
     return value.str();
 }
 
 std::string outputSuffix(const ConversionSettings& settings) {
-    const std::string qualityType = settings.backend == EncoderBackend::CPU ? "CR" : "CQ";
-    const std::string container = settings.outputContainer == OutputContainer::SameAsSource ? "_SRC" : "";
+    const std::string qualityType = settings.codec == VideoCodec::H266 ? "QP" :
+        settings.backend == EncoderBackend::CPU ? "CR" : "CQ";
+    const std::string container = settings.outputContainer == OutputContainer::SameAsSource ? "_SRC" :
+        settings.outputContainer == OutputContainer::MKV ? "_MKV" :
+        settings.outputContainer == OutputContainer::WebM ? "_WEBM" :
+        "";
     const std::string audio = settings.audioMode == AudioMode::Encode
         ? "_A" + std::to_string(settings.audioBitrateKbps)
         : settings.audioMode == AudioMode::Copy ? "_ACOPY" : "_ANOAUDIO";
@@ -656,7 +749,9 @@ std::string legacySettingsFingerprint(const ConversionSettings& settings) {
 }
 
 bool supportsLegacyMarker(const ConversionSettings& settings) {
-    return settings.audioMode == AudioMode::Encode &&
+    return (settings.outputContainer == OutputContainer::MP4 ||
+            settings.outputContainer == OutputContainer::SameAsSource) &&
+        settings.audioMode == AudioMode::Encode &&
         settings.outputResolution == OutputResolution::Original;
 }
 } // namespace
@@ -740,7 +835,7 @@ std::vector<std::string> buildFfmpegCommand(const ConversionSettings& settings,
 
     const std::string encoder = encoderFor(settings.codec, settings.backend, capabilities);
     const std::string outputExtension = lower(pathToUtf8(pathFromUtf8(actualOutputPath).extension()));
-    if (!containerSupportsVideoCodec(outputExtension, settings.codec))
+    if (!isCompatibleContainerCodec(outputExtension, settings.codec))
         throw std::invalid_argument("所选视频编码格式与目标容器不兼容。请更换编码格式或选择 MP4 输出。");
     const std::string audioEncoder = settings.audioMode == AudioMode::Encode
         ? audioEncoderForExtension(outputExtension, capabilities) : std::string{};
@@ -759,7 +854,15 @@ std::vector<std::string> buildFfmpegCommand(const ConversionSettings& settings,
 
     switch (settings.backend) {
     case EncoderBackend::CPU:
-        if (settings.codec == VideoCodec::AV1 && !useSvtAv1) {
+        if (settings.codec == VideoCodec::VP9) {
+            command.insert(command.end(), {"-crf", std::to_string(settings.crf), "-b:v", "0",
+                "-deadline", "good", "-row-mt", "1",
+                "-cpu-used", cpuPreset(settings.codec, settings.compression, false)});
+        } else if (settings.codec == VideoCodec::H266) {
+            command.insert(command.end(), {"-preset",
+                cpuPreset(settings.codec, settings.compression, false),
+                "-qp", std::to_string(settings.crf)});
+        } else if (settings.codec == VideoCodec::AV1 && !useSvtAv1) {
             command.insert(command.end(), {"-crf", std::to_string(settings.crf), "-b:v", "0",
                 "-cpu-used", cpuPreset(settings.codec, settings.compression, false)});
         } else {
@@ -794,7 +897,8 @@ std::vector<std::string> buildFfmpegCommand(const ConversionSettings& settings,
     if (!scaleFilter.empty()) {
         command.insert(command.end(), {"-vf", scaleFilter});
     }
-    command.insert(command.end(), {"-pix_fmt", "yuv420p"});
+    command.insert(command.end(), {"-pix_fmt",
+        settings.codec == VideoCodec::H266 ? "yuv420p10le" : "yuv420p"});
     if (settings.audioMode == AudioMode::Encode) {
         command.insert(command.end(), {
             "-c:a", audioEncoder, "-b:a", std::to_string(settings.audioBitrateKbps) + "k"});
@@ -872,6 +976,8 @@ RemoteProbeResult FfmpegService::probeRemote(const std::string& alias,
 
     result.capabilities.libx264 = hasEncoder("libx264");
     result.capabilities.libx265 = hasEncoder("libx265");
+    result.capabilities.libvpxVp9 = hasEncoder("libvpx-vp9");
+    result.capabilities.libvvenc = hasEncoder("libvvenc");
     result.capabilities.libsvtav1 = hasEncoder("libsvtav1");
     result.capabilities.libaomAv1 = hasEncoder("libaom-av1");
     result.capabilities.libopus = hasEncoder("libopus");
@@ -959,6 +1065,8 @@ EncoderCapabilities FfmpegService::probeCapabilities(bool testHardware) const {
     if (encoders.exitCode == 0) {
         capabilities.libx264 = encoders.output.find("libx264") != std::string::npos;
         capabilities.libx265 = encoders.output.find("libx265") != std::string::npos;
+        capabilities.libvpxVp9 = encoders.output.find("libvpx-vp9") != std::string::npos;
+        capabilities.libvvenc = encoders.output.find("libvvenc") != std::string::npos;
         capabilities.libsvtav1 = encoders.output.find("libsvtav1") != std::string::npos;
         capabilities.libaomAv1 = encoders.output.find("libaom-av1") != std::string::npos;
         capabilities.libopus = encoders.output.find("libopus") != std::string::npos;

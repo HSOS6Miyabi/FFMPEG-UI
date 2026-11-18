@@ -75,7 +75,7 @@ Palette palette(bool dark) {
 struct Layout {
     Rect addFiles, addFolder, addArchive, importQueue, exportQueue, removeSelected, clearDone, clearAll;
     Rect outputField, outputBrowse;
-    Rect container[2], codec[3], backend[4], crfTrack, crfValue;
+    Rect container[4], codec[5], backend[4], crfTrack, crfValue;
     Rect compressionTrack, compressionValue, audio[6], resolution[6], audioMode[3];
     Rect parallel, recursive, skip, preserve, overwrite;
     Rect queue, overallCard, overallTrack, start, pause, cancel, ssh, theme, advancedToggle, rescan, diagnostic;
@@ -93,7 +93,7 @@ Layout makeLayout(int width, int height, double scale, int backendCount = 4,
                   bool expanded = false, bool queueFocused = false) {
     const auto s = [scale](int v) { return static_cast<int>(std::lround(v * scale)); };
     const int pad = s(22), gap = s(14);
-    const int rightW = std::clamp(width / 3, s(340), s(400));
+    const int rightW = std::clamp(width / 3, s(320), s(370));
     const int leftW = width - pad * 2 - gap - rightW;
     const int leftX = pad, rightX = leftX + leftW + gap, top = s(94);
     const int settingsY = top + s(50);
@@ -128,12 +128,12 @@ Layout makeLayout(int width, int height, double scale, int backendCount = 4,
     const int columnGap = s(18), columnWidth = (gridWidth - columnGap) / 2;
     const int secondX = gridX + columnWidth + columnGap;
     const int buttonGap = s(5);
-    const int containerWidth = (columnWidth - buttonGap) / 2;
-    for (int index = 0; index < 2; ++index)
+    const int containerWidth = (columnWidth - buttonGap * 3) / 4;
+    for (int index = 0; index < 4; ++index)
         l.container[index] = {gridX + index * (containerWidth + buttonGap),
                               settingsY + s(112), containerWidth, s(30)};
-    const int codecWidth = (columnWidth - buttonGap * 2) / 3;
-    for (int index = 0; index < 3; ++index)
+    const int codecWidth = (columnWidth - buttonGap * 4) / 5;
+    for (int index = 0; index < 5; ++index)
         l.codec[index] = {secondX + index * (codecWidth + buttonGap),
                           settingsY + s(112), codecWidth, s(30)};
     backendCount = std::clamp(backendCount, 1, 4);
@@ -999,7 +999,16 @@ private:
         HDC dc = CreateCompatibleDC(target);
         HBITMAP bitmap = CreateCompatibleBitmap(target, width, height);
         auto oldBitmap = SelectObject(dc, bitmap);
-        const Palette c = palette(dark_); const auto backends = availableBackends(snap.capabilities, settings_.codec);
+        const Palette c = palette(dark_);
+        const auto backends = availableBackends(snap.capabilities, settings_.codec);
+        const auto original = makeLayout(
+            width, height, scale(), static_cast<int>(backends.size()),
+            advancedExpanded_, queueFocused_);
+        if (!queueFocused_ && !autoFocusUsed_ && !snap.tasks.empty() &&
+            original.queue.height < s(110)) {
+            queueFocused_ = true;
+            autoFocusUsed_ = true;
+        }
         const auto l = makeLayout(width, height, scale(), static_cast<int>(backends.size()),
                                   advancedExpanded_, queueFocused_);
         HBRUSH backgroundBrush = CreateSolidBrush(c.background);
@@ -1042,24 +1051,38 @@ private:
         const int firstColumn = l.container[0].x;
         const int secondColumn = l.codec[0].x;
         const int firstWidth = (l.container[1].x + l.container[1].width) - firstColumn;
-        const int secondWidth = (l.codec[2].x + l.codec[2].width) - secondColumn;
+        const int secondWidth = (l.codec[4].x + l.codec[4].width) - secondColumn;
         drawText(dc, {firstColumn, top + s(88), firstWidth, s(19)},
                  L"输出容器", c.muted, smallFont);
         drawText(dc, {secondColumn, top + s(88), secondWidth, s(19)},
                  L"视频编码", c.muted, smallFont);
-        const std::array<std::wstring, 2> containers{L"MP4", L"与源文件相同"};
-        for (int index = 0; index < 2; ++index)
-            drawButton(dc, l.container[index], containers[index], c, smallFont,
-                       static_cast<int>(settings_.outputContainer) == index);
-        const std::array<std::wstring, 3> codecs{L"H.264", L"H.265", L"AV1"};
-        for (int index = 0; index < 3; ++index)
-            drawButton(dc, l.codec[index], codecs[index], c, normal,
-                       static_cast<int>(settings_.codec) == index);
+        const std::array<OutputContainer, 4> containers{
+            OutputContainer::MP4, OutputContainer::MKV,
+            OutputContainer::WebM, OutputContainer::SameAsSource
+        };
+        const std::array<std::wstring, 4> containerLabels{
+            L"MP4", L"MKV", L"WebM", L"原格式"
+        };
+        for (std::size_t index = 0; index < containers.size(); ++index)
+            drawButton(dc, l.container[index], containerLabels[index], c, smallFont,
+                       settings_.outputContainer == containers[index]);
+        const std::array<VideoCodec, 5> codecs{
+            VideoCodec::H264, VideoCodec::H265, VideoCodec::VP9,
+            VideoCodec::AV1, VideoCodec::H266
+        };
+        const auto supportedCodecs = availableVideoCodecs(snap.capabilities);
+        for (std::size_t index = 0; index < codecs.size(); ++index)
+            drawButton(dc, l.codec[index], wide(codecName(codecs[index])), c, smallFont,
+                       settings_.codec == codecs[index],
+                       std::find(supportedCodecs.begin(), supportedCodecs.end(),
+                                 codecs[index]) == supportedCodecs.end());
 
         drawText(dc, {firstColumn, top + s(155), firstWidth, s(19)},
                  L"编码设备", c.muted, smallFont);
         drawText(dc, {secondColumn, top + s(155), secondWidth, s(19)},
-                 L"目标质量 (CRF)", c.muted, smallFont);
+                 settings_.codec == VideoCodec::H266 ? L"目标质量 (QP)" :
+                     settings_.codec == VideoCodec::VP9 ? L"目标质量 (VP9 CRF)" :
+                     L"目标质量 (CRF)", c.muted, smallFont);
         const std::array<std::wstring, 4> backendLabels{
             L"CPU", L"NVENC", L"Intel QSV", L"AMD AMF"
         };
@@ -1180,7 +1203,7 @@ private:
             queueSummary, c.muted, smallFont,
             DT_RIGHT | DT_VCENTER | DT_SINGLELINE);
         const auto rows = visibleRows(snap, failedOnly_);
-        const int rowHeight = s(50);
+        const int rowHeight = s(64);
         const int listTop = l.queue.y + s(39);
         const int visibleRowsCount =
             std::max(0, (l.queue.height - s(42)) / rowHeight);
@@ -1240,7 +1263,7 @@ private:
                     stateText, stateColor, smallFont,
                     DT_RIGHT | DT_VCENTER | DT_SINGLELINE);
                 if (state != TaskState::Failed)
-                    drawProgress(dc,{l.queue.x+s(20),y+s(28),l.queue.width-s(180),s(7)},progress,c);
+                    drawProgress(dc,{l.queue.x+s(20),y+s(30),l.queue.width-s(40),s(7)},progress,c);
                 std::wstring detail;
                 if (child) {
                     detail = formatProgressLine(item.progressInfo, item.detail);
@@ -1259,20 +1282,15 @@ private:
                 }
                 if (state == TaskState::Failed) {
                     const std::wstring errorText = child && !item.detail.empty()
-                        ? wide(item.detail) : wide(task.error.empty() ? task.detail : task.error);
-                    drawText(dc, {l.queue.x + s(20), y + s(27),
-                                  l.queue.width - s(195), s(18)},
+                        ? wide(item.detail) :
+                          wide(task.error.empty() ? task.detail : task.error);
+                    drawText(dc, {l.queue.x + s(20), y + s(39),
+                                  l.queue.width - s(40), s(20)},
                              errorText, c.red, smallFont);
-                    drawText(dc, {l.queue.x + l.queue.width - s(152), y + s(27),
-                                  s(132), s(18)},
-                             L"双击查看详情", c.muted, smallFont,
-                             DT_RIGHT | DT_VCENTER | DT_SINGLELINE);
                 } else {
-                    drawText(
-                        dc,
-                        {l.queue.x + l.queue.width - s(148), y + s(25), s(128), s(18)},
-                        detail, c.muted, smallFont,
-                        DT_RIGHT | DT_VCENTER | DT_SINGLELINE);
+                    drawText(dc, {l.queue.x + s(20), y + s(40),
+                                  l.queue.width - s(40), s(19)},
+                             detail, c.muted, smallFont);
                 }
                 HPEN separatorPen = CreatePen(PS_SOLID, 1, c.border);
                 HGDIOBJ previousPen = SelectObject(dc, separatorPen);
@@ -1435,7 +1453,7 @@ private:
             client.right, client.bottom, scale(),
             static_cast<int>(backends.size()), advancedExpanded_, queueFocused_);
         const int listTop = layout.queue.y + s(39);
-        const int rowHeight = s(50);
+        const int rowHeight = s(64);
         const int visibleCount = std::max(0, (layout.queue.height - s(42)) / rowHeight);
         if (x < layout.queue.x || x >= layout.queue.x + layout.queue.width ||
             y < listTop || y >= listTop + visibleCount * rowHeight) {
@@ -1536,6 +1554,7 @@ private:
         }
         if (contains(layout.focusQueue, x, y)) {
             queueFocused_ = !queueFocused_;
+            autoFocusUsed_ = true;
             scrollOffset_ = 0;
             compressionFocused_ = false;
             return;
@@ -1595,37 +1614,70 @@ private:
             return;
         }
 
-        for (std::size_t index = 0; index < 2; ++index) {
-            if (contains(layout.container[index], x, y)) {
-                settings_.outputContainer = static_cast<OutputContainer>(index);
-                updateSettings();
-                return;
+        const std::array<OutputContainer, 4> outputChoices{
+            OutputContainer::MP4, OutputContainer::MKV,
+            OutputContainer::WebM, OutputContainer::SameAsSource
+        };
+        const std::array<VideoCodec, 5> codecChoices{
+            VideoCodec::H264, VideoCodec::H265, VideoCodec::VP9,
+            VideoCodec::AV1, VideoCodec::H266
+        };
+        const auto supported = availableVideoCodecs(snapshot.capabilities);
+        for (std::size_t index = 0; index < outputChoices.size(); ++index) {
+            if (!contains(layout.container[index], x, y)) continue;
+            const OutputContainer chosen = outputChoices[index];
+            const std::string extension = outputVideoExtension(chosen, "input.mp4");
+            if (chosen != OutputContainer::SameAsSource &&
+                !containerSupportsVideoCodec(extension, settings_.codec)) {
+                const auto compatible = std::find_if(
+                    supported.begin(), supported.end(),
+                    [&extension](VideoCodec codec) {
+                        return containerSupportsVideoCodec(extension, codec);
+                    });
+                if (compatible == supported.end()) {
+                    showTaskDialog(window_, L"无法选择输出容器",
+                                   L"当前 FFmpeg 没有支持该容器的视频编码器。",
+                                   TDCBF_OK_BUTTON, TD_WARNING_ICON);
+                    return;
+                }
+                settings_.codec = *compatible;
+                settings_.backend = EncoderBackend::CPU;
+                settings_.crf = defaultCrf(settings_.codec);
             }
+            settings_.outputContainer = chosen;
+            updateSettings();
+            return;
         }
 
-        for (std::size_t index = 0; index < 3; ++index) {
-            if (!contains(layout.codec[index], x, y)) {
-                continue;
+        for (std::size_t index = 0; index < codecChoices.size(); ++index) {
+            if (!contains(layout.codec[index], x, y)) continue;
+            const VideoCodec selected = codecChoices[index];
+            if (std::find(supported.begin(), supported.end(), selected) ==
+                supported.end()) {
+                showTaskDialog(window_, L"视频编码器不可用",
+                               selected == VideoCodec::H266
+                                   ? L"需要使用启用 libvvenc 的 FFmpeg 构建。"
+                                   : L"当前 FFmpeg 未检测到相应的视频编码器。",
+                               TDCBF_OK_BUTTON, TD_INFORMATION_ICON);
+                return;
             }
-
-            settings_.codec = static_cast<VideoCodec>(index);
-            settings_.crf = defaultCrf(settings_.codec);
-
-            const EncoderCapabilities capabilities = controller_.snapshot().capabilities;
-            if (!capabilities.supports(settings_.codec, settings_.backend)) {
-                for (const auto candidate : {
-                         EncoderBackend::CPU,
-                         EncoderBackend::NVENC,
-                         EncoderBackend::QSV,
-                         EncoderBackend::AMF
-                     }) {
-                    if (capabilities.supports(settings_.codec, candidate)) {
-                        settings_.backend = candidate;
+            settings_.codec = selected;
+            settings_.crf = defaultCrf(selected);
+            const auto extension = outputVideoExtension(
+                settings_.outputContainer, "input.mp4");
+            if (settings_.outputContainer != OutputContainer::SameAsSource &&
+                !containerSupportsVideoCodec(extension, selected))
+                settings_.outputContainer = selected == VideoCodec::VP9
+                    ? OutputContainer::WebM : OutputContainer::MKV;
+            if (!snapshot.capabilities.supports(selected, settings_.backend)) {
+                for (const auto backend : {EncoderBackend::CPU, EncoderBackend::NVENC,
+                                           EncoderBackend::QSV, EncoderBackend::AMF}) {
+                    if (snapshot.capabilities.supports(selected, backend)) {
+                        settings_.backend = backend;
                         break;
                     }
                 }
             }
-
             updateSettings();
             return;
         }
@@ -1729,7 +1781,7 @@ private:
         }
         
         const int queueTop = layout.queue.y + s(39);
-        const int rowHeight = s(50);
+        const int rowHeight = s(64);
         const int visibleCount = std::max(0, (layout.queue.height - s(42)) / rowHeight);
         if (x >= layout.queue.x && x < layout.queue.x + layout.queue.width &&
             y >= queueTop && y < queueTop + visibleCount * rowHeight) {
@@ -1822,6 +1874,7 @@ private:
             if (!editingCrf_ && (GetKeyState(VK_CONTROL) & 0x8000) != 0) {
                 if (wParam == 'Q') {
                     queueFocused_ = !queueFocused_;
+                    autoFocusUsed_ = true;
                     compressionFocused_ = false;
                     scrollOffset_ = 0;
                     InvalidateRect(window_, nullptr, FALSE);
@@ -1948,6 +2001,7 @@ private:
     int scrollOffset_{0};
     bool advancedExpanded_{false};
     bool queueFocused_{false};
+    bool autoFocusUsed_{false};
     bool failedOnly_{false};
     std::uint64_t selectedTask_{0};
 };

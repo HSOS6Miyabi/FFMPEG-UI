@@ -3,6 +3,7 @@
 #include "core/process.hpp"
 
 #include <algorithm>
+#include <array>
 #include <atomic>
 #include <chrono>
 #include <cstdlib>
@@ -46,6 +47,8 @@ int main() {
         EncoderCapabilities capabilities;
         capabilities.libx264 = true;
         capabilities.libx265 = true;
+        capabilities.libvpxVp9 = true;
+        capabilities.libvvenc = true;
         capabilities.libsvtav1 = true;
         capabilities.libaomAv1 = true;
         capabilities.libopus = true;
@@ -61,6 +64,17 @@ int main() {
         capabilities.av1Amf = true;
 
         require(compressionLevelCount() == 8, "The interface must expose eight compression levels.");
+        const auto sortedCodecs = availableVideoCodecs(capabilities);
+        require(sortedCodecs == std::vector<VideoCodec>{
+                VideoCodec::H264, VideoCodec::H265, VideoCodec::VP9,
+                VideoCodec::AV1, VideoCodec::H266
+            }, "Video codecs must be ordered by their introduction dates.");
+        require(crfMaximum(VideoCodec::VP9) == 63 &&
+                crfMaximum(VideoCodec::H266) == 63,
+                "VP9 CRF and VVC QP ranges must accept values up to 63.");
+        require(!capabilities.supports(VideoCodec::VP9, EncoderBackend::NVENC) &&
+                !capabilities.supports(VideoCodec::H266, EncoderBackend::QSV),
+                "VP9/VVC should not advertise unsupported hardware encoder backends.");
         const std::vector<std::string> expectedX264{
             "ultrafast", "veryfast", "fast", "medium", "slow", "slower", "veryslow", "placebo"};
         const std::vector<std::string> expectedSvt{"13", "11", "10", "8", "6", "4", "2", "0"};
@@ -100,7 +114,46 @@ int main() {
         bool rejectedWebmH264 = false;
         try { (void)buildFfmpegCommand(settings, capabilities, "ffmpeg", "temporary.webm"); }
         catch (const std::invalid_argument&) { rejectedWebmH264 = true; }
-        require(rejectedWebmH264, "WebM must reject H.264 when only H.264/H.265/AV1 choices are available.");
+        require(rejectedWebmH264, "WebM must reject H.264.");
+        require(containerSupportsVideoCodec(".webm", VideoCodec::VP9) &&
+                containerSupportsVideoCodec(".webm", VideoCodec::AV1),
+                "WebM must accept VP9 and AV1.");
+        require(!containerSupportsVideoCodec(".webm", VideoCodec::H266) &&
+                !containerSupportsVideoCodec(".mov", VideoCodec::VP9) &&
+                containerSupportsVideoCodec(".mkv", VideoCodec::H266) &&
+                containerSupportsVideoCodec(".mp4", VideoCodec::H266),
+                "Container compatibility must reflect supported FFmpeg combinations.");
+        for (const auto [container, extension] : std::array{
+                 std::pair{OutputContainer::MKV, ".mkv"},
+                 std::pair{OutputContainer::WebM, ".webm"}}) {
+            require(outputVideoExtension(container, "test.mp4") == extension,
+                    "Explicit output containers must have stable extensions.");
+        }
+
+        settings.codec = VideoCodec::VP9;
+        settings.crf = 30;
+        settings.backend = EncoderBackend::CPU;
+        settings.outputContainer = OutputContainer::WebM;
+        command = buildFfmpegCommand(settings, capabilities, "ffmpeg", "output.webm");
+        require(containsPair(command, "-c:v", "libvpx-vp9") &&
+                containsPair(command, "-b:v", "0") &&
+                containsPair(command, "-crf", "30") &&
+                containsPair(command, "-row-mt", "1"),
+                "VP9 must use constant-quality libvpx encoding.");
+        require(containsPair(command, "-c:a", "libopus"),
+                "WebM output must use a compatible audio codec.");
+        settings.codec = VideoCodec::H266;
+        settings.crf = 32;
+        settings.outputContainer = OutputContainer::MKV;
+        command = buildFfmpegCommand(settings, capabilities, "ffmpeg", "output.mkv");
+        require(containsPair(command, "-c:v", "libvvenc") &&
+                containsPair(command, "-qp", "32") &&
+                containsPair(command, "-pix_fmt", "yuv420p10le") &&
+                containsPair(command, "-preset", "medium"),
+                "H.266 must use libvvenc QP and a valid 10-bit pixel format.");
+        settings.codec = VideoCodec::H264;
+        settings.outputContainer = OutputContainer::MP4;
+        settings.crf = 23;
         require(
             std::any_of(
                 command.begin(), command.end(),
@@ -229,7 +282,8 @@ int main() {
         settings.outputResolution = OutputResolution::FullHD1080;
         command = buildFfmpegCommand(settings, capabilities, "ffmpeg", "temporary.mp4");
         const std::string fullHdFilter =
-            "scale=w='min(iw,1920)':h='min(ih,1080)':"
+            "scale=w='min(iw,if(gte(iw,ih),1920,1080))':"
+            "h='min(ih,if(gte(iw,ih),1080,1920))':"
             "force_original_aspect_ratio=decrease:force_divisible_by=2";
         require(containsPair(command, "-vf", fullHdFilter),
                 "Resolution presets must apply a no-upscale aspect-ratio-preserving scale filter.");

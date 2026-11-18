@@ -58,7 +58,7 @@ Palette palette(bool dark) {
 }
 struct Layout {
     Rect addFiles, addFolder, addArchive, importQueue, exportQueue, removeSelected, clearDone;
-    Rect outputField, outputBrowse, container[2], codec[3], backend[4], crfTrack, crfValue;
+    Rect outputField, outputBrowse, container[4], codec[5], backend[4], crfTrack, crfValue;
     Rect compressionTrack, compressionValue, audio[6], resolution[6], audioMode[3];
     Rect parallel, recursive, skip, preserve, overwrite;
     Rect queue, overallCard, overallTrack, start, pause, cancel, ssh, theme, advancedToggle;
@@ -73,7 +73,7 @@ std::vector<EncoderBackend> availableBackends(const EncoderCapabilities& capabil
 Layout makeLayout(int width, int height, double scale, int backendCount = 4,
                   bool expanded = false, bool queueFocused = false) {
     const auto s=[scale](int v){return static_cast<int>(std::lround(v*scale));};
-    const int pad=s(28),gap=s(18),rightW=std::clamp(width/3,s(370),s(450));
+    const int pad=s(24),gap=s(14),rightW=std::clamp(width/3,s(330),s(395));
     const int leftW=width-pad*2-gap-rightW,leftX=pad,rightX=leftX+leftW+gap,top=s(112);
     Layout l{};
     const int toolbarGap=s(6),primaryWidth=std::min(s(440),(leftW-s(18))*52/100);
@@ -98,12 +98,12 @@ Layout makeLayout(int width, int height, double scale, int backendCount = 4,
     const int columnGap = s(18), columnWidth = (gridWidth - columnGap) / 2;
     const int secondX = gridX + columnWidth + columnGap;
     const int buttonGap = s(5);
-    const int containerWidth = (columnWidth - buttonGap) / 2;
-    for (int index = 0; index < 2; ++index)
+    const int containerWidth = (columnWidth - buttonGap * 3) / 4;
+    for (int index = 0; index < 4; ++index)
         l.container[index] = {gridX + index * (containerWidth + buttonGap),
                               sy + s(112), containerWidth, s(30)};
-    const int codecWidth = (columnWidth - buttonGap * 2) / 3;
-    for (int index = 0; index < 3; ++index)
+    const int codecWidth = (columnWidth - buttonGap * 4) / 5;
+    for (int index = 0; index < 5; ++index)
         l.codec[index] = {secondX + index * (codecWidth + buttonGap),
                           sy + s(112), codecWidth, s(30)};
     backendCount = std::clamp(backendCount, 1, 4);
@@ -1279,6 +1279,14 @@ private:
     void draw() {
         const auto snapshot = controller_.snapshot();
         const auto backends = availableBackends(snapshot.capabilities, settings_.codec);
+        const auto original = makeLayout(
+            width_, height_, scale_, static_cast<int>(backends.size()),
+            advancedExpanded_, queueFocused_);
+        if (!queueFocused_ && !autoFocusUsed_ && !snapshot.tasks.empty() &&
+            original.queue.height < s(112)) {
+            queueFocused_ = true;
+            autoFocusUsed_ = true;
+        }
         const auto layout = makeLayout(
             width_, height_, scale_, static_cast<int>(backends.size()),
             advancedExpanded_, queueFocused_);
@@ -1330,17 +1338,32 @@ private:
             layout.container[1].width - firstColumn;
         canvas_->text(firstColumn, top + s(102), "输出容器", colors.muted, 0);
         canvas_->text(secondColumn, top + s(102), "视频编码", colors.muted, 0);
-        const std::array<std::string, 2> containers{"MP4", "与源文件相同"};
+        const std::array<OutputContainer, 4> containers{
+            OutputContainer::MP4, OutputContainer::MKV,
+            OutputContainer::WebM, OutputContainer::SameAsSource
+        };
+        const std::array<std::string, 4> containerLabels{
+            "MP4", "MKV", "WebM", "原格式"
+        };
         for (std::size_t index = 0; index < containers.size(); ++index)
-            canvas_->button(layout.container[index], containers[index], colors,
-                            static_cast<int>(settings_.outputContainer) == static_cast<int>(index));
-        const std::array<std::string, 3> codecs{"H.264", "H.265", "AV1"};
-        for (std::size_t index = 0; index < codecs.size(); ++index)
-            canvas_->button(layout.codec[index], codecs[index], colors,
-                            static_cast<int>(settings_.codec) == static_cast<int>(index));
+            canvas_->button(layout.container[index], containerLabels[index], colors,
+                            settings_.outputContainer == containers[index]);
+        const std::array<VideoCodec, 5> codecChoices{
+            VideoCodec::H264, VideoCodec::H265, VideoCodec::VP9,
+            VideoCodec::AV1, VideoCodec::H266
+        };
+        const auto supported = availableVideoCodecs(snapshot.capabilities);
+        for (std::size_t index = 0; index < codecChoices.size(); ++index)
+            canvas_->button(layout.codec[index], codecName(codecChoices[index]), colors,
+                            settings_.codec == codecChoices[index],
+                            std::find(supported.begin(), supported.end(),
+                                      codecChoices[index]) == supported.end());
 
         canvas_->text(firstColumn, top + s(169), "编码设备", colors.muted, 0);
-        canvas_->text(secondColumn, top + s(169), "目标质量 (CRF)", colors.muted, 0);
+        canvas_->text(secondColumn, top + s(169),
+                      settings_.codec == VideoCodec::H266 ? "目标质量 (QP)" :
+                          settings_.codec == VideoCodec::VP9 ? "目标质量 (VP9 CRF)" :
+                          "目标质量 (CRF)", colors.muted, 0);
         const std::array<std::string, 4> backendNames{
             "CPU", "NVENC", "Intel QSV", "AMD AMF"
         };
@@ -1454,7 +1477,7 @@ private:
             layout.queue.y + s(34), queueSummary, colors.muted, 0);
 
         const auto taskRows = rows(snapshot, failedOnly_);
-        const int rowHeight = s(68);
+        const int rowHeight = s(70);
         const int listTop = layout.queue.y + s(54);
         const int visibleRows = std::max(
             0, (layout.queue.height - s(68)) / rowHeight);
@@ -1506,8 +1529,8 @@ private:
                     rowY + s(20), taskStateName(state), stateColor, 0);
                 if (state != TaskState::Failed) {
                     canvas_->progress(
-                        {layout.queue.x + s(20), rowY + s(36),
-                         layout.queue.width - s(180), s(7)},
+                        {layout.queue.x + s(20), rowY + s(34),
+                         layout.queue.width - s(40), s(7)},
                         progress, colors);
                 }
 
@@ -1528,18 +1551,14 @@ private:
                     detail = sizeSummary;
                 }
 
-                if (state == TaskState::Failed) {
-                    const std::string message = childRow && !item.detail.empty()
-                        ? item.detail :
-                        (task.error.empty() ? task.detail : task.error);
-                    canvas_->textFit(
-                        layout.queue.x + s(20), rowY + s(56), message,
-                        layout.queue.width - s(185), colors.red, 0);
-                } else {
-                    canvas_->textFit(
-                        layout.queue.x + layout.queue.width - s(170),
-                        rowY + s(56), detail, s(150), colors.muted, 0);
-                }
+                const std::string message = state == TaskState::Failed
+                    ? (childRow && !item.detail.empty()
+                        ? item.detail : (task.error.empty() ? task.detail : task.error))
+                    : detail;
+                canvas_->textFit(
+                    layout.queue.x + s(20), rowY + s(59),
+                    message, layout.queue.width - s(40),
+                    state == TaskState::Failed ? colors.red : colors.muted, 0);
                 canvas_->line(
                     layout.queue.x + s(18), rowY + rowHeight - s(2),
                     layout.queue.x + layout.queue.width - s(18),
@@ -1774,6 +1793,7 @@ private:
         }
         if (contains(layout.focusQueue, x, y)) {
             queueFocused_ = !queueFocused_;
+            autoFocusUsed_ = true;
             scrollOffset_ = 0;
             compressionFocused_ = false;
             return;
@@ -1818,31 +1838,54 @@ private:
             return;
         }
 
-        for (std::size_t index = 0; index < 2; ++index) {
-            if (contains(layout.container[index], x, y)) {
-                settings_.outputContainer = static_cast<OutputContainer>(index);
-                updateSettings();
-                return;
+        const std::array<OutputContainer, 4> containerChoices{
+            OutputContainer::MP4, OutputContainer::MKV,
+            OutputContainer::WebM, OutputContainer::SameAsSource
+        };
+        const std::array<VideoCodec, 5> codecChoices{
+            VideoCodec::H264, VideoCodec::H265, VideoCodec::VP9,
+            VideoCodec::AV1, VideoCodec::H266
+        };
+        const auto supported = availableVideoCodecs(snapshot.capabilities);
+        for (std::size_t index = 0; index < containerChoices.size(); ++index) {
+            if (!contains(layout.container[index], x, y)) continue;
+            const OutputContainer selected = containerChoices[index];
+            const std::string extension = outputVideoExtension(selected, "sample.mp4");
+            if (selected != OutputContainer::SameAsSource &&
+                !containerSupportsVideoCodec(extension, settings_.codec)) {
+                const auto compatible = std::find_if(
+                    supported.begin(), supported.end(),
+                    [&extension](VideoCodec codec) {
+                        return containerSupportsVideoCodec(extension, codec);
+                    });
+                if (compatible == supported.end()) return;
+                settings_.codec = *compatible;
+                settings_.backend = EncoderBackend::CPU;
+                settings_.crf = defaultCrf(settings_.codec);
             }
+            settings_.outputContainer = selected;
+            updateSettings();
+            return;
         }
 
-        for (std::size_t index = 0; index < 3; ++index) {
-            if (!contains(layout.codec[index], x, y)) {
-                continue;
-            }
-
-            settings_.codec = static_cast<VideoCodec>(index);
-            settings_.crf = defaultCrf(settings_.codec);
-            const auto capabilities = controller_.snapshot().capabilities;
-            if (!capabilities.supports(settings_.codec, settings_.backend)) {
-                for (const auto candidate : {
-                         EncoderBackend::CPU,
-                         EncoderBackend::NVENC,
-                         EncoderBackend::QSV,
-                         EncoderBackend::AMF
-                     }) {
-                    if (capabilities.supports(settings_.codec, candidate)) {
-                        settings_.backend = candidate;
+        for (std::size_t index = 0; index < codecChoices.size(); ++index) {
+            if (!contains(layout.codec[index], x, y)) continue;
+            const VideoCodec codec = codecChoices[index];
+            if (std::find(supported.begin(), supported.end(), codec) == supported.end())
+                return;
+            settings_.codec = codec;
+            settings_.crf = defaultCrf(codec);
+            const std::string extension =
+                outputVideoExtension(settings_.outputContainer, "sample.mp4");
+            if (settings_.outputContainer != OutputContainer::SameAsSource &&
+                !containerSupportsVideoCodec(extension, codec))
+                settings_.outputContainer = codec == VideoCodec::VP9
+                    ? OutputContainer::WebM : OutputContainer::MKV;
+            if (!snapshot.capabilities.supports(codec, settings_.backend)) {
+                for (const auto backend : {EncoderBackend::CPU, EncoderBackend::NVENC,
+                                           EncoderBackend::QSV, EncoderBackend::AMF}) {
+                    if (snapshot.capabilities.supports(codec, backend)) {
+                        settings_.backend = backend;
                         break;
                     }
                 }
@@ -1945,7 +1988,7 @@ private:
 
         }
         const int listTop = layout.queue.y + s(54);
-        const int rowHeight = s(68);
+        const int rowHeight = s(70);
         const int visibleCount = std::max(0, (layout.queue.height - s(68)) / rowHeight);
         if (y >= listTop && y < listTop + visibleCount * rowHeight &&
             x >= layout.queue.x && x < layout.queue.x + layout.queue.width) {
@@ -2138,6 +2181,7 @@ private:
             }
             if (controlPressed && (key == XK_q || key == XK_Q)) {
                 queueFocused_ = !queueFocused_;
+                autoFocusUsed_ = true;
                 compressionFocused_ = false;
                 scrollOffset_ = 0;
                 return false;
@@ -2188,6 +2232,7 @@ private:
     bool compressionFocused_{false};
     bool advancedExpanded_{false};
     bool queueFocused_{false};
+    bool autoFocusUsed_{false};
     bool failedOnly_{false};
     bool editingCrf_{false};
     std::string crfEditText_;

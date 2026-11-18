@@ -13,8 +13,8 @@
 
 namespace ffmpegui {
 
-enum class VideoCodec { H264, H265, AV1 };
-enum class OutputContainer { MP4, SameAsSource };
+enum class VideoCodec { H264 = 0, H265 = 1, AV1 = 2, VP9 = 3, H266 = 4 };
+enum class OutputContainer { MP4 = 0, SameAsSource = 1, MKV = 2, WebM = 3 };
 enum class EncoderBackend { CPU, NVENC, QSV, AMF };
 enum class CompressionLevel { Fastest, VeryFast, Fast, Balanced, Slow, Slower, VerySlow, Extreme };
 enum class AudioMode { Encode, Copy, Remove };
@@ -66,6 +66,8 @@ struct EncoderCapabilities {
     bool ffprobeAvailable{false};
     bool libx264{false};
     bool libx265{false};
+    bool libvpxVp9{false};
+    bool libvvenc{false};
     bool libsvtav1{false};
     bool libaomAv1{false};
     bool libopus{false};
@@ -134,6 +136,8 @@ using ProgressCallback = std::function<void(const ConversionProgress&)>;
 
 std::string codecName(VideoCodec codec);
 std::string outputContainerName(OutputContainer container);
+bool containerSupportsVideoCodec(const std::string& extension, VideoCodec codec);
+std::vector<VideoCodec> availableVideoCodecs(const EncoderCapabilities& capabilities);
 std::string outputVideoExtension(OutputContainer container, const std::string& sourcePath);
 std::string backendName(EncoderBackend backend);
 std::string compressionName(CompressionLevel level);
