@@ -57,7 +57,7 @@ struct Layout {
     Rect addFiles, addFolder, addArchive, importQueue, exportQueue, removeSelected, clearDone, clearAll;
     Rect outputField, outputBrowse;
     Rect container[2], codec[3], backend[4], crfTrack, crfValue;
-    Rect compression[8], audio[6], resolution[6], audioMode[3];
+    Rect compressionTrack, compressionValue, audio[6], resolution[6], audioMode[3];
     Rect parallel, recursive, skip, preserve, overwrite;
     Rect queue, overallCard, overallTrack, start, pause, cancel, ssh, theme, advancedToggle, rescan, diagnostic;
 };
@@ -98,52 +98,59 @@ Layout makeLayout(int width, int height, double scale, int backendCount = 4,
     l.clearAll = {secondaryStart + (secondaryButtonWidth + toolbarGap) * 4,
                   top, secondaryWidth - (secondaryButtonWidth + toolbarGap) * 4, s(38)};
 
+    // Group short option sets into two balanced columns.
     const int controlX = leftX + s(132), controlW = leftW - s(154);
     l.advancedToggle = {leftX + leftW - s(146), settingsY + s(9), s(126), s(28)};
-    l.outputField = {controlX, settingsY + s(44), controlW - s(100), s(30)};
-    l.outputBrowse = {controlX + controlW - s(92), settingsY + s(44), s(92), s(30)};
-    const int containerW = (controlW - s(6)) / 2;
-    for (int index = 0; index < 2; ++index)
-        l.container[index] = {controlX + index * (containerW + s(6)),
-                              settingsY + s(81), containerW, s(30)};
-    const int codecW = (controlW - s(12)) / 3;
-    for (int index = 0; index < 3; ++index)
-        l.codec[index] = {controlX + index * (codecW + s(6)),
-                          settingsY + s(117), codecW, s(30)};
-    backendCount = std::clamp(backendCount, 1, 4);
-    const int backendW = (controlW - s(6) * (backendCount - 1)) / backendCount;
-    for (int index = 0; index < backendCount; ++index)
-        l.backend[index] = {controlX + index * (backendW + s(6)),
-                            settingsY + s(153), backendW, s(30)};
-    l.crfTrack = {controlX, settingsY + s(201), controlW - s(94), s(8)};
-    l.crfValue = {controlX + controlW - s(82), settingsY + s(188), s(82), s(29)};
-    const int compW = (controlW - s(18)) / 4;
-    for (int index = 0; index < 8; ++index)
-        l.compression[index] = {controlX + (index % 4) * (compW + s(6)),
-                                settingsY + s(220) + (index / 4) * s(29),
-                                compW, s(26)};
+    l.outputField = {controlX, settingsY + s(38), controlW - s(100), s(28)};
+    l.outputBrowse = {controlX + controlW - s(92), settingsY + s(38), s(92), s(28)};
 
-    const int audioW = (controlW - s(30)) / 6;
-    for (int index = 0; index < 6; ++index) {
-        l.audio[index] = {controlX + index * (audioW + s(6)),
-                          settingsY + s(276), audioW, s(29)};
-        l.resolution[index] = {controlX + index * (audioW + s(6)),
-                               settingsY + s(309), audioW, s(29)};
-    }
-    const int audioModeW = (controlW - s(12)) / 3;
+    const int gridX = leftX + s(18), gridWidth = leftW - s(36);
+    const int columnGap = s(18), columnWidth = (gridWidth - columnGap) / 2;
+    const int secondX = gridX + columnWidth + columnGap;
+    const int buttonGap = s(5);
+    const int containerWidth = (columnWidth - buttonGap) / 2;
+    for (int index = 0; index < 2; ++index)
+        l.container[index] = {gridX + index * (containerWidth + buttonGap),
+                              settingsY + s(82), containerWidth, s(26)};
+    const int codecWidth = (columnWidth - buttonGap * 2) / 3;
     for (int index = 0; index < 3; ++index)
-        l.audioMode[index] = {controlX + index * (audioModeW + s(6)),
-                              settingsY + s(342), audioModeW, s(29)};
+        l.codec[index] = {secondX + index * (codecWidth + buttonGap),
+                          settingsY + s(82), codecWidth, s(26)};
+    backendCount = std::clamp(backendCount, 1, 4);
+    const int backendWidth = (columnWidth - buttonGap * (backendCount - 1)) / backendCount;
+    for (int index = 0; index < backendCount; ++index)
+        l.backend[index] = {gridX + index * (backendWidth + buttonGap),
+                            settingsY + s(128), backendWidth, s(26)};
+    l.crfTrack = {secondX + s(11), settingsY + s(140), columnWidth - s(111), s(7)};
+    l.crfValue = {secondX + columnWidth - s(84), settingsY + s(127), s(84), s(27)};
+
+    l.compressionTrack = {gridX + s(10), settingsY + s(184),
+                          columnWidth - s(20), s(7)};
+    l.compressionValue = {gridX + columnWidth - s(92), settingsY + s(156),
+                          s(92), s(24)};
+    const int audioModeWidth = (columnWidth - buttonGap * 2) / 3;
+    for (int index = 0; index < 3; ++index)
+        l.audioMode[index] = {secondX + index * (audioModeWidth + buttonGap),
+                              settingsY + s(174), audioModeWidth, s(26)};
+
+    const int audioWidth = (columnWidth - buttonGap * 5) / 6;
+    for (int index = 0; index < 6; ++index) {
+        l.audio[index] = {gridX + index * (audioWidth + buttonGap),
+                          settingsY + s(237), audioWidth, s(26)};
+        l.resolution[index] = {secondX + index * (audioWidth + buttonGap),
+                               settingsY + s(237), audioWidth, s(26)};
+    }
+
     const int optionGap = s(5);
     const int optionWidth = (leftW - s(40) - optionGap * 4) / 5;
-    const int optionY = settingsY + s(376);
-    l.parallel = {leftX + s(20), optionY, optionWidth, s(29)};
-    l.recursive = {leftX + s(20) + optionWidth + optionGap, optionY, optionWidth, s(29)};
-    l.skip = {leftX + s(20) + (optionWidth + optionGap) * 2, optionY, optionWidth, s(29)};
-    l.preserve = {leftX + s(20) + (optionWidth + optionGap) * 3, optionY, optionWidth, s(29)};
-    l.overwrite = {leftX + s(20) + (optionWidth + optionGap) * 4, optionY, optionWidth, s(29)};
+    const int optionY = settingsY + s(274);
+    l.parallel = {leftX + s(20), optionY, optionWidth, s(28)};
+    l.recursive = {leftX + s(20) + optionWidth + optionGap, optionY, optionWidth, s(28)};
+    l.skip = {leftX + s(20) + (optionWidth + optionGap) * 2, optionY, optionWidth, s(28)};
+    l.preserve = {leftX + s(20) + (optionWidth + optionGap) * 3, optionY, optionWidth, s(28)};
+    l.overwrite = {leftX + s(20) + (optionWidth + optionGap) * 4, optionY, optionWidth, s(28)};
 
-    const int queueY = settingsY + s(expanded ? 430 : 242);
+    const int queueY = settingsY + s(expanded ? 326 : 177);
     l.queue = {leftX, queueY, leftW, std::max(0, height - queueY - pad)};
     l.overallCard = {rightX, top, rightW, s(220)};
     l.overallTrack = {rightX + s(20), top + s(107), rightW - s(40), s(9)};
@@ -897,6 +904,16 @@ private:
         settings_.crf = static_cast<int>(std::lround(fraction * crfMaximum(settings_.codec)));
         updateSettings();
     }
+    void commitCompression(int x, const Layout& layout) {
+        if (controller_.snapshot().running) return;
+        const double position = static_cast<double>(x - layout.compressionTrack.x) /
+            std::max(1, layout.compressionTrack.width);
+        const int step = std::clamp(
+            static_cast<int>(std::lround(std::clamp(position, 0.0, 1.0) * 7.0)), 0, 7);
+        if (step == static_cast<int>(settings_.compression)) return;
+        settings_.compression = static_cast<CompressionLevel>(step);
+        updateSettings();
+    }
     void commitCrfText() {
         if (!editingCrf_) return;
         if (!crfEditText_.empty()) {
@@ -980,98 +997,143 @@ private:
         drawButton(dc,l.clearAll,L"清空列表",c,smallFont,false,snap.running || snap.tasks.empty());
 
         const int leftX = l.queue.x, top = s(144), leftW = l.queue.width;
-        drawCard(dc, {leftX, top, leftW, s(advancedExpanded_ ? 418 : 228)}, c);
-        drawText(dc,{leftX+s(18),top+s(10),s(170),s(26)},L"编码设置",c.text,heading);
-        drawButton(dc,l.advancedToggle,advancedExpanded_?L"收起高级设置":L"展开高级设置",
-                   c,smallFont);
-        drawText(dc,{leftX+s(18),top+s(44),s(105),s(30)},L"输出文件夹",c.muted,smallFont);
+        drawCard(dc, {leftX, top, leftW, s(advancedExpanded_ ? 314 : 165)}, c);
+        drawText(dc, {leftX + s(18), top + s(10), s(170), s(26)},
+                 L"编码设置", c.text, heading);
+        drawButton(dc, l.advancedToggle,
+                   advancedExpanded_ ? L"收起高级设置" : L"展开高级设置",
+                   c, smallFont);
+
+        drawText(dc, {leftX + s(18), top + s(38), s(106), s(28)},
+                 L"输出文件夹", c.muted, smallFont);
         const std::wstring output = settings_.outputDirectory.empty()
             ? L"默认：与每个源文件保存在同一文件夹"
             : wide(settings_.outputDirectory);
-        drawText(dc,l.outputField,output,c.text,smallFont);
-        drawButton(dc,l.outputBrowse,L"选择目录",c,smallFont);
-        const Rect labelColumn{leftX + s(18), 0, s(112), s(30)};
-        drawText(dc,{labelColumn.x,top+s(81),labelColumn.width,labelColumn.height},L"输出容器",c.muted,smallFont);
-        const std::array<std::wstring,2> containers{L"MP4",L"与源文件相同"};
-        for (int index = 0; index < 2; ++index) {
-            drawButton(dc,l.container[index],containers[index],c,smallFont,
-                static_cast<int>(settings_.outputContainer)==index);
-        }
-        drawText(dc,{labelColumn.x,top+s(117),labelColumn.width,s(32)},L"视频编码",c.muted,smallFont);
-        const std::array<std::wstring,3> codecs{L"H.264",L"H.265",L"AV1"};
-        for (int index=0;index<3;++index) {
-            drawButton(dc,l.codec[index],codecs[index],c,normal,
-                static_cast<int>(settings_.codec)==index);
-        }
-        drawText(dc,{labelColumn.x,top+s(153),labelColumn.width,s(32)},L"编码设备",c.muted,smallFont);
-        const std::array<std::wstring,4> backendLabels{L"CPU",L"NVIDIA NVENC",L"Intel QSV",L"AMD AMF"};
-        for (std::size_t index=0;index<backends.size();++index) {
-            std::size_t labelIndex=0;
-            switch(backends[index]) {
-            case EncoderBackend::CPU: labelIndex=0; break;
-            case EncoderBackend::NVENC: labelIndex=1; break;
-            case EncoderBackend::QSV: labelIndex=2; break;
-            case EncoderBackend::AMF: labelIndex=3; break;
+        drawText(dc, l.outputField, output, c.text, smallFont);
+        drawButton(dc, l.outputBrowse, L"选择目录", c, smallFont);
+
+        const int firstColumn = l.container[0].x;
+        const int secondColumn = l.codec[0].x;
+        const int firstWidth = (l.container[1].x + l.container[1].width) - firstColumn;
+        const int secondWidth = (l.codec[2].x + l.codec[2].width) - secondColumn;
+        drawText(dc, {firstColumn, top + s(65), firstWidth, s(16)},
+                 L"输出容器", c.muted, smallFont);
+        drawText(dc, {secondColumn, top + s(65), secondWidth, s(16)},
+                 L"视频编码", c.muted, smallFont);
+        const std::array<std::wstring, 2> containers{L"MP4", L"与源文件相同"};
+        for (int index = 0; index < 2; ++index)
+            drawButton(dc, l.container[index], containers[index], c, smallFont,
+                       static_cast<int>(settings_.outputContainer) == index);
+        const std::array<std::wstring, 3> codecs{L"H.264", L"H.265", L"AV1"};
+        for (int index = 0; index < 3; ++index)
+            drawButton(dc, l.codec[index], codecs[index], c, normal,
+                       static_cast<int>(settings_.codec) == index);
+
+        drawText(dc, {firstColumn, top + s(111), firstWidth, s(16)},
+                 L"编码设备", c.muted, smallFont);
+        drawText(dc, {secondColumn, top + s(111), secondWidth, s(16)},
+                 L"目标质量 (CRF)", c.muted, smallFont);
+        const std::array<std::wstring, 4> backendLabels{
+            L"CPU", L"NVENC", L"Intel QSV", L"AMD AMF"
+        };
+        for (std::size_t index = 0; index < backends.size(); ++index) {
+            std::size_t labelIndex = 0;
+            switch (backends[index]) {
+            case EncoderBackend::CPU: labelIndex = 0; break;
+            case EncoderBackend::NVENC: labelIndex = 1; break;
+            case EncoderBackend::QSV: labelIndex = 2; break;
+            case EncoderBackend::AMF: labelIndex = 3; break;
             }
-            drawButton(dc,l.backend[index],backendLabels[labelIndex],c,smallFont,
-                settings_.backend==backends[index]);
+            drawButton(dc, l.backend[index], backendLabels[labelIndex], c, smallFont,
+                       settings_.backend == backends[index]);
         }
-        if (backends.empty()) {
-            drawText(dc,{l.backend[0].x,top+s(153),l.backend[0].width,s(32)},
-                L"当前 FFmpeg 环境没有可用的编码器",c.red,smallFont);
-        }
-        drawText(dc,{labelColumn.x,top+s(188),labelColumn.width,s(32)},L"目标质量",c.muted,smallFont);
-        drawProgress(dc,{l.crfTrack.x,l.crfTrack.y,l.crfTrack.width,l.crfTrack.height},
-            static_cast<double>(settings_.crf)/crfMaximum(settings_.codec),c);
-        const double crfFraction=static_cast<double>(settings_.crf)/crfMaximum(settings_.codec);
-        const int knobX=l.crfTrack.x+static_cast<int>(std::lround(l.crfTrack.width*crfFraction));
-        fillRound(dc,{knobX-s(7),l.crfTrack.y-s(5),s(14),s(20)},c.accent,c.accent,7);
-        const std::wstring crfValue=editingCrf_
-            ? (crfEditText_.empty()?L"输入":crfEditText_)
+        if (backends.empty())
+            drawText(dc, {firstColumn, top + s(128), firstWidth, s(27)},
+                     L"当前 FFmpeg 环境没有可用的编码器", c.red, smallFont);
+
+        const double crfFraction = static_cast<double>(settings_.crf) /
+            crfMaximum(settings_.codec);
+        drawProgress(dc, l.crfTrack, crfFraction, c);
+        const int knobX = l.crfTrack.x +
+            static_cast<int>(std::lround(l.crfTrack.width * crfFraction));
+        fillRound(dc, {knobX - s(7), l.crfTrack.y - s(6), s(14), s(19)},
+                  c.accent, c.accent, 7);
+        const std::wstring crfValue = editingCrf_
+            ? (crfEditText_.empty() ? L"输入" : crfEditText_)
             : std::to_wstring(settings_.crf);
-        drawButton(dc,l.crfValue,crfValue,c,normal,true);
+        drawButton(dc, l.crfValue, crfValue, c, normal, true);
+
         if (advancedExpanded_) {
-        drawText(dc,{labelColumn.x,top+s(220),labelColumn.width,s(58)},L"压缩级别",c.muted,smallFont);
-        const std::array<std::wstring,8> levels{L"极速",L"非常快",L"快速",L"均衡",L"慢速",L"较慢",L"很慢",L"极致压缩"};
-        for(int index=0;index<8;++index) {
-            drawButton(dc,l.compression[index],levels[index],c,smallFont,
-                static_cast<int>(settings_.compression)==index);
-        }
-        }
-        if (advancedExpanded_) {
-            drawText(dc,{labelColumn.x,top+s(276),labelColumn.width,s(30)},L"音频码率",c.muted,smallFont);
-            const std::array<int,6> rates{96,128,160,192,256,320};
-            for(int index=0;index<6;++index) {
-                drawButton(dc,l.audio[index],std::to_wstring(rates[index])+L" kbps",c,smallFont,
-                    settings_.audioBitrateKbps==rates[index],
-                    settings_.audioMode!=AudioMode::Encode);
+            const int compressionIndex = std::clamp(
+                static_cast<int>(settings_.compression), 0, 7);
+            drawText(dc, {firstColumn, top + s(158), firstWidth - s(102), s(16)},
+                     L"压缩级别", c.muted, smallFont);
+            fillRound(dc, l.compressionValue, c.accentSoft, c.accentSoft, 7);
+            drawText(dc, l.compressionValue, wide(compressionName(settings_.compression)),
+                     c.accent, smallFont, DT_CENTER | DT_SINGLELINE | DT_VCENTER);
+            drawProgress(dc, l.compressionTrack,
+                         static_cast<double>(compressionIndex) / 7.0, c);
+            HPEN tickPen = CreatePen(PS_SOLID, 1, c.muted);
+            const HGDIOBJ previousPen = SelectObject(dc, tickPen);
+            for (int index = 0; index < 8; ++index) {
+                const int tickX = l.compressionTrack.x +
+                    static_cast<int>(std::lround(
+                        static_cast<double>(l.compressionTrack.width) * index / 7.0));
+                MoveToEx(dc, tickX, l.compressionTrack.y + s(10), nullptr);
+                LineTo(dc, tickX, l.compressionTrack.y + s(14));
             }
-            drawText(dc,{labelColumn.x,top+s(309),labelColumn.width,s(30)},L"输出分辨率",c.muted,smallFont);
-            const std::array<std::wstring,6> resolutionLabels{L"原始尺寸",L"2160p",L"1440p",L"1080p",L"720p",L"480p"};
-            for(int index=0;index<6;++index) {
-                drawButton(dc,l.resolution[index],resolutionLabels[index],c,smallFont,
-                    static_cast<int>(settings_.outputResolution)==index);
-            }
-            drawText(dc,{labelColumn.x,top+s(342),labelColumn.width,s(30)},L"音频处理",c.muted,smallFont);
-            const std::array<std::wstring,3> audioModes{L"自动编码",L"保留原音频",L"移除音频"};
-            for(int index=0;index<3;++index) {
-                drawButton(dc,l.audioMode[index],audioModes[index],c,smallFont,
-                    static_cast<int>(settings_.audioMode)==index);
+            SelectObject(dc, previousPen);
+            DeleteObject(tickPen);
+            const int compressionX = l.compressionTrack.x +
+                static_cast<int>(std::lround(
+                    static_cast<double>(l.compressionTrack.width) * compressionIndex / 7.0));
+            fillRound(dc, {compressionX - s(8), l.compressionTrack.y - s(6),
+                           s(16), s(19)}, c.accent, c.accent, 8);
+            drawText(dc, {firstColumn, top + s(204), s(100), s(16)},
+                     L"极速", c.muted, smallFont);
+            drawText(dc, {firstColumn + firstWidth - s(100), top + s(204),
+                          s(100), s(17)}, L"极致压缩", c.muted, smallFont,
+                     DT_RIGHT | DT_SINGLELINE | DT_VCENTER);
+
+            drawText(dc, {secondColumn, top + s(158), secondWidth, s(16)},
+                     L"音频处理", c.muted, smallFont);
+            const std::array<std::wstring, 3> audioModes{
+                L"自动编码", L"保留原音频", L"移除音频"
+            };
+            for (int index = 0; index < 3; ++index)
+                drawButton(dc, l.audioMode[index], audioModes[index], c, smallFont,
+                           static_cast<int>(settings_.audioMode) == index);
+
+            drawText(dc, {firstColumn, top + s(220), firstWidth, s(16)},
+                     L"音频码率 (kbps)", c.muted, smallFont);
+            drawText(dc, {secondColumn, top + s(220), secondWidth, s(16)},
+                     L"输出分辨率", c.muted, smallFont);
+            const std::array<int, 6> rates{96, 128, 160, 192, 256, 320};
+            const std::array<std::wstring, 6> resolutions{
+                L"原始", L"2160p", L"1440p", L"1080p", L"720p", L"480p"
+            };
+            for (int index = 0; index < 6; ++index) {
+                drawButton(dc, l.audio[index], std::to_wstring(rates[index]), c, smallFont,
+                           settings_.audioBitrateKbps == rates[index],
+                           settings_.audioMode != AudioMode::Encode);
+                drawButton(dc, l.resolution[index], resolutions[index], c, smallFont,
+                           static_cast<int>(settings_.outputResolution) == index);
             }
             const std::wstring parallelLabel = settings_.maxParallelJobs == 0
-                ? L"并行：自动"
-                : L"并行：" + std::to_wstring(settings_.maxParallelJobs);
+                ? L"并行：自动" : L"并行：" + std::to_wstring(settings_.maxParallelJobs);
             drawButton(dc, l.parallel, parallelLabel, c, smallFont);
-            drawButton(dc,l.recursive,settings_.recursive?L"递归扫描✓":L"递归扫描",c,smallFont,settings_.recursive);
-            drawButton(
-                dc, l.skip,
-                settings_.skipAlreadyProcessed ? L"跳过重复✓" : L"跳过重复",
-                c, smallFont, settings_.skipAlreadyProcessed);
-            drawButton(
-                dc, l.preserve,
-                settings_.preserveDirectoryStructure ? L"保留目录✓" : L"保留目录",
-                c, smallFont, settings_.preserveDirectoryStructure);
-            drawButton(dc,l.overwrite,settings_.overwrite?L"覆盖文件✓":L"保留文件",c,smallFont,settings_.overwrite);
+            drawButton(dc, l.recursive,
+                       settings_.recursive ? L"递归扫描✓" : L"递归扫描",
+                       c, smallFont, settings_.recursive);
+            drawButton(dc, l.skip,
+                       settings_.skipAlreadyProcessed ? L"跳过重复✓" : L"跳过重复",
+                       c, smallFont, settings_.skipAlreadyProcessed);
+            drawButton(dc, l.preserve,
+                       settings_.preserveDirectoryStructure ? L"保留目录✓" : L"保留目录",
+                       c, smallFont, settings_.preserveDirectoryStructure);
+            drawButton(dc, l.overwrite,
+                       settings_.overwrite ? L"覆盖文件✓" : L"保留文件",
+                       c, smallFont, settings_.overwrite);
         }
 
         drawCard(dc,l.queue,c);
@@ -1087,10 +1149,10 @@ private:
             queueSummary, c.muted, smallFont,
             DT_RIGHT | DT_VCENTER | DT_SINGLELINE);
         const auto rows = visibleRows(snap);
-        const int rowHeight = s(60);
-        const int listTop = l.queue.y + s(48);
+        const int rowHeight = s(50);
+        const int listTop = l.queue.y + s(39);
         const int visibleRowsCount =
-            std::max(0, (l.queue.height - s(62)) / rowHeight);
+            std::max(0, (l.queue.height - s(42)) / rowHeight);
         const int maxScroll = std::max(
             0, static_cast<int>(rows.size()) - visibleRowsCount);
         scrollOffset_ = std::clamp(scrollOffset_, 0, maxScroll);
@@ -1143,7 +1205,7 @@ private:
                     {l.queue.x + l.queue.width - s(160), y + s(5), s(140), s(20)},
                     stateText, stateColor, smallFont,
                     DT_RIGHT | DT_VCENTER | DT_SINGLELINE);
-                drawProgress(dc,{l.queue.x+s(20),y+s(32),l.queue.width-s(180),s(7)},progress,c);
+                drawProgress(dc,{l.queue.x+s(20),y+s(28),l.queue.width-s(180),s(7)},progress,c);
                 std::wstring detail;
                 if (child) {
                     detail = formatProgressLine(item.progressInfo, item.detail);
@@ -1162,7 +1224,7 @@ private:
                 }
                 drawText(
                     dc,
-                    {l.queue.x + l.queue.width - s(148), y + s(25), s(128), s(22)},
+                    {l.queue.x + l.queue.width - s(148), y + s(25), s(128), s(18)},
                     detail, c.muted, smallFont,
                     DT_RIGHT | DT_VCENTER | DT_SINGLELINE);
                 HPEN separatorPen = CreatePen(PS_SOLID, 1, c.border);
@@ -1174,7 +1236,8 @@ private:
             }
         }
         RestoreDC(dc, queueClip);
-        if (rows.size() > static_cast<std::size_t>(visibleRowsCount)) {
+        if (l.queue.height >= s(160) &&
+            rows.size() > static_cast<std::size_t>(visibleRowsCount)) {
             drawText(
                 dc,
                 {l.queue.x + l.queue.width - s(130),
@@ -1281,6 +1344,7 @@ private:
         const Layout layout = makeLayout(
             clientRectangle.right, clientRectangle.bottom,
             scale(), static_cast<int>(backends.size()), advancedExpanded_);
+        compressionFocused_ = false;
 
         if (editingCrf_ && !contains(layout.crfValue, x, y)) {
             commitCrfText();
@@ -1343,6 +1407,7 @@ private:
         }
         if (contains(layout.advancedToggle, x, y)) {
             advancedExpanded_ = !advancedExpanded_;
+            compressionFocused_ = false;
             scrollOffset_ = 0;
             return;
         }
@@ -1431,13 +1496,20 @@ private:
             }
         }
 
-        for (std::size_t index = 0; index < 8; ++index) {
-            if (contains(layout.compression[index], x, y)) {
-                settings_.compression = static_cast<CompressionLevel>(index);
-                updateSettings();
+        if (advancedExpanded_ && !snapshot.running) {
+            const Rect hitArea{layout.compressionTrack.x - s(10),
+                               layout.compressionTrack.y - s(15),
+                               layout.compressionTrack.width + s(20), s(43)};
+            if (contains(hitArea, x, y)) {
+                compressionFocused_ = true;
+                draggingCompression_ = true;
+                SetFocus(window_);
+                SetCapture(window_);
+                commitCompression(x, layout);
                 return;
             }
         }
+        compressionFocused_ = false;
 
         if (advancedExpanded_) {
         const std::array<int, 6> audioRates{96, 128, 160, 192, 256, 320};
@@ -1512,9 +1584,9 @@ private:
             return;
         }
 
-        const int queueTop = layout.queue.y + s(48);
-        const int rowHeight = s(60);
-        const int visibleCount = std::max(0, (layout.queue.height - s(62)) / rowHeight);
+        const int queueTop = layout.queue.y + s(39);
+        const int rowHeight = s(50);
+        const int visibleCount = std::max(0, (layout.queue.height - s(42)) / rowHeight);
         if (x >= layout.queue.x && x < layout.queue.x + layout.queue.width &&
             y >= queueTop && y < queueTop + visibleCount * rowHeight) {
             const int visibleIndex = (y - queueTop) / rowHeight + scrollOffset_;
@@ -1560,19 +1632,23 @@ private:
             InvalidateRect(window_, nullptr, FALSE);
             return 0;
         case WM_MOUSEMOVE:
-            if (draggingCrf_ && (wParam & MK_LBUTTON) != 0) {
+            if ((draggingCrf_ || draggingCompression_) && (wParam & MK_LBUTTON) != 0) {
                 RECT clientRectangle{};
                 GetClientRect(window_, &clientRectangle);
                 const Layout layout = makeLayout(
                     clientRectangle.right, clientRectangle.bottom, scale(), 4,
                     advancedExpanded_);
-                commitCrf(GET_X_LPARAM(lParam), layout);
+                if (draggingCrf_)
+                    commitCrf(GET_X_LPARAM(lParam), layout);
+                if (draggingCompression_)
+                    commitCompression(GET_X_LPARAM(lParam), layout);
                 InvalidateRect(window_, nullptr, FALSE);
             }
             return 0;
         case WM_LBUTTONUP:
-            if (draggingCrf_) {
+            if (draggingCrf_ || draggingCompression_) {
                 draggingCrf_ = false;
+                draggingCompression_ = false;
                 ReleaseCapture();
             }
             return 0;
@@ -1594,6 +1670,23 @@ private:
             }
             break;
         case WM_KEYDOWN:
+            if (compressionFocused_ && advancedExpanded_ && !editingCrf_ &&
+                !controller_.snapshot().running &&
+                (wParam == VK_LEFT || wParam == VK_RIGHT ||
+                 wParam == VK_HOME || wParam == VK_END)) {
+                int step = static_cast<int>(settings_.compression);
+                if (wParam == VK_LEFT) --step;
+                if (wParam == VK_RIGHT) ++step;
+                if (wParam == VK_HOME) step = 0;
+                if (wParam == VK_END) step = 7;
+                step = std::clamp(step, 0, 7);
+                if (step != static_cast<int>(settings_.compression)) {
+                    settings_.compression = static_cast<CompressionLevel>(step);
+                    updateSettings();
+                }
+                InvalidateRect(window_, nullptr, FALSE);
+                return 0;
+            }
             if (wParam == VK_DELETE && selectedTask_ != 0 && !controller_.snapshot().running &&
                 !editingCrf_) {
                 controller_.removeTask(selectedTask_);
@@ -1661,6 +1754,8 @@ private:
     }
     AppController& controller_; HWND window_{}; HINSTANCE instance_{}; BatchSettings settings_; bool dark_{false};
     bool draggingCrf_{false};
+    bool draggingCompression_{false};
+    bool compressionFocused_{false};
     bool editingCrf_{false};
     std::wstring crfEditText_;
     int scrollOffset_{0};
