@@ -239,15 +239,12 @@ if (-not (Test-Path -LiteralPath $desktopDirectory)) {
     New-Item -ItemType Directory -Path $desktopDirectory -Force | Out-Null
 }
 $desktopShortcut = Join-Path $desktopDirectory "视频压缩工作台.lnk"
-$shell = New-Object -ComObject WScript.Shell
-$shortcut = $shell.CreateShortcut($desktopShortcut)
-$shortcut.TargetPath = $installedApp
-$shortcut.Save()
+# NSIS deletes the shortcut by filename; a placeholder checks that exact path
+# without relying on the Windows Script Host in a service-runner session.
+[System.IO.File]::WriteAllBytes($desktopShortcut, [byte[]]@())
 if (-not (Test-Path -LiteralPath $desktopShortcut)) {
-    throw "Unable to prepare a desktop shortcut for uninstall testing."
+    throw "Unable to prepare a desktop shortcut path for uninstall testing."
 }
-$shortcut = $null
-$shell = $null
 
 $uninstallProcess = Start-Process -FilePath $uninstaller -ArgumentList @("/S") -Wait -PassThru
 if ($uninstallProcess.ExitCode -ne 0) {
