@@ -856,6 +856,35 @@ int runSelfTest(bool keepFiles) {
             settings, capabilities, 2, 2, {}, nullptr);
         check("ZIP same-parameter repeat skip", zipSkip.success && zipSkip.skipped);
 
+        auto mkvArchiveSettings = settings;
+        mkvArchiveSettings.outputContainer = ffmpegui::OutputContainer::MKV;
+        const fs::path mkvArchiveOutput = work / "sample-mkv.zip";
+        const auto mkvArchiveResult = archives.process(
+            pathToUtf8(zipInput), pathToUtf8(mkvArchiveOutput), false,
+            mkvArchiveSettings, capabilities, 2, 2, {}, nullptr);
+        if (!mkvArchiveResult.success)
+            std::cout << "ZIP MKV conversion: " << mkvArchiveResult.message << '\n';
+        check("ZIP media can be converted to MKV",
+              mkvArchiveResult.success &&
+              readZipEntry(mkvArchiveOutput, "media/clip.mkv").has_value());
+
+        if (capabilities.supports(ffmpegui::VideoCodec::VP9,
+                                  ffmpegui::EncoderBackend::CPU)) {
+            auto webmArchiveSettings = settings;
+            webmArchiveSettings.codec = ffmpegui::VideoCodec::VP9;
+            webmArchiveSettings.outputContainer = ffmpegui::OutputContainer::WebM;
+            webmArchiveSettings.crf = 30;
+            const fs::path webmArchiveOutput = work / "sample-webm.zip";
+            const auto webmArchiveResult = archives.process(
+                pathToUtf8(zipInput), pathToUtf8(webmArchiveOutput), false,
+                webmArchiveSettings, capabilities, 2, 2, {}, nullptr);
+            if (!webmArchiveResult.success)
+                std::cout << "ZIP WebM conversion: " << webmArchiveResult.message << '\n';
+            check("ZIP media can be converted to WebM",
+                  webmArchiveResult.success &&
+                  readZipEntry(webmArchiveOutput, "media/clip.webm").has_value());
+        }
+
         const fs::path pptxVideo = work / "pptx-clip.mov";
         fs::copy_file(source, pptxVideo, fs::copy_options::overwrite_existing);
         const fs::path pptxInput = work / "presentation.pptx";
@@ -898,6 +927,16 @@ int runSelfTest(bool keepFiles) {
             settings, capabilities, 2, 2, {}, nullptr);
         check("PPTX embedded video conversion", pptxResult.success && pptxResult.processedVideos == 2 &&
             pptxResult.inputSizeBytes > 0 && pptxResult.outputSizeBytes > 0);
+        const auto incompatiblePptx = archives.process(
+            pathToUtf8(pptxInput), pathToUtf8(work / "unsupported-webm.pptx"),
+            true, [&]() {
+                auto incompatibleSettings = settings;
+                incompatibleSettings.outputContainer = ffmpegui::OutputContainer::WebM;
+                return incompatibleSettings;
+            }(), capabilities, 1, 2, {}, nullptr);
+        check("PowerPoint prevents incompatible WebM embedded media",
+              !incompatiblePptx.success &&
+              incompatiblePptx.message.find("MP4") != std::string::npos);
         const auto updatedRels = readZipEntry(pptxOutput, "ppt/slides/_rels/slide1.xml.rels");
         check("PPTX video relationships updated", updatedRels &&
             updatedRels->find("../media/clip.mp4") != std::string::npos &&
