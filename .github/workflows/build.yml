@@ -152,9 +152,28 @@ jobs:
         with:
           arch: x64
 
+      - name: Prepare vcpkg binary cache
+        shell: pwsh
+        run: |
+          $cache = Join-Path $env:RUNNER_TEMP 'vcpkg-binary-cache'
+          New-Item -ItemType Directory -Force $cache | Out-Null
+          "VCPKG_DEFAULT_BINARY_CACHE=$cache" >> $env:GITHUB_ENV
+
+      - name: Restore vcpkg binary cache
+        uses: actions/cache/restore@v4
+        with:
+          path: ${{ runner.temp }}/vcpkg-binary-cache
+          key: vcpkg-win-static-${{ hashFiles('vcpkg.json') }}
+
       - name: Install libarchive
         shell: pwsh
         run: vcpkg install --triplet x64-windows-static
+
+      - name: Save vcpkg binary cache
+        uses: actions/cache/save@v4
+        with:
+          path: ${{ runner.temp }}/vcpkg-binary-cache
+          key: vcpkg-win-static-${{ hashFiles('vcpkg.json') }}
 
       - name: Install FFmpeg
         run: choco install ffmpeg -y --no-progress
@@ -172,9 +191,6 @@ jobs:
       - name: Run unit tests
         run: ctest --preset windows-release
 
-      - name: Run FFmpeg conversion, ZIP and PPTX tests
-        run: .\build\windows-release\video-compression-workbench.exe --self-test
-
       - name: Install NSIS
         shell: pwsh
         run: choco install nsis -y --no-progress
@@ -186,6 +202,9 @@ jobs:
       - name: Test Windows installer and bundled dependencies
         shell: pwsh
         run: ./scripts/test-windows-installer.ps1
+
+      - name: Run FFmpeg conversion, ZIP and PPTX tests
+        run: .\build\windows-release\video-compression-workbench.exe --self-test
 
       - name: Upload Windows portable archive
         uses: actions/upload-artifact@v4

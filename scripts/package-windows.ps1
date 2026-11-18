@@ -111,7 +111,7 @@ $installerPath = Join-Path $outputPath "video-compression-workbench-$version-win
 if (Test-Path -LiteralPath $installerPath) {
     Remove-Item -LiteralPath $installerPath -Force
 }
-& $nsis "/V3" "/DPRODUCT_VERSION=$version" "/DPAYLOAD_DIR=$payloadPath" "/DOUTPUT_FILE=$installerPath" (Join-Path $repoRoot "packaging/windows-installer.nsi")
+& $nsis "/INPUTCHARSET" "UTF8" "/V3" "/DPRODUCT_VERSION=$version" "/DPAYLOAD_DIR=$payloadPath" "/DOUTPUT_FILE=$installerPath" (Join-Path $repoRoot "packaging/windows-installer.nsi")
 if ($LASTEXITCODE -ne 0 -or -not (Test-Path -LiteralPath $installerPath -PathType Leaf)) {
     throw "NSIS did not produce an installer."
 }

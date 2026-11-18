@@ -178,7 +178,7 @@ ctest --test-dir build --output-on-failure
 - Windows 应用版本资源写入 Kenvix <i@kenvix.com> 作者和版权信息，安装程序通过 NSIS 生成，支持当前用户安装、开始菜单快捷方式和卸载。
 - Windows 安装版和便携 ZIP 一并提供经 SHA-256 校验的固定 FFmpeg 9.0.2 静态构建；程序在未设置路径环境变量时优先使用同目录 `bin` 下的 FFmpeg 和 ffprobe。
 - Windows 发布包包含 FFmpeg 原始许可证文件以及 vcpkg 静态依赖的许可证。安装包通过独立的自动化测试验证版本信息、内置 FFmpeg、自检和卸载。
-- Windows 暂停处理期间持续检查 FFmpeg 新创建的线程，将尚未暂停的工作线程加入暂停列表；恢复时释放所持线程句柄。
+- Windows 启动 FFmpeg 进程时先暂停主线程，再将新进程加入 Job Object，之后继续启动。暂停操作会遍历同一组进程中的各个线程，包含由启动程序创建的 FFmpeg 子进程。取消任务时通过 Job Object 终止该组进程；无法建立 Job Object 时，使用进程树检查作为后备方案。
 - 增加真实 FFmpeg 进程暂停和继续测试。
 
 ## SSH 远程编码

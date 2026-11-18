@@ -6,6 +6,7 @@
 #include <cstdlib>
 #include <cwchar>
 #include <map>
+#include <set>
 #include <sstream>
 
 #ifdef _WIN32
@@ -122,6 +123,53 @@ void suspendProcessThreads(DWORD processId, std::map<DWORD, HANDLE>& suspendedTh
         } while (Thread32Next(snapshot, &entry));
     }
     CloseHandle(snapshot);
+}
+
+std::vector<DWORD> trackedProcessIds(HANDLE job, DWORD processId) {
+    std::set<DWORD> knownIds{processId};
+    if (job != nullptr) {
+        std::vector<ULONG_PTR> buffer(64);
+        for (int attempt = 0; attempt < 5; ++attempt) {
+            auto* processList = reinterpret_cast<JOBOBJECT_BASIC_PROCESS_ID_LIST*>(buffer.data());
+            if (QueryInformationJobObject(
+                    job, JobObjectBasicProcessIdList, buffer.data(),
+                    static_cast<DWORD>(buffer.size() * sizeof(ULONG_PTR)), nullptr)) {
+                for (DWORD index = 0; index < processList->NumberOfProcessIdsInList; ++index) {
+                    knownIds.insert(static_cast<DWORD>(processList->ProcessIdList[index]));
+                }
+                return {knownIds.begin(), knownIds.end()};
+            }
+            if (GetLastError() != ERROR_MORE_DATA) {
+                break;
+            }
+            buffer.resize(buffer.size() * 2);
+        }
+    }
+
+    // Fall back to a process snapshot if the caller is unable to create a job object.
+    HANDLE snapshot = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
+    if (snapshot != INVALID_HANDLE_VALUE) {
+        std::vector<PROCESSENTRY32W> entries;
+        PROCESSENTRY32W entry{};
+        entry.dwSize = sizeof(entry);
+        if (Process32FirstW(snapshot, &entry)) {
+            do {
+                entries.push_back(entry);
+            } while (Process32NextW(snapshot, &entry));
+        }
+        CloseHandle(snapshot);
+        bool changed = true;
+        while (changed) {
+            changed = false;
+            for (const auto& child : entries) {
+                if (knownIds.contains(child.th32ParentProcessID) &&
+                    knownIds.insert(child.th32ProcessID).second) {
+                    changed = true;
+                }
+            }
+        }
+    }
+    return {knownIds.begin(), knownIds.end()};
 }
 
 std::wstring quoteWindowsArgument(std::string_view argument) {
@@ -343,8 +391,20 @@ ProcessResult runProcess(const std::vector<std::string>& arguments,
         }
         environmentBlock.push_back(L'\0');
     }
+    HANDLE processJob = CreateJobObjectW(nullptr, nullptr);
+    if (processJob != nullptr) {
+        JOBOBJECT_EXTENDED_LIMIT_INFORMATION limits{};
+        limits.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE;
+        if (!SetInformationJobObject(
+                processJob, JobObjectExtendedLimitInformation, &limits, sizeof(limits))) {
+            CloseHandle(processJob);
+            processJob = nullptr;
+        }
+    }
+    const DWORD creationFlags = CREATE_NO_WINDOW | CREATE_SUSPENDED |
+        (environmentBlock.empty() ? 0 : CREATE_UNICODE_ENVIRONMENT);
     const BOOL created = CreateProcessW(nullptr, commandLine.data(), nullptr, nullptr, TRUE,
-                                        CREATE_NO_WINDOW | (environmentBlock.empty() ? 0 : CREATE_UNICODE_ENVIRONMENT),
+                                        creationFlags,
                                         environmentBlock.empty() ? nullptr : environmentBlock.data(), nullptr,
                                         &startupInfo, &processInfo);
     CloseHandle(writeHandle);
@@ -352,6 +412,7 @@ ProcessResult runProcess(const std::vector<std::string>& arguments,
         result.exitCode = static_cast<int>(GetLastError());
         result.output = "Unable to start FFmpeg. Check the executable path.";
         CloseHandle(readHandle);
+        if (processJob != nullptr) CloseHandle(processJob);
         if (!environmentBlock.empty()) {
             SecureZeroMemory(environmentBlock.data(),
                              environmentBlock.size() * sizeof(environmentBlock.front()));
@@ -359,6 +420,25 @@ ProcessResult runProcess(const std::vector<std::string>& arguments,
         return result;
     }
 
+    if (processJob != nullptr &&
+        !AssignProcessToJobObject(processJob, processInfo.hProcess)) {
+        CloseHandle(processJob);
+        processJob = nullptr;
+    }
+    if (ResumeThread(processInfo.hThread) == static_cast<DWORD>(-1)) {
+        result.exitCode = static_cast<int>(GetLastError());
+        result.output = "Unable to start the suspended FFmpeg process.";
+        TerminateProcess(processInfo.hProcess, 130);
+        CloseHandle(processInfo.hThread);
+        CloseHandle(processInfo.hProcess);
+        CloseHandle(readHandle);
+        if (processJob != nullptr) CloseHandle(processJob);
+        if (!environmentBlock.empty()) {
+            SecureZeroMemory(environmentBlock.data(),
+                             environmentBlock.size() * sizeof(environmentBlock.front()));
+        }
+        return result;
+    }
     CloseHandle(processInfo.hThread);
     std::string pending;
     bool terminated = false;
@@ -367,9 +447,11 @@ ProcessResult runProcess(const std::vector<std::string>& arguments,
     while (true) {
         const bool shouldPause = pauseRequested != nullptr && pauseRequested->load() && !terminated;
         if (shouldPause) {
-            // FFmpeg can create additional worker threads after it begins encoding.
-            // Suspend new threads as well while the user keeps the task paused.
-            suspendProcessThreads(processInfo.dwProcessId, suspendedThreads);
+            // OpenSSH and package-manager launchers can create child processes.
+            // Pause their FFmpeg threads together with the original process.
+            for (DWORD id : trackedProcessIds(processJob, processInfo.dwProcessId)) {
+                suspendProcessThreads(id, suspendedThreads);
+            }
             paused = !suspendedThreads.empty();
         } else if (paused) {
             resumeThreads(suspendedThreads);
@@ -377,7 +459,17 @@ ProcessResult runProcess(const std::vector<std::string>& arguments,
         }
         if (cancelRequested != nullptr && cancelRequested->load() && !terminated) {
             if (paused) { resumeThreads(suspendedThreads); paused = false; }
-            TerminateProcess(processInfo.hProcess, 130);
+            if (processJob != nullptr) {
+                TerminateJobObject(processJob, 130);
+            } else {
+                for (DWORD id : trackedProcessIds(nullptr, processInfo.dwProcessId)) {
+                    HANDLE child = OpenProcess(PROCESS_TERMINATE, FALSE, id);
+                    if (child != nullptr) {
+                        TerminateProcess(child, 130);
+                        CloseHandle(child);
+                    }
+                }
+            }
             terminated = true;
             result.cancelled = true;
         }
@@ -421,6 +513,7 @@ ProcessResult runProcess(const std::vector<std::string>& arguments,
     if (paused) resumeThreads(suspendedThreads);
     flushPending(pending, onLine);
     CloseHandle(processInfo.hProcess);
+    if (processJob != nullptr) CloseHandle(processJob);
     CloseHandle(readHandle);
     if (!environmentBlock.empty()) {
         SecureZeroMemory(environmentBlock.data(),
