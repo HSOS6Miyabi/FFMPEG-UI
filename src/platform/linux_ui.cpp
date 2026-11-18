@@ -151,11 +151,20 @@ Layout makeLayout(int width, int height, double scale, int backendCount = 4,
     const int actualQueueY = queueFocused ? sy : queueY;
     l.queue = {leftX, actualQueueY, leftW, std::max(0, height - actualQueueY - pad)};
     l.failedOnly = {leftX + s(142), actualQueueY + s(10), s(102), s(28)};
-    l.overallCard={rightX,top,rightW,s(270)};l.overallTrack={rightX+s(22),top+s(126),rightW-s(44),s(12)};
-    l.start={rightX+s(22),top+s(206),rightW-s(44),s(44)};
-    const int actionGap=s(8),actionWidth=(rightW-s(52)-actionGap)/2;
-    l.pause={rightX+s(22),top+s(206),actionWidth,s(44)};
-    l.cancel={rightX+s(22)+actionWidth+actionGap,top+s(206),rightW-s(44)-actionWidth-actionGap,s(44)};
+    const int availableRightHeight = std::max(0, height - top - pad);
+    const int statusHeight = std::clamp(availableRightHeight * 55 / 100, s(185), s(270));
+    const bool compactStatus = statusHeight < s(260);
+    const int actionY = compactStatus ? top + statusHeight - s(48) : top + s(206);
+    const int actionHeight = compactStatus ? s(38) : s(44);
+    l.overallCard = {rightX, top, rightW, statusHeight};
+    l.overallTrack = {rightX + s(22), compactStatus
+        ? top + statusHeight - s(90) : top + s(126), rightW - s(44), s(12)};
+    l.start = {rightX + s(22), actionY, rightW - s(44), actionHeight};
+    const int actionGap = s(8);
+    const int actionWidth = (rightW - s(52) - actionGap) / 2;
+    l.pause = {rightX + s(22), actionY, actionWidth, actionHeight};
+    l.cancel = {rightX + s(22) + actionWidth + actionGap, actionY,
+                rightW - s(44) - actionWidth - actionGap, actionHeight};
     l.focusQueue = {width - s(377), s(28), s(135), s(36)};
     l.ssh={width-s(224),s(28),s(100),s(36)};
     l.theme={width-s(112),s(28),s(82),s(36)};
@@ -1638,13 +1647,16 @@ private:
         canvas_->button(
             layout.theme, dark_ ? "浅色外观" : "深色外观", colors);
 
+        const bool compactToolbar = layout.importQueue.width < s(76);
         canvas_->button(layout.addFiles, "添加文件", colors, true);
         canvas_->button(layout.addFolder, "添加文件夹", colors);
-        canvas_->button(layout.addArchive, "添加 ZIP / PPTX", colors);
-        canvas_->button(layout.importQueue, "导入清单", colors);
-        canvas_->button(layout.exportQueue, "导出清单", colors);
-        canvas_->button(layout.removeSelected, "移除选中", colors);
-        canvas_->button(layout.clearDone, "清除已完成", colors);
+        canvas_->button(layout.addArchive,
+                        layout.addArchive.width < s(118) ? "ZIP/PPTX" : "添加 ZIP / PPTX",
+                        colors);
+        canvas_->button(layout.importQueue, compactToolbar ? "导入" : "导入清单", colors);
+        canvas_->button(layout.exportQueue, compactToolbar ? "导出" : "导出清单", colors);
+        canvas_->button(layout.removeSelected, compactToolbar ? "移除" : "移除选中", colors);
+        canvas_->button(layout.clearDone, compactToolbar ? "清除" : "清除已完成", colors);
 
         if (!queueFocused_) {
         const int left = layout.queue.x, top = s(168);
@@ -1808,9 +1820,11 @@ private:
         }
 
         canvas_->card(layout.queue, colors);
-        canvas_->text(
-            layout.queue.x + s(20), layout.queue.y + s(34),
-            "处理队列", colors.text, 1);
+        const bool compactQueueHeader =
+            layout.queue.width < s(820) && layout.queue.height >= s(170);
+        const int queueHeaderHeight = compactQueueHeader ? s(83) : s(54);
+        canvas_->text(layout.queue.x + s(20), layout.queue.y + s(34),
+                      "处理队列", colors.text, 1);
         canvas_->button(layout.failedOnly,
                         failedOnly_ ? "显示全部" : "仅看失败",
                         colors, failedOnly_);
@@ -1819,15 +1833,20 @@ private:
             " · 运行 " + std::to_string(snapshot.runningTasks) +
             " · 完成 " + std::to_string(snapshot.completedTasks) +
             " · 失败 " + std::to_string(snapshot.failedTasks);
-        canvas_->text(
-            layout.queue.x + layout.queue.width - s(330),
-            layout.queue.y + s(34), queueSummary, colors.muted, 0);
+        if (compactQueueHeader) {
+            canvas_->textFit(layout.queue.x + s(20), layout.queue.y + s(69),
+                             queueSummary, layout.queue.width - s(40), colors.muted, 0);
+        } else if (layout.queue.width >= s(600)) {
+            canvas_->textFit(layout.queue.x + layout.queue.width - s(330),
+                             layout.queue.y + s(34), queueSummary,
+                             s(310), colors.muted, 0);
+        }
 
         const auto taskRows = rows(snapshot, failedOnly_);
         const int rowHeight = s(70);
-        const int listTop = layout.queue.y + s(54);
+        const int listTop = layout.queue.y + queueHeaderHeight;
         const int visibleRows = std::max(
-            0, (layout.queue.height - s(68)) / rowHeight);
+            0, (layout.queue.height - queueHeaderHeight - s(14)) / rowHeight);
         const int maximumScroll = std::max(
             0, static_cast<int>(taskRows.size()) - visibleRows);
         scrollOffset_ = std::clamp(scrollOffset_, 0, maximumScroll);
@@ -1914,15 +1933,18 @@ private:
         }
 
         canvas_->card(layout.overallCard, colors);
-        canvas_->text(
-            layout.overallCard.x + s(22), layout.overallCard.y + s(36),
-            "批量处理进度", colors.text, 1);
-        canvas_->text(
-            layout.overallCard.x + s(22), layout.overallCard.y + s(76),
-            snapshot.status, colors.text, 0);
-        canvas_->text(
-            layout.overallCard.x + s(22), layout.overallCard.y + s(102),
-            snapshot.detail, colors.muted, 0);
+        const bool compactStatus = layout.overallCard.height < s(260);
+        const int statusX = layout.overallCard.x + s(22);
+        const int statusWidth = layout.overallCard.width - s(44);
+        canvas_->textFit(statusX,
+                         layout.overallCard.y + s(compactStatus ? 26 : 36),
+                         "批量处理进度", statusWidth, colors.text, 1);
+        canvas_->textFit(statusX,
+                         layout.overallCard.y + s(compactStatus ? 55 : 76),
+                         snapshot.status, statusWidth, colors.text, 0);
+        canvas_->textFit(statusX,
+                         layout.overallCard.y + s(compactStatus ? 77 : 102),
+                         snapshot.detail, statusWidth, colors.muted, 0);
         canvas_->progress(layout.overallTrack, snapshot.overallProgress, colors);
 
         std::ostringstream percentage;
@@ -1930,13 +1952,17 @@ private:
         percentage.precision(1);
         percentage << snapshot.overallProgress * 100.0 << "%";
         canvas_->text(
-            layout.overallCard.x + s(22), layout.overallCard.y + s(178),
+            statusX, compactStatus
+                ? layout.overallCard.y + layout.overallCard.height - s(65)
+                : layout.overallCard.y + s(178),
             percentage.str(), colors.accent, 1);
-        canvas_->text(
-            layout.overallCard.x + s(130), layout.overallCard.y + s(178),
+        canvas_->textFit(
+            layout.overallCard.x + s(130), compactStatus
+                ? layout.overallCard.y + layout.overallCard.height - s(65)
+                : layout.overallCard.y + s(178),
             "完成 " + std::to_string(snapshot.completedTasks + snapshot.skippedTasks) +
                 " / " + std::to_string(snapshot.totalTasks),
-            colors.muted, 0);
+            layout.overallCard.width - s(152), colors.muted, 0);
 
         if (!snapshot.running) {
             const bool canStart = !snapshot.tasks.empty() &&
@@ -1954,13 +1980,40 @@ private:
             layout.overallCard.x,
             infoY,
             layout.overallCard.width,
-            height_ - infoY - s(28)
+            std::max(0, height_ - infoY - s(28))
         };
         canvas_->card(information, colors);
         const auto selected = std::find_if(
             snapshot.tasks.begin(), snapshot.tasks.end(),
             [this](const BatchTaskSnapshot& task) { return task.id == selectedTask_; });
-        if (selected != snapshot.tasks.end()) {
+        const bool compactInformation = information.height < s(340);
+        if (selected != snapshot.tasks.end() && compactInformation) {
+            const int labelX = information.x + s(22);
+            const int maximumWidth = information.width - s(44);
+            const int baseY = information.y + s(33);
+            const int step = std::clamp(
+                (information.height - s(55)) / 4, s(18), s(27));
+            if (information.height >= s(70)) {
+                canvas_->textFit(labelX, baseY, "当前选中任务", maximumWidth, colors.text, 1);
+                canvas_->textFit(labelX, baseY + step, basename(selected->inputPath),
+                                 maximumWidth, colors.text, 0);
+            }
+            if (information.height >= s(115)) {
+                canvas_->textFit(labelX, baseY + step * 2,
+                    taskStateName(selected->state) + " · " + taskKindName(selected->kind),
+                    maximumWidth, selected->state == TaskState::Failed ? colors.red : colors.muted, 0);
+            }
+            if (information.height >= s(165)) {
+                canvas_->textFit(labelX, baseY + step * 3,
+                                 "来源：" + selected->inputPath, maximumWidth,
+                                 colors.muted, 0);
+            }
+            if (information.height >= s(195)) {
+                canvas_->textFit(labelX, baseY + step * 4,
+                                 "输出：" + selected->outputPath, maximumWidth,
+                                 selected->state == TaskState::Failed ? colors.red : colors.text, 0);
+            }
+        } else if (selected != snapshot.tasks.end()) {
             const int labelX = information.x + s(22);
             const int maxWidth = information.width - s(44);
             canvas_->text(labelX, information.y + s(38),
@@ -1999,6 +2052,41 @@ private:
                 canvas_->textFit(labelX, information.y + s(355), details,
                                  maxWidth, selected->error.empty() ?
                                      colors.text : colors.red, 0);
+            }
+        } else if (compactInformation) {
+            const int labelX = information.x + s(22);
+            const int columnWidth = (information.width - s(58)) / 2;
+            const int secondX = labelX + columnWidth + s(14);
+            const int baseY = information.y + s(34);
+            const int startY = information.y + s(74);
+            const int step = std::clamp(
+                (information.height - s(83)) / 2, s(19), s(30));
+            if (information.height >= s(50))
+                canvas_->textFit(labelX, baseY, "设备与编码摘要",
+                                 information.width - s(44), colors.text, 1);
+            if (information.height >= s(102)) {
+                canvas_->textFit(labelX, startY,
+                    "格式 " + codecName(settings_.codec) + " · " +
+                    outputContainerName(settings_.outputContainer),
+                    columnWidth, colors.text, 0);
+                canvas_->textFit(secondX, startY,
+                    "编码器 " + backendName(settings_.backend), columnWidth, colors.text, 0);
+            }
+            if (information.height >= s(132)) {
+                canvas_->textFit(labelX, startY + step,
+                    "质量 " + std::to_string(settings_.crf) + " · " +
+                    compressionName(settings_.compression), columnWidth, colors.text, 0);
+                canvas_->textFit(secondX, startY + step,
+                    "音频 " + audioModeName(settings_.audioMode), columnWidth, colors.text, 0);
+            }
+            if (information.height >= s(162)) {
+                canvas_->textFit(labelX, startY + step * 2,
+                    "分辨率 " + outputResolutionName(settings_.outputResolution),
+                    columnWidth, colors.text, 0);
+                canvas_->textFit(secondX, startY + step * 2,
+                    settings_.remoteHost.empty() ? "计算设备 本机"
+                        : "计算设备 " + settings_.remoteHost,
+                    columnWidth, colors.text, 0);
             }
         } else {
         canvas_->text(
@@ -2353,9 +2441,13 @@ private:
         }
 
         }
-        const int listTop = layout.queue.y + s(54);
+        const bool compactQueueHeader =
+            layout.queue.width < s(820) && layout.queue.height >= s(170);
+        const int headerHeight = compactQueueHeader ? s(83) : s(54);
+        const int listTop = layout.queue.y + headerHeight;
         const int rowHeight = s(70);
-        const int visibleCount = std::max(0, (layout.queue.height - s(68)) / rowHeight);
+        const int visibleCount = std::max(
+            0, (layout.queue.height - headerHeight - s(14)) / rowHeight);
         if (y >= listTop && y < listTop + visibleCount * rowHeight &&
             x >= layout.queue.x && x < layout.queue.x + layout.queue.width) {
             const int rowIndex = (y - listTop) / rowHeight + scrollOffset_;
