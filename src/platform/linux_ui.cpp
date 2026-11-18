@@ -1699,11 +1699,17 @@ private:
             VideoCodec::AV1, VideoCodec::H266
         };
         const auto supported = availableVideoCodecs(snapshot.capabilities);
-        for (std::size_t index = 0; index < codecChoices.size(); ++index)
-            canvas_->button(layout.codec[index], codecName(codecChoices[index]), colors,
+        const std::array<std::string, 5> compactCodecNames{
+            "264", "265", "VP9", "AV1", "266"
+        };
+        for (std::size_t index = 0; index < codecChoices.size(); ++index) {
+            const std::string label = layout.codec[index].width < s(70)
+                ? compactCodecNames[index] : codecName(codecChoices[index]);
+            canvas_->button(layout.codec[index], label, colors,
                             settings_.codec == codecChoices[index],
                             std::find(supported.begin(), supported.end(),
                                       codecChoices[index]) == supported.end());
+        }
 
         canvas_->text(firstColumn, top + s(169), "编码设备", colors.muted, 0);
         canvas_->text(secondColumn, top + s(169),
@@ -1827,6 +1833,7 @@ private:
 
         }
 
+        if (layout.queue.height >= s(90)) {
         canvas_->card(layout.queue, colors);
         const bool compactQueueHeader =
             layout.queue.width < s(820) && layout.queue.height >= s(170);
@@ -1938,6 +1945,8 @@ private:
                     layout.queue.x + layout.queue.width - s(18),
                     rowY + rowHeight - s(2), colors.border);
             }
+        }
+
         }
 
         canvas_->card(layout.overallCard, colors);
