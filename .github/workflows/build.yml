@@ -99,11 +99,14 @@ jobs:
             trap "kill $app_pid 2>/dev/null || true" EXIT
             window=""
             for attempt in $(seq 1 30); do
-              window=$(xdotool search --name "视频压缩工作台" 2>/dev/null | head -n 1 || true)
+              window=$(xdotool search --class "VideoCompressionWorkbench" 2>/dev/null | head -n 1 || true)
               if [ -n "$window" ]; then break; fi
               sleep 1
             done
             if [ -z "$window" ]; then
+              echo "Cannot locate the video compression workbench X11 window" >&2
+              ps -p "$app_pid" -o pid,stat,cmd || true
+              xdotool search --name . 2>/dev/null || true
               cat /tmp/video-compression-workbench-ui.log
               exit 1
             fi

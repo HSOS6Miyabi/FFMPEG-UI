@@ -539,7 +539,13 @@ public:
             0, 0, static_cast<unsigned int>(width_),
             static_cast<unsigned int>(height_),
             0, BlackPixel(display_, screen_), WhitePixel(display_, screen_));
-        XStoreName(display_, window_, "视频压缩工作台");
+        const std::string windowTitle = "视频压缩工作台";
+        XStoreName(display_, window_, windowTitle.c_str());
+        const Atom utf8String = XInternAtom(display_, "UTF8_STRING", False);
+        const Atom netWmName = XInternAtom(display_, "_NET_WM_NAME", False);
+        XChangeProperty(display_, window_, netWmName, utf8String, 8, PropModeReplace,
+                        reinterpret_cast<const unsigned char*>(windowTitle.data()),
+                        static_cast<int>(windowTitle.size()));
 
         XClassHint classHint{};
         classHint.res_name = const_cast<char*>("video-compression-workbench");
