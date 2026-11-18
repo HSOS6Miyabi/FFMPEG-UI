@@ -839,12 +839,22 @@ int runSelfTest(bool keepFiles) {
         std::string queueError;
         check("export batch task list", batch.exportQueue(pathToUtf8(queueFile), queueError));
         ffmpegui::AppController imported(service);
+        const auto existingTasks = imported.snapshot().tasks;
         const auto importedCount = imported.importQueue(pathToUtf8(queueFile), queueError);
+        const auto importedSnapshot = imported.snapshot();
+        const bool existingTasksPreserved = std::all_of(
+            existingTasks.begin(), existingTasks.end(), [&](const auto& task) {
+                return std::any_of(importedSnapshot.tasks.begin(), importedSnapshot.tasks.end(),
+                                   [&](const auto& candidate) {
+                                       return candidate.inputPath == task.inputPath;
+                                   });
+            });
         check(
             "import batch task list",
             queueError.empty() &&
                 importedCount == 3 &&
-                imported.snapshot().totalTasks == 3);
+                importedSnapshot.totalTasks == existingTasks.size() + importedCount &&
+                existingTasksPreserved);
         auto savedSettings = batch.snapshot().settings;
         ffmpegui::AppController settingsReloaded(service);
         const auto reloaded = settingsReloaded.snapshot().settings;
