@@ -352,6 +352,7 @@ jobs:
           key: vcpkg-win-static-${{ hashFiles('vcpkg.json') }}
 
       - name: Install libarchive
+        timeout-minutes: 12
         shell: pwsh
         run: vcpkg install --triplet x64-windows-static
 
@@ -362,6 +363,7 @@ jobs:
           key: vcpkg-win-static-${{ hashFiles('vcpkg.json') }}
 
       - name: Install FFmpeg
+        timeout-minutes: 10
         run: choco install ffmpeg -y --no-progress
 
       - name: Configure
@@ -382,6 +384,7 @@ jobs:
         run: choco install nsis -y --no-progress
 
       - name: Bundle pinned FFmpeg and create Windows packages
+        timeout-minutes: 15
         shell: pwsh
         run: ./scripts/package-windows.ps1
 
