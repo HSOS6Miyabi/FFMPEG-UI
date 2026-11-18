@@ -95,7 +95,10 @@ jobs:
           mkdir -p artifacts/ui
           xvfb-run -a -s "-screen 0 1600x1100x24" bash -c '
             export FFMPEG_STUDIO_CONFIG_DIR="$RUNNER_TEMP/workbench-ui-config"
-            mkdir -p "$FFMPEG_STUDIO_CONFIG_DIR"
+            mkdir -p "$FFMPEG_STUDIO_CONFIG_DIR" "$RUNNER_TEMP/ui-example"
+            ui_file="$RUNNER_TEMP/ui-example/长文件名-羊只饲养记录-2026-11-18-4K摄像机原始素材-视频压缩任务.mp4"
+            printf "test media placeholder" > "$ui_file"
+            printf "FFmpegStudioQueue/1\n%s\n" "$ui_file" > "$FFMPEG_STUDIO_CONFIG_DIR/queue.ffq"
             ./build/linux-release/video-compression-workbench > /tmp/video-compression-workbench-ui.log 2>&1 &
             app_pid=$!
             trap "kill $app_pid 2>/dev/null || true" EXIT
@@ -129,6 +132,23 @@ jobs:
             grep -qx "audioMode=1" "$FFMPEG_STUDIO_CONFIG_DIR/settings.ini"
             grep -qx "outputResolution=3" "$FFMPEG_STUDIO_CONFIG_DIR/settings.ini"
             import -window "$window" artifacts/ui/video-compression-workbench-linux-expanded.png
+
+            # Verify queue-first navigation and selected-task details without starting encoding.
+            xdotool mousemove --window "$window" 1190 46 click 1
+            sleep 1
+            import -window "$window" artifacts/ui/video-compression-workbench-linux-queue-focus.png
+            xdotool mousemove --window "$window" 150 255 click 1
+            sleep 1
+            import -window "$window" artifacts/ui/video-compression-workbench-linux-task-details.png
+            xdotool mousemove --window "$window" 214 191 click 1
+            sleep 1
+            import -window "$window" artifacts/ui/video-compression-workbench-linux-failed-filter.png
+            xdotool mousemove --window "$window" 214 191 click 1
+            xdotool key --window "$window" ctrl+q
+            xdotool key --window "$window" Escape
+            sleep 1
+            kill -0 "$app_pid"
+            import -window "$window" artifacts/ui/video-compression-workbench-linux-restored.png
           '
 
       - name: Upload Linux interface screenshot
@@ -138,6 +158,10 @@ jobs:
           path: |
             artifacts/ui/video-compression-workbench-linux.png
             artifacts/ui/video-compression-workbench-linux-expanded.png
+            artifacts/ui/video-compression-workbench-linux-queue-focus.png
+            artifacts/ui/video-compression-workbench-linux-task-details.png
+            artifacts/ui/video-compression-workbench-linux-failed-filter.png
+            artifacts/ui/video-compression-workbench-linux-restored.png
           if-no-files-found: error
 
       - name: Package Linux application

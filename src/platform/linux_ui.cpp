@@ -60,6 +60,7 @@ struct Layout {
     Rect compressionTrack, compressionValue, audio[6], resolution[6], audioMode[3];
     Rect parallel, recursive, skip, preserve, overwrite;
     Rect queue, overallCard, overallTrack, start, pause, cancel, ssh, theme, advancedToggle;
+    Rect focusQueue, failedOnly;
 };
 std::vector<EncoderBackend> availableBackends(const EncoderCapabilities& capabilities, VideoCodec codec) {
     std::vector<EncoderBackend> result;
@@ -68,7 +69,7 @@ std::vector<EncoderBackend> availableBackends(const EncoderCapabilities& capabil
     return result;
 }
 Layout makeLayout(int width, int height, double scale, int backendCount = 4,
-                  bool expanded = false) {
+                  bool expanded = false, bool queueFocused = false) {
     const auto s=[scale](int v){return static_cast<int>(std::lround(v*scale));};
     const int pad=s(28),gap=s(18),rightW=std::clamp(width/3,s(370),s(450));
     const int leftW=width-pad*2-gap-rightW,leftX=pad,rightX=leftX+leftW+gap,top=s(112);
@@ -136,12 +137,15 @@ Layout makeLayout(int width, int height, double scale, int backendCount = 4,
     l.overwrite = {leftX + s(20) + (optionWidth + optionGap) * 4, optionY, optionWidth, s(28)};
 
     const int queueY = sy + s(expanded ? 425 : 233);
-    l.queue = {leftX, queueY, leftW, std::max(0, height - queueY - pad)};
+    const int actualQueueY = queueFocused ? sy : queueY;
+    l.queue = {leftX, actualQueueY, leftW, std::max(0, height - actualQueueY - pad)};
+    l.failedOnly = {leftX + s(142), actualQueueY + s(10), s(102), s(28)};
     l.overallCard={rightX,top,rightW,s(270)};l.overallTrack={rightX+s(22),top+s(126),rightW-s(44),s(12)};
     l.start={rightX+s(22),top+s(206),rightW-s(44),s(44)};
     const int actionGap=s(8),actionWidth=(rightW-s(52)-actionGap)/2;
     l.pause={rightX+s(22),top+s(206),actionWidth,s(44)};
     l.cancel={rightX+s(22)+actionWidth+actionGap,top+s(206),rightW-s(44)-actionWidth-actionGap,s(44)};
+    l.focusQueue = {width - s(377), s(28), s(135), s(36)};
     l.ssh={width-s(224),s(28),s(100),s(36)};
     l.theme={width-s(112),s(28),s(82),s(36)};
     return l;
@@ -279,6 +283,45 @@ public:
             static_cast<int>(value.size()));
     }
 
+    int textWidth(const std::string& value, int size = 0) const {
+        _XftFont* currentFont = size == 0 ? small_ : size == 2 ? title_ : normal_;
+        if (currentFont == nullptr || value.empty()) return 0;
+        XGlyphInfo metrics{};
+        XftTextExtentsUtf8(display_, currentFont,
+                           reinterpret_cast<const FcChar8*>(value.data()),
+                           static_cast<int>(value.size()), &metrics);
+        return static_cast<int>(metrics.xOff);
+    }
+
+    void textFit(int x, int baseline, const std::string& value, int maxWidth,
+                 const char* color, int size = 0) {
+        if (maxWidth <= 0) return;
+        if (textWidth(value, size) <= maxWidth) {
+            text(x, baseline, value, color, size);
+            return;
+        }
+        const std::string ellipsis = "…";
+        if (textWidth(ellipsis, size) > maxWidth) return;
+        std::vector<std::size_t> offsets{0};
+        for (std::size_t pos = 0; pos < value.size();) {
+            const auto byte = static_cast<unsigned char>(value[pos]);
+            const std::size_t width = (byte & 0xf8) == 0xf0 ? 4 :
+                                      (byte & 0xf0) == 0xe0 ? 3 :
+                                      (byte & 0xe0) == 0xc0 ? 2 : 1;
+            pos = std::min(value.size(), pos + width);
+            offsets.push_back(pos);
+        }
+        std::size_t lo = 0, hi = offsets.size() - 1;
+        while (lo < hi) {
+            const std::size_t mid = lo + (hi - lo + 1) / 2;
+            if (textWidth(value.substr(0, offsets[mid]) + ellipsis, size) <= maxWidth)
+                lo = mid;
+            else
+                hi = mid - 1;
+        }
+        text(x, baseline, value.substr(0, offsets[lo]) + ellipsis, color, size);
+    }
+
     void button(Rect rectangle, const std::string& label,
                 const Palette& colors, bool active = false, bool disabled = false) {
         const char* background =
@@ -292,12 +335,13 @@ public:
                 colors.border);
         }
 
-        const int estimatedTextWidth = static_cast<int>(label.size()) * 7 / 2;
-        const int textX = rectangle.x +
-            std::max(8, (rectangle.width - estimatedTextWidth) / 2);
+        const int measuredWidth = textWidth(label, 0);
+        const int availableWidth = std::max(0, rectangle.width - 16);
+        const int textX = rectangle.x + std::max(8, (rectangle.width - measuredWidth) / 2);
         const int textY = rectangle.y + rectangle.height / 2 + 5;
-        text(textX, textY, label,
-             active && !disabled ? colors.white : colors.text, 0);
+        textFit(measuredWidth <= availableWidth ? textX : rectangle.x + 8,
+                textY, label, availableWidth,
+                active && !disabled ? colors.white : colors.text, 0);
     }
 
     void input(Rect rectangle, const std::string& value,
@@ -1196,10 +1240,11 @@ private:
     }
 
     std::vector<std::pair<BatchTaskSnapshot, BatchItemSnapshot>> rows(
-        const AppSnapshot& snapshot) const {
+        const AppSnapshot& snapshot, bool failedOnly = false) const {
         std::vector<std::pair<BatchTaskSnapshot, BatchItemSnapshot>> result;
 
         for (const auto& task : snapshot.tasks) {
+            if (failedOnly && task.state != TaskState::Failed) continue;
             if (task.kind == TaskKind::Video) {
                 BatchItemSnapshot item;
                 if (!task.items.empty()) {
@@ -1234,7 +1279,7 @@ private:
         const auto backends = availableBackends(snapshot.capabilities, settings_.codec);
         const auto layout = makeLayout(
             width_, height_, scale_, static_cast<int>(backends.size()),
-            advancedExpanded_);
+            advancedExpanded_, queueFocused_);
         const auto colors = palette(dark_);
 
         canvas_->fill({0, 0, width_, height_}, colors.background);
@@ -1243,6 +1288,9 @@ private:
             s(31), s(82),
             "批量视频压缩 · ZIP / PPTX 媒体处理 · CPU 与硬件编码",
             colors.muted, 0);
+        canvas_->button(
+            layout.focusQueue, queueFocused_ ? "返回编码设置" : "专注处理队列",
+            colors, queueFocused_);
         canvas_->button(
             layout.ssh, "SSH 服务器", colors, !settings_.remoteHost.empty());
         canvas_->button(
@@ -1256,6 +1304,7 @@ private:
         canvas_->button(layout.removeSelected, "移除选中", colors);
         canvas_->button(layout.clearDone, "清除已完成", colors);
 
+        if (!queueFocused_) {
         const int left = layout.queue.x, top = s(168);
         canvas_->card({left, top, layout.queue.width,
                        s(advancedExpanded_ ? 413 : 221)}, colors);
@@ -1267,9 +1316,10 @@ private:
             ? "默认：与每个源文件保存在同一文件夹"
             : settings_.outputDirectory;
         canvas_->rounded(layout.outputField, colors.input, 8);
-        canvas_->text(layout.outputField.x + s(10),
-                      layout.outputField.y + layout.outputField.height / 2 + s(5),
-                      outputDirectory, colors.text, 0);
+        canvas_->textFit(layout.outputField.x + s(10),
+                         layout.outputField.y + layout.outputField.height / 2 + s(5),
+                         outputDirectory, layout.outputField.width - s(20),
+                         colors.text, 0);
         canvas_->button(layout.outputBrowse, "选择目录", colors);
 
         const int firstColumn = layout.container[0].x;
@@ -1385,10 +1435,15 @@ private:
                             colors, settings_.overwrite);
         }
 
+        }
+
         canvas_->card(layout.queue, colors);
         canvas_->text(
             layout.queue.x + s(20), layout.queue.y + s(34),
             "处理队列", colors.text, 1);
+        canvas_->button(layout.failedOnly,
+                        failedOnly_ ? "显示全部" : "仅看失败",
+                        colors, failedOnly_);
         const std::string queueSummary =
             "总计 " + std::to_string(snapshot.totalTasks) +
             " · 运行 " + std::to_string(snapshot.runningTasks) +
@@ -1398,11 +1453,11 @@ private:
             layout.queue.x + layout.queue.width - s(330),
             layout.queue.y + s(34), queueSummary, colors.muted, 0);
 
-        const auto taskRows = rows(snapshot);
+        const auto taskRows = rows(snapshot, failedOnly_);
         const int rowHeight = s(68);
         const int listTop = layout.queue.y + s(54);
         const int visibleRows = std::max(
-            1, (layout.queue.height - s(68)) / rowHeight);
+            0, (layout.queue.height - s(68)) / rowHeight);
         const int maximumScroll = std::max(
             0, static_cast<int>(taskRows.size()) - visibleRows);
         scrollOffset_ = std::clamp(scrollOffset_, 0, maximumScroll);
@@ -1410,7 +1465,8 @@ private:
         if (taskRows.empty()) {
             canvas_->text(
                 layout.queue.x + s(30), listTop + s(55),
-                "将视频、ZIP 或 PPTX 文件拖到窗口中，或使用上方按钮添加文件和文件夹。",
+                failedOnly_ ? "当前没有失败的任务，点击“显示全部”查看其他任务。" :
+                    "将视频、ZIP 或 PPTX 文件拖到窗口中，或使用上方按钮添加文件和文件夹。",
                 colors.muted, 1);
         } else {
             const int rowCount = std::min(
@@ -1434,9 +1490,10 @@ private:
                     ? "↳ " + item.name
                     : item.name + "  ·  " + taskKindName(task.kind);
                 const int titleIndent = childRow ? s(38) : s(20);
-                canvas_->text(
+                canvas_->textFit(
                     layout.queue.x + titleIndent, rowY + s(20),
-                    title, colors.text, childRow ? 0 : 1);
+                    title, layout.queue.width - titleIndent - s(160),
+                    colors.text, childRow ? 0 : 1);
 
                 const TaskState state = childRow ? item.state : task.state;
                 const double progress = childRow ? item.progress : task.progress;
@@ -1447,10 +1504,12 @@ private:
                 canvas_->text(
                     layout.queue.x + layout.queue.width - s(150),
                     rowY + s(20), taskStateName(state), stateColor, 0);
-                canvas_->progress(
-                    {layout.queue.x + s(20), rowY + s(36),
-                     layout.queue.width - s(180), s(7)},
-                    progress, colors);
+                if (state != TaskState::Failed) {
+                    canvas_->progress(
+                        {layout.queue.x + s(20), rowY + s(36),
+                         layout.queue.width - s(180), s(7)},
+                        progress, colors);
+                }
 
                 std::string detail;
                 if (childRow) {
@@ -1469,9 +1528,18 @@ private:
                     detail = sizeSummary;
                 }
 
-                canvas_->text(
-                    layout.queue.x + layout.queue.width - s(148),
-                    rowY + s(56), detail, colors.muted, 0);
+                if (state == TaskState::Failed) {
+                    const std::string message = childRow && !item.detail.empty()
+                        ? item.detail :
+                        (task.error.empty() ? task.detail : task.error);
+                    canvas_->textFit(
+                        layout.queue.x + s(20), rowY + s(56), message,
+                        layout.queue.width - s(185), colors.red, 0);
+                } else {
+                    canvas_->textFit(
+                        layout.queue.x + layout.queue.width - s(170),
+                        rowY + s(56), detail, s(150), colors.muted, 0);
+                }
                 canvas_->line(
                     layout.queue.x + s(18), rowY + rowHeight - s(2),
                     layout.queue.x + layout.queue.width - s(18),
@@ -1523,6 +1591,50 @@ private:
             height_ - infoY - s(28)
         };
         canvas_->card(information, colors);
+        const auto selected = std::find_if(
+            snapshot.tasks.begin(), snapshot.tasks.end(),
+            [this](const BatchTaskSnapshot& task) { return task.id == selectedTask_; });
+        if (selected != snapshot.tasks.end()) {
+            const int labelX = information.x + s(22);
+            const int maxWidth = information.width - s(44);
+            canvas_->text(labelX, information.y + s(38),
+                          "当前选中任务", colors.text, 1);
+            canvas_->textFit(labelX, information.y + s(76),
+                             basename(selected->inputPath), maxWidth, colors.text, 1);
+            const char* stateColor = selected->state == TaskState::Failed ? colors.red :
+                selected->state == TaskState::Completed ? colors.green : colors.muted;
+            canvas_->textFit(labelX, information.y + s(104),
+                             taskStateName(selected->state) + " · " +
+                                 taskKindName(selected->kind),
+                             maxWidth, stateColor, 0);
+            const std::string sizeLine = formatTaskSize(
+                selected->inputSizeBytes, selected->outputSizeBytes);
+            if (!sizeLine.empty())
+                canvas_->textFit(labelX, information.y + s(133),
+                                 sizeLine, maxWidth, colors.muted, 0);
+            if (information.height >= s(214)) {
+                canvas_->text(labelX, information.y + s(173),
+                              "来源文件", colors.muted, 0);
+                canvas_->textFit(labelX, information.y + s(198),
+                                 selected->inputPath, maxWidth, colors.text, 0);
+            }
+            if (information.height >= s(291)) {
+                canvas_->text(labelX, information.y + s(243),
+                              "输出位置", colors.muted, 0);
+                canvas_->textFit(labelX, information.y + s(268),
+                                 selected->outputPath, maxWidth, colors.text, 0);
+            }
+            const std::string details =
+                selected->error.empty() ? selected->detail : selected->error;
+            if (!details.empty() && information.height > s(355)) {
+                canvas_->text(labelX, information.y + s(324),
+                              selected->error.empty() ? "当前状态" : "失败原因",
+                              colors.muted, 0);
+                canvas_->textFit(labelX, information.y + s(355), details,
+                                 maxWidth, selected->error.empty() ?
+                                     colors.text : colors.red, 0);
+            }
+        } else {
         canvas_->text(
             information.x + s(22), information.y + s(38),
             "设备与编码摘要", colors.text, 1);
@@ -1556,19 +1668,26 @@ private:
                 ? "计算设备  本机"
                 : "计算设备  远程 · " + settings_.remoteHost,
             colors.text, 0);
-        canvas_->text(
+        canvas_->textFit(
             information.x + s(22), information.y + s(258),
-            snapshot.resourcePlan.explanation, colors.muted, 0);
+            snapshot.resourcePlan.explanation,
+            information.width - s(44), colors.muted, 0);
         canvas_->text(
             information.x + s(22), information.y + s(288),
             "H.264 / H.265 / AV1 · ZIP / PPTX 批量处理",
             colors.muted, 0);
 
         if (!snapshot.error.empty()) {
-            canvas_->text(
+            canvas_->textFit(
                 information.x + s(22),
                 information.y + information.height - s(45),
-                snapshot.error, colors.red, 0);
+                snapshot.error, information.width - s(44), colors.red, 0);
+        }
+
+            canvas_->textFit(
+                information.x + s(22), information.y + s(330),
+                "点击处理队列中的任务，可查看来源文件、输出位置和处理状态。",
+                information.width - s(44), colors.muted, 0);
         }
 
         canvas_->flush();
@@ -1604,7 +1723,7 @@ private:
             availableBackends(snapshot.capabilities, settings_.codec);
         const auto layout = makeLayout(
             width_, height_, scale_, static_cast<int>(visibleBackends.size()),
-            advancedExpanded_);
+            advancedExpanded_, queueFocused_);
         compressionFocused_ = false;
 
         if (editingCrf_ && !contains(layout.crfValue, x, y)) {
@@ -1642,22 +1761,29 @@ private:
             return;
         }
         if (contains(layout.removeSelected, x, y)) {
-            if (selectedTask_ != 0) {
+            if (selectedTask_ != 0 && !snapshot.running) {
                 controller_.removeTask(selectedTask_);
+                selectedTask_ = 0;
             }
             return;
         }
         if (contains(layout.clearDone, x, y)) {
-            controller_.clearCompleted();
+            if (!snapshot.running) {
+                controller_.clearCompleted();
+                selectedTask_ = 0;
+                scrollOffset_ = 0;
+            }
             return;
         }
-        if (contains(layout.outputBrowse, x, y)) {
-            chooseOutput();
-            return;
-        }
-        if (contains(layout.advancedToggle, x, y)) {
-            advancedExpanded_ = !advancedExpanded_;
+        if (contains(layout.focusQueue, x, y)) {
+            queueFocused_ = !queueFocused_;
+            scrollOffset_ = 0;
             compressionFocused_ = false;
+            return;
+        }
+        if (contains(layout.failedOnly, x, y)) {
+            failedOnly_ = !failedOnly_;
+            selectedTask_ = 0;
             scrollOffset_ = 0;
             return;
         }
@@ -1675,6 +1801,17 @@ private:
         }
         if (snapshot.running && contains(layout.cancel, x, y)) {
             controller_.cancelBatch();
+            return;
+        }
+        if (!queueFocused_) {
+        if (contains(layout.outputBrowse, x, y)) {
+            chooseOutput();
+            return;
+        }
+        if (contains(layout.advancedToggle, x, y)) {
+            advancedExpanded_ = !advancedExpanded_;
+            compressionFocused_ = false;
+            scrollOffset_ = 0;
             return;
         }
         if (contains(layout.crfValue, x, y)) {
@@ -1809,14 +1946,16 @@ private:
             return;
         }
 
-        if (y >= layout.queue.y + s(54) &&
-            x >= layout.queue.x &&
-            x <= layout.queue.x + layout.queue.width) {
-            const int row = (y - (layout.queue.y + s(54))) / s(68) + scrollOffset_;
-            const auto taskRows = rows(controller_.snapshot());
-            if (row >= 0 && row < static_cast<int>(taskRows.size())) {
-                selectedTask_ = taskRows[static_cast<std::size_t>(row)].first.id;
-            }
+        }
+        const int listTop = layout.queue.y + s(54);
+        const int rowHeight = s(68);
+        const int visibleCount = std::max(0, (layout.queue.height - s(68)) / rowHeight);
+        if (y >= listTop && y < listTop + visibleCount * rowHeight &&
+            x >= layout.queue.x && x < layout.queue.x + layout.queue.width) {
+            const int rowIndex = (y - listTop) / rowHeight + scrollOffset_;
+            const auto taskRows = rows(controller_.snapshot(), failedOnly_);
+            if (rowIndex >= 0 && rowIndex < static_cast<int>(taskRows.size()))
+                selectedTask_ = taskRows[static_cast<std::size_t>(rowIndex)].first.id;
         }
     }
 
@@ -1925,8 +2064,15 @@ private:
 
         if (event.type == ButtonPress) {
             if (event.xbutton.button == Button4 || event.xbutton.button == Button5) {
-                const int offset = event.xbutton.button == Button4 ? -3 : 3;
-                scrollOffset_ = std::max(0, scrollOffset_ + offset);
+                const auto backends = availableBackends(
+                    controller_.snapshot().capabilities, settings_.codec);
+                const Layout layout = makeLayout(
+                    width_, height_, scale_, static_cast<int>(backends.size()),
+                    advancedExpanded_, queueFocused_);
+                if (contains(layout.queue, event.xbutton.x, event.xbutton.y)) {
+                    const int offset = event.xbutton.button == Button4 ? -3 : 3;
+                    scrollOffset_ = std::max(0, scrollOffset_ + offset);
+                }
                 return false;
             }
 
@@ -1938,7 +2084,8 @@ private:
             const auto capabilities = controller_.snapshot().capabilities;
             const auto backends = availableBackends(capabilities, settings_.codec);
             const Layout layout = makeLayout(
-                width_, height_, scale_, static_cast<int>(backends.size()), advancedExpanded_);
+                width_, height_, scale_, static_cast<int>(backends.size()),
+                advancedExpanded_, queueFocused_);
             if (draggingCrf_) commitCrf(event.xmotion.x, layout);
             if (draggingCompression_) commitCompression(event.xmotion.x, layout);
             return false;
@@ -1992,24 +2139,38 @@ private:
                 }
                 return false;
             }
+            if (controlPressed && (key == XK_q || key == XK_Q)) {
+                queueFocused_ = !queueFocused_;
+                compressionFocused_ = false;
+                scrollOffset_ = 0;
+                return false;
+            }
             if (controlPressed && key == XK_o) {
                 addFiles();
                 return false;
             }
             if (controlPressed && key == XK_d) {
-                controller_.clearCompleted();
+                if (!controller_.snapshot().running) {
+                    controller_.clearCompleted();
+                    selectedTask_ = 0;
+                    scrollOffset_ = 0;
+                }
                 return false;
             }
             if (controlPressed && key == XK_Return) {
                 startOrCancel();
                 return false;
             }
-            if (key == XK_Delete && selectedTask_ != 0) {
+            if (key == XK_Delete && selectedTask_ != 0 &&
+                !controller_.snapshot().running) {
                 controller_.removeTask(selectedTask_);
+                selectedTask_ = 0;
                 return false;
             }
             if (key == XK_Escape) {
-                return true;
+                selectedTask_ = 0;
+                compressionFocused_ = false;
+                return false;
             }
         }
 
@@ -2029,6 +2190,8 @@ private:
     bool draggingCompression_{false};
     bool compressionFocused_{false};
     bool advancedExpanded_{false};
+    bool queueFocused_{false};
+    bool failedOnly_{false};
     bool editingCrf_{false};
     std::string crfEditText_;
     int scrollOffset_{0};
