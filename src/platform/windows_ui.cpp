@@ -898,6 +898,11 @@ private:
     bool commitField() {
         if (editing_ == -1) return true;
         const std::string raw = utf8FromWide(editText_.c_str());
+        if (raw.empty() && editing_ == 0) {
+            editing_ = -1;
+            status_.clear();
+            return true;
+        }
         const auto time = raw.empty() && editing_ == 1
             ? std::optional<double>{-1.0} : parseTrimTime(raw.empty() ? "0" : raw);
         if (!time) {
@@ -922,8 +927,7 @@ private:
         if (contains(startRect(), x, y) || contains(endRect(), x, y)) {
             if (!commitField()) return;
             editing_ = contains(startRect(), x, y) ? 0 : 1;
-            editText_ = wide(editing_ == 0 ? formatTrimTime(start_) :
-                            end_ >= 0.0 ? formatTrimTime(end_) : "");
+            editText_.clear();
             return;
         }
         if (!commitField()) return;
@@ -1056,6 +1060,10 @@ private:
             }
             break;
         case WM_CHAR:
+            if (self->editing_ == -1 && (wp == L'<' || wp == L'>')) {
+                self->jump(wp == L'<' ? -1.0 : 1.0);
+                return 0;
+            }
             if (self->editing_ != -1) {
                 if (wp == 13) self->commitField();
                 else if (wp == 27) { self->editing_ = -1; self->editText_.clear(); }
@@ -1280,6 +1288,10 @@ private:
     bool commitTrimText() {
         if (editingTrim_ == -1) return true;
         const std::string raw = utf8FromWide(trimEditText_.c_str());
+        if (raw.empty() && editingTrim_ == 0) {
+            editingTrim_ = -1;
+            return true;
+        }
         const auto parsed = raw.empty() && editingTrim_ == 1
             ? std::optional<double>{-1.0} : parseTrimTime(raw.empty() ? "0" : raw);
         if (!parsed) {
@@ -1996,9 +2008,7 @@ private:
             (contains(layout.trimStart, x, y) || contains(layout.trimEnd, x, y))) {
             if (!commitTrimText()) return;
             editingTrim_ = contains(layout.trimStart, x, y) ? 0 : 1;
-            trimEditText_ = wide(editingTrim_ == 0
-                ? formatTrimTime(settings_.trimStartSeconds) :
-                settings_.trimEndSeconds < 0.0 ? "" : formatTrimTime(settings_.trimEndSeconds));
+            trimEditText_.clear();
             SetFocus(window_);
             return;
         }
