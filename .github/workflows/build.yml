@@ -204,7 +204,21 @@ jobs:
         run: ./scripts/test-windows-installer.ps1
 
       - name: Run FFmpeg conversion, ZIP and PPTX tests
-        run: .\build\windows-release\video-compression-workbench.exe --self-test
+        shell: pwsh
+        run: |
+          $output = Join-Path $env:RUNNER_TEMP "workbench-selftest-stdout.txt"
+          $errors = Join-Path $env:RUNNER_TEMP "workbench-selftest-stderr.txt"
+          $exe = (Resolve-Path "build/windows-release/video-compression-workbench.exe").Path
+          $test = Start-Process -FilePath $exe -ArgumentList @("--self-test") -Wait -PassThru -RedirectStandardOutput $output -RedirectStandardError $errors
+          Get-Content -LiteralPath $output -Encoding UTF8
+          if (Test-Path -LiteralPath $errors) { Get-Content -LiteralPath $errors -Encoding UTF8 }
+          if ($test.ExitCode -ne 0) {
+            throw "FFmpeg self-test exited with code $($test.ExitCode)"
+          }
+          $result = Get-Content -LiteralPath $output -Raw -Encoding UTF8
+          if ($result -notmatch 'Self-test result: \d+ passed, 0 failed') {
+            throw "FFmpeg self-test did not report success."
+          }
 
       - name: Upload Windows portable archive
         uses: actions/upload-artifact@v4

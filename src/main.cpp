@@ -12,6 +12,7 @@
 #include <atomic>
 #include <chrono>
 #include <cstdlib>
+#include <cstdio>
 #include <filesystem>
 #include <fstream>
 #include <iostream>
@@ -995,9 +996,6 @@ int appMain(const std::vector<std::string>& arguments) {
         } else inputs.push_back(arguments[index]);
     }
 
-#ifdef _WIN32
-    if (const HWND console = GetConsoleWindow(); console != nullptr) ShowWindow(console, SW_HIDE);
-#endif
     ffmpegui::AppController controller(std::move(service));
     controller.initialize();
     if (!outputDirectory.empty()) {
@@ -1010,6 +1008,25 @@ int appMain(const std::vector<std::string>& arguments) {
 }
 
 } // namespace
+
+#ifdef _WIN32
+// Attach a parent terminal only for explicit command-line operations.
+// Redirected stdout/stderr handles remain unchanged for automation and SSH askpass.
+void attachCliConsole(const std::vector<std::string>& arguments) {
+    if (arguments.size() < 2) return;
+    const auto& command = arguments[1];
+    if (command != "--help" && command != "-h" && command != "--encoders" &&
+        command != "--self-test" && command != "--demo") return;
+    const HANDLE output = GetStdHandle(STD_OUTPUT_HANDLE);
+    if (output != nullptr && output != INVALID_HANDLE_VALUE &&
+        GetFileType(output) != FILE_TYPE_UNKNOWN) return;
+    if (AttachConsole(ATTACH_PARENT_PROCESS)) {
+        FILE* stream = nullptr;
+        freopen_s(&stream, "CONOUT$", "w", stdout);
+        freopen_s(&stream, "CONOUT$", "w", stderr);
+    }
+}
+#endif
 
 int main(int argc, char** argv) {
     if (ffmpegui::environmentVariable("FFMPEG_STUDIO_SSH_ASKPASS_ALIAS")) {
@@ -1030,5 +1047,15 @@ int main(int argc, char** argv) {
     arguments.reserve(static_cast<std::size_t>(argc));
     for (int i = 0; i < argc; ++i) arguments.emplace_back(argv[i]);
 #endif
+#ifdef _WIN32
+    attachCliConsole(arguments);
+#endif
     return appMain(arguments);
 }
+
+#ifdef _WIN32
+// The Windows GUI subsystem prevents a console window appearing on normal startup.
+int WINAPI wWinMain(HINSTANCE, HINSTANCE, PWSTR, int) {
+    return main(0, nullptr);
+}
+#endif

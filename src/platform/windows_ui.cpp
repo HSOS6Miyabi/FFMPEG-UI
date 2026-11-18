@@ -49,17 +49,17 @@ Palette palette(bool dark) {
         RGB(238, 243, 250), RGB(153, 166, 187), RGB(126, 144, 255), RGB(43, 55, 91),
         RGB(47, 193, 151), RGB(246, 104, 117), RGB(20, 28, 42), RGB(48, 60, 80), RGB(255,255,255)};
     return {RGB(243, 246, 251), RGB(250, 251, 254), RGB(255, 255, 255), RGB(225, 231, 240),
-        RGB(27, 37, 56), RGB(105, 119, 142), RGB(80, 101, 232), RGB(235, 239, 255),
+        RGB(27, 37, 56), RGB(76, 92, 120), RGB(80, 101, 232), RGB(235, 239, 255),
         RGB(21, 155, 121), RGB(213, 67, 85), RGB(247, 249, 253), RGB(231, 236, 245), RGB(255,255,255)};
 }
 
 struct Layout {
-    Rect addFiles, addFolder, addArchive, importQueue, exportQueue, removeSelected, clearDone;
+    Rect addFiles, addFolder, addArchive, importQueue, exportQueue, removeSelected, clearDone, clearAll;
     Rect outputField, outputBrowse;
     Rect container[2], codec[3], backend[4], crfTrack, crfValue;
     Rect compression[8], audio[6], resolution[6], audioMode[3];
     Rect parallel, recursive, skip, preserve, overwrite;
-    Rect queue, overallCard, overallTrack, start, pause, cancel, ssh, theme;
+    Rect queue, overallCard, overallTrack, start, pause, cancel, ssh, theme, advancedToggle, rescan, diagnostic;
 };
 
 std::vector<EncoderBackend> availableBackends(const EncoderCapabilities& capabilities, VideoCodec codec) {
@@ -69,102 +69,96 @@ std::vector<EncoderBackend> availableBackends(const EncoderCapabilities& capabil
     return result;
 }
 
-Layout makeLayout(int width, int height, double scale, int backendCount = 4) {
+Layout makeLayout(int width, int height, double scale, int backendCount = 4,
+                  bool expanded = false) {
     const auto s = [scale](int v) { return static_cast<int>(std::lround(v * scale)); };
-    const int pad = s(28), gap = s(18), rightW = std::clamp(width / 3, s(370), s(450));
+    const int pad = s(22), gap = s(14);
+    const int rightW = std::clamp(width / 3, s(340), s(400));
     const int leftW = width - pad * 2 - gap - rightW;
-    const int leftX = pad, rightX = leftX + leftW + gap, top = s(112);
+    const int leftX = pad, rightX = leftX + leftW + gap, top = s(94);
+    const int settingsY = top + s(50);
     Layout l{};
-    const int toolbarGap = s(6);
-    const int primaryWidth = std::min(s(440), (leftW - s(18)) * 52 / 100);
-    const int primaryButtonWidth = std::max(s(72), (primaryWidth - toolbarGap * 2) / 3);
-    l.addFiles = {leftX, top, primaryButtonWidth, s(42)};
-    l.addFolder = {leftX + primaryButtonWidth + toolbarGap, top, primaryButtonWidth, s(42)};
-    l.addArchive = {leftX + (primaryButtonWidth + toolbarGap) * 2, top, primaryButtonWidth, s(42)};
-    const int secondaryWidth = leftW - primaryWidth - s(18);
-    const int secondaryInner = std::max(s(4), secondaryWidth - toolbarGap * 3);
-    const int secondaryBase = secondaryInner / 4;
-    const int secondaryStart = leftX + leftW - secondaryWidth;
-    l.importQueue = {secondaryStart, top, secondaryBase, s(42)};
-    l.exportQueue = {secondaryStart + secondaryBase + toolbarGap, top, secondaryBase, s(42)};
-    l.removeSelected = {secondaryStart + (secondaryBase + toolbarGap) * 2, top, secondaryBase, s(42)};
-    l.clearDone = {secondaryStart + (secondaryBase + toolbarGap) * 3, top,
-                   secondaryWidth - (secondaryBase + toolbarGap) * 3, s(42)};
-    const int settingsY = top + s(56);
-    l.outputField = {leftX + s(20), settingsY + s(70), leftW - s(144), s(38)};
-    l.outputBrowse = {leftX + leftW - s(112), settingsY + s(70), s(92), s(38)};
-    const int controlX = leftX + s(152);
-    const int controlW = leftW - s(172);
+    const int toolbarGap = s(5);
+    const int primaryWidth = std::min(s(450), (leftW - s(12)) * 54 / 100);
+    const int primaryButtonWidth = (primaryWidth - toolbarGap * 2) / 3;
+    l.addFiles = {leftX, top, primaryButtonWidth, s(38)};
+    l.addFolder = {leftX + primaryButtonWidth + toolbarGap, top, primaryButtonWidth, s(38)};
+    l.addArchive = {leftX + (primaryButtonWidth + toolbarGap) * 2, top,
+                    primaryButtonWidth, s(38)};
+    const int secondaryStart = leftX + primaryWidth + s(12);
+    const int secondaryWidth = leftW - primaryWidth - s(12);
+    const int secondaryButtonWidth = (secondaryWidth - toolbarGap * 4) / 5;
+    l.importQueue = {secondaryStart, top, secondaryButtonWidth, s(38)};
+    l.exportQueue = {secondaryStart + (secondaryButtonWidth + toolbarGap), top,
+                     secondaryButtonWidth, s(38)};
+    l.removeSelected = {secondaryStart + (secondaryButtonWidth + toolbarGap) * 2,
+                        top, secondaryButtonWidth, s(38)};
+    l.clearDone = {secondaryStart + (secondaryButtonWidth + toolbarGap) * 3,
+                   top, secondaryButtonWidth, s(38)};
+    l.clearAll = {secondaryStart + (secondaryButtonWidth + toolbarGap) * 4,
+                  top, secondaryWidth - (secondaryButtonWidth + toolbarGap) * 4, s(38)};
+
+    const int controlX = leftX + s(132), controlW = leftW - s(154);
+    l.advancedToggle = {leftX + leftW - s(146), settingsY + s(9), s(126), s(28)};
+    l.outputField = {controlX, settingsY + s(44), controlW - s(100), s(30)};
+    l.outputBrowse = {controlX + controlW - s(92), settingsY + s(44), s(92), s(30)};
     const int containerW = (controlW - s(6)) / 2;
-    for (int index = 0; index < 2; ++index) {
-        l.container[index] = {
-            controlX + index * (containerW + s(6)),
-            settingsY + s(112), containerW, s(32)
-        };
-    }
+    for (int index = 0; index < 2; ++index)
+        l.container[index] = {controlX + index * (containerW + s(6)),
+                              settingsY + s(81), containerW, s(30)};
     const int codecW = (controlW - s(12)) / 3;
-    for (int index = 0; index < 3; ++index) {
-        l.codec[index] = {
-            controlX + index * (codecW + s(6)),
-            settingsY + s(153), codecW, s(32)
-        };
-    }
+    for (int index = 0; index < 3; ++index)
+        l.codec[index] = {controlX + index * (codecW + s(6)),
+                          settingsY + s(117), codecW, s(30)};
     backendCount = std::clamp(backendCount, 1, 4);
     const int backendW = (controlW - s(6) * (backendCount - 1)) / backendCount;
-    for (int index = 0; index < backendCount; ++index) {
-        l.backend[index] = {
-            controlX + index * (backendW + s(6)),
-            settingsY + s(194), backendW, s(32)
-        };
-    }
-    l.crfTrack = {controlX, settingsY + s(245), controlW - s(92), s(8)};
-    l.crfValue = {controlX + controlW - s(80), settingsY + s(229), s(80), s(32)};
+    for (int index = 0; index < backendCount; ++index)
+        l.backend[index] = {controlX + index * (backendW + s(6)),
+                            settingsY + s(153), backendW, s(30)};
+    l.crfTrack = {controlX, settingsY + s(201), controlW - s(94), s(8)};
+    l.crfValue = {controlX + controlW - s(82), settingsY + s(188), s(82), s(29)};
     const int compW = (controlW - s(18)) / 4;
-    for (int index = 0; index < 8; ++index) {
-        const int row = index / 4;
-        const int column = index % 4;
-        l.compression[index] = {
-            controlX + column * (compW + s(6)),
-            settingsY + s(280) + row * s(35),
-            compW, s(30)
-        };
-    }
+    for (int index = 0; index < 8; ++index)
+        l.compression[index] = {controlX + (index % 4) * (compW + s(6)),
+                                settingsY + s(220) + (index / 4) * s(29),
+                                compW, s(26)};
+
     const int audioW = (controlW - s(30)) / 6;
     for (int index = 0; index < 6; ++index) {
-        l.audio[index] = {
-            controlX + index * (audioW + s(6)),
-            settingsY + s(351), audioW, s(30)
-        };
-        l.resolution[index] = {
-            controlX + index * (audioW + s(6)),
-            settingsY + s(389), audioW, s(30)
-        };
+        l.audio[index] = {controlX + index * (audioW + s(6)),
+                          settingsY + s(276), audioW, s(29)};
+        l.resolution[index] = {controlX + index * (audioW + s(6)),
+                               settingsY + s(309), audioW, s(29)};
     }
     const int audioModeW = (controlW - s(12)) / 3;
-    for (int index = 0; index < 3; ++index) {
-        l.audioMode[index] = {
-            controlX + index * (audioModeW + s(6)),
-            settingsY + s(427), audioModeW, s(30)
-        };
-    }
-    const int optionGap = s(6);
+    for (int index = 0; index < 3; ++index)
+        l.audioMode[index] = {controlX + index * (audioModeW + s(6)),
+                              settingsY + s(342), audioModeW, s(29)};
+    const int optionGap = s(5);
     const int optionWidth = (leftW - s(40) - optionGap * 4) / 5;
-    const int optionY = settingsY + s(468);
-    l.parallel = {leftX + s(20), optionY, optionWidth, s(32)};
-    l.recursive = {leftX + s(20) + optionWidth + optionGap, optionY, optionWidth, s(32)};
-    l.skip = {leftX + s(20) + (optionWidth + optionGap) * 2, optionY, optionWidth, s(32)};
-    l.preserve = {leftX + s(20) + (optionWidth + optionGap) * 3, optionY, optionWidth, s(32)};
-    l.overwrite = {leftX + s(20) + (optionWidth + optionGap) * 4, optionY, optionWidth, s(32)};
-    l.queue = {leftX, settingsY + s(538), leftW, height - (settingsY + s(530)) - pad};
-    l.overallCard = {rightX, top, rightW, s(270)};
-    l.overallTrack = {rightX + s(22), top + s(126), rightW - s(44), s(12)};
-    l.start = {rightX + s(22), top + s(206), rightW - s(44), s(44)};
-    const int actionGap = s(8), actionWidth = (rightW - s(52) - actionGap) / 2;
-    l.pause = {rightX + s(22), top + s(206), actionWidth, s(44)};
-    l.cancel = {rightX + s(22) + actionWidth + actionGap, top + s(206),
-                rightW - s(44) - actionWidth - actionGap, s(44)};
-    l.ssh = {width - s(224), s(28), s(100), s(36)};
-    l.theme = {width - s(112), s(28), s(82), s(36)};
+    const int optionY = settingsY + s(376);
+    l.parallel = {leftX + s(20), optionY, optionWidth, s(29)};
+    l.recursive = {leftX + s(20) + optionWidth + optionGap, optionY, optionWidth, s(29)};
+    l.skip = {leftX + s(20) + (optionWidth + optionGap) * 2, optionY, optionWidth, s(29)};
+    l.preserve = {leftX + s(20) + (optionWidth + optionGap) * 3, optionY, optionWidth, s(29)};
+    l.overwrite = {leftX + s(20) + (optionWidth + optionGap) * 4, optionY, optionWidth, s(29)};
+
+    const int queueY = settingsY + s(expanded ? 430 : 242);
+    l.queue = {leftX, queueY, leftW, std::max(0, height - queueY - pad)};
+    l.overallCard = {rightX, top, rightW, s(220)};
+    l.overallTrack = {rightX + s(20), top + s(107), rightW - s(40), s(9)};
+    l.start = {rightX + s(20), top + s(160), rightW - s(40), s(42)};
+    const int actionGap = s(8), actionWidth = (rightW - s(40) - actionGap) / 2;
+    l.pause = {rightX + s(20), top + s(160), actionWidth, s(42)};
+    l.cancel = {rightX + s(20) + actionWidth + actionGap, top + s(160),
+                rightW - s(40) - actionWidth - actionGap, s(42)};
+    const int infoY = top + s(232);
+    const int infoButtonW = (rightW - s(46)) / 2;
+    l.rescan = {rightX + s(18), infoY + s(232), infoButtonW, s(30)};
+    l.diagnostic = {rightX + s(28) + infoButtonW, infoY + s(232),
+                    infoButtonW, s(30)};
+    l.ssh = {width - s(222), s(23), s(110), s(34)};
+    l.theme = {width - s(102), s(23), s(80), s(34)};
     return l;
 }
 
@@ -179,8 +173,12 @@ void drawText(HDC dc, const Rect& r, const std::wstring& value, COLORREF color, 
               UINT flags = DT_LEFT | DT_VCENTER | DT_SINGLELINE) {
     SetTextColor(dc, color); SetBkMode(dc, TRANSPARENT);
     auto old = SelectObject(dc, font);
+    if (r.width <= 0 || r.height <= 0) { SelectObject(dc, old); return; }
     RECT rect{r.x, r.y, r.x + r.width, r.y + r.height};
-    DrawTextW(dc, value.c_str(), static_cast<int>(value.size()), &rect, flags | DT_END_ELLIPSIS);
+    UINT options = flags | DT_NOPREFIX;
+    if ((flags & DT_SINGLELINE) != 0) options |= DT_END_ELLIPSIS;
+    if ((flags & DT_WORDBREAK) != 0) options |= DT_EDITCONTROL;
+    DrawTextW(dc, value.c_str(), static_cast<int>(value.size()), &rect, options);
     SelectObject(dc, old);
 }
 
@@ -763,11 +761,22 @@ public:
         wc.hbrBackground = nullptr;
         RegisterClassExW(&wc);
         const DWORD style = WS_OVERLAPPEDWINDOW | WS_CLIPCHILDREN;
-        RECT rect{0, 0, 1500, 1020}; AdjustWindowRect(&rect, style, FALSE);
+        RECT workArea{};
+        SystemParametersInfoW(SPI_GETWORKAREA, 0, &workArea, 0);
+        const int availableWidth = std::max(960L, workArea.right - workArea.left - 24L);
+        const int availableHeight = std::max(550L, workArea.bottom - workArea.top - 24L);
+        const double systemScale = static_cast<double>(std::max(96U, GetDpiForSystem())) / 96.0;
+        const int preferredWidth = static_cast<int>(std::lround(1400 * systemScale));
+        const int preferredHeight = static_cast<int>(std::lround(820 * systemScale));
+        RECT rect{0, 0, std::min(preferredWidth, availableWidth),
+                   std::min(preferredHeight, availableHeight)};
+        AdjustWindowRect(&rect, style, FALSE);
         window_ = CreateWindowExW(0, wc.lpszClassName, L"视频压缩工作台", style,
             CW_USEDEFAULT, CW_USEDEFAULT, rect.right - rect.left, rect.bottom - rect.top,
             nullptr, nullptr, instance, this);
         if (!window_) return 1;
+        SendMessageW(window_, WM_SETICON, ICON_BIG, reinterpret_cast<LPARAM>(wc.hIcon));
+        SendMessageW(window_, WM_SETICON, ICON_SMALL, reinterpret_cast<LPARAM>(wc.hIconSm));
         DragAcceptFiles(window_, TRUE);
         applyModernStyle(); ShowWindow(window_, SW_SHOW); UpdateWindow(window_);
         SetTimer(window_, 1, 160, nullptr);
@@ -950,7 +959,8 @@ private:
         HBITMAP bitmap = CreateCompatibleBitmap(target, width, height);
         auto oldBitmap = SelectObject(dc, bitmap);
         const Palette c = palette(dark_); const auto backends = availableBackends(snap.capabilities, settings_.codec);
-        const auto l = makeLayout(width, height, scale(), static_cast<int>(backends.size()));
+        const auto l = makeLayout(width, height, scale(), static_cast<int>(backends.size()),
+                                  advancedExpanded_);
         HBRUSH backgroundBrush = CreateSolidBrush(c.background);
         RECT fullRectangle{0, 0, width, height};
         FillRect(dc, &fullRectangle, backgroundBrush);
@@ -964,31 +974,36 @@ private:
         drawButton(dc,l.addFiles,L"添加文件",c,normal,true); drawButton(dc,l.addFolder,L"添加文件夹",c,normal);
         drawButton(dc,l.addArchive,L"添加 ZIP / PPTX",c,normal);
         drawButton(dc,l.importQueue,L"导入清单",c,smallFont); drawButton(dc,l.exportQueue,L"导出清单",c,smallFont);
-        drawButton(dc,l.removeSelected,L"移除选中",c,smallFont); drawButton(dc,l.clearDone,L"清除已完成",c,smallFont);
+        drawButton(dc,l.removeSelected,L"移除选中",c,smallFont,false,
+                   snap.running || selectedTask_ == 0);
+        drawButton(dc,l.clearDone,L"清除已完成",c,smallFont,false,snap.running);
+        drawButton(dc,l.clearAll,L"清空列表",c,smallFont,false,snap.running || snap.tasks.empty());
 
-        const int leftX = s(28), top = s(168), leftW = l.queue.width;
-        drawCard(dc, {leftX, top, leftW, s(528)}, c);
-        drawText(dc,{leftX+s(20),top+s(14),s(200),s(26)},L"编码设置",c.text,heading);
-        drawText(dc,{leftX+s(20),top+s(43),s(220),s(20)},L"输出文件夹",c.muted,smallFont);
+        const int leftX = l.queue.x, top = s(144), leftW = l.queue.width;
+        drawCard(dc, {leftX, top, leftW, s(advancedExpanded_ ? 418 : 228)}, c);
+        drawText(dc,{leftX+s(18),top+s(10),s(170),s(26)},L"编码设置",c.text,heading);
+        drawButton(dc,l.advancedToggle,advancedExpanded_?L"收起高级设置":L"展开高级设置",
+                   c,smallFont);
+        drawText(dc,{leftX+s(18),top+s(44),s(105),s(30)},L"输出文件夹",c.muted,smallFont);
         const std::wstring output = settings_.outputDirectory.empty()
             ? L"默认：与每个源文件保存在同一文件夹"
             : wide(settings_.outputDirectory);
         drawText(dc,l.outputField,output,c.text,smallFont);
         drawButton(dc,l.outputBrowse,L"选择目录",c,smallFont);
-        const Rect labelColumn{leftX + s(20), 0, s(120), s(32)};
-        drawText(dc,{labelColumn.x,top+s(112),labelColumn.width,labelColumn.height},L"输出容器",c.muted,smallFont);
+        const Rect labelColumn{leftX + s(18), 0, s(112), s(30)};
+        drawText(dc,{labelColumn.x,top+s(81),labelColumn.width,labelColumn.height},L"输出容器",c.muted,smallFont);
         const std::array<std::wstring,2> containers{L"MP4",L"与源文件相同"};
         for (int index = 0; index < 2; ++index) {
             drawButton(dc,l.container[index],containers[index],c,smallFont,
                 static_cast<int>(settings_.outputContainer)==index);
         }
-        drawText(dc,{labelColumn.x,top+s(153),labelColumn.width,s(32)},L"视频编码",c.muted,smallFont);
+        drawText(dc,{labelColumn.x,top+s(117),labelColumn.width,s(32)},L"视频编码",c.muted,smallFont);
         const std::array<std::wstring,3> codecs{L"H.264",L"H.265",L"AV1"};
         for (int index=0;index<3;++index) {
             drawButton(dc,l.codec[index],codecs[index],c,normal,
                 static_cast<int>(settings_.codec)==index);
         }
-        drawText(dc,{labelColumn.x,top+s(194),labelColumn.width,s(32)},L"编码设备",c.muted,smallFont);
+        drawText(dc,{labelColumn.x,top+s(153),labelColumn.width,s(32)},L"编码设备",c.muted,smallFont);
         const std::array<std::wstring,4> backendLabels{L"CPU",L"NVIDIA NVENC",L"Intel QSV",L"AMD AMF"};
         for (std::size_t index=0;index<backends.size();++index) {
             std::size_t labelIndex=0;
@@ -1002,10 +1017,10 @@ private:
                 settings_.backend==backends[index]);
         }
         if (backends.empty()) {
-            drawText(dc,{l.backend[0].x,top+s(194),l.backend[0].width,s(32)},
+            drawText(dc,{l.backend[0].x,top+s(153),l.backend[0].width,s(32)},
                 L"当前 FFmpeg 环境没有可用的编码器",c.red,smallFont);
         }
-        drawText(dc,{labelColumn.x,top+s(229),labelColumn.width,s(32)},L"目标质量",c.muted,smallFont);
+        drawText(dc,{labelColumn.x,top+s(188),labelColumn.width,s(32)},L"目标质量",c.muted,smallFont);
         drawProgress(dc,{l.crfTrack.x,l.crfTrack.y,l.crfTrack.width,l.crfTrack.height},
             static_cast<double>(settings_.crf)/crfMaximum(settings_.codec),c);
         const double crfFraction=static_cast<double>(settings_.crf)/crfMaximum(settings_.codec);
@@ -1015,48 +1030,52 @@ private:
             ? (crfEditText_.empty()?L"输入":crfEditText_)
             : std::to_wstring(settings_.crf);
         drawButton(dc,l.crfValue,crfValue,c,normal,true);
-        drawText(dc,{labelColumn.x,top+s(280),labelColumn.width,s(65)},L"压缩级别",c.muted,smallFont);
+        if (advancedExpanded_) {
+        drawText(dc,{labelColumn.x,top+s(220),labelColumn.width,s(58)},L"压缩级别",c.muted,smallFont);
         const std::array<std::wstring,8> levels{L"极速",L"非常快",L"快速",L"均衡",L"慢速",L"较慢",L"很慢",L"极致压缩"};
         for(int index=0;index<8;++index) {
             drawButton(dc,l.compression[index],levels[index],c,smallFont,
                 static_cast<int>(settings_.compression)==index);
         }
-        drawText(dc,{labelColumn.x,top+s(351),labelColumn.width,s(30)},L"音频码率",c.muted,smallFont);
-        const std::array<int,6> rates{96,128,160,192,256,320};
-        for(int index=0;index<6;++index) {
-            drawButton(dc,l.audio[index],std::to_wstring(rates[index])+L" kbps",c,smallFont,
-                settings_.audioBitrateKbps==rates[index],
-                settings_.audioMode!=AudioMode::Encode);
         }
-        drawText(dc,{labelColumn.x,top+s(389),labelColumn.width,s(30)},L"输出分辨率",c.muted,smallFont);
-        const std::array<std::wstring,6> resolutionLabels{L"原始尺寸",L"2160p",L"1440p",L"1080p",L"720p",L"480p"};
-        for(int index=0;index<6;++index) {
-            drawButton(dc,l.resolution[index],resolutionLabels[index],c,smallFont,
-                static_cast<int>(settings_.outputResolution)==index);
+        if (advancedExpanded_) {
+            drawText(dc,{labelColumn.x,top+s(276),labelColumn.width,s(30)},L"音频码率",c.muted,smallFont);
+            const std::array<int,6> rates{96,128,160,192,256,320};
+            for(int index=0;index<6;++index) {
+                drawButton(dc,l.audio[index],std::to_wstring(rates[index])+L" kbps",c,smallFont,
+                    settings_.audioBitrateKbps==rates[index],
+                    settings_.audioMode!=AudioMode::Encode);
+            }
+            drawText(dc,{labelColumn.x,top+s(309),labelColumn.width,s(30)},L"输出分辨率",c.muted,smallFont);
+            const std::array<std::wstring,6> resolutionLabels{L"原始尺寸",L"2160p",L"1440p",L"1080p",L"720p",L"480p"};
+            for(int index=0;index<6;++index) {
+                drawButton(dc,l.resolution[index],resolutionLabels[index],c,smallFont,
+                    static_cast<int>(settings_.outputResolution)==index);
+            }
+            drawText(dc,{labelColumn.x,top+s(342),labelColumn.width,s(30)},L"音频处理",c.muted,smallFont);
+            const std::array<std::wstring,3> audioModes{L"自动编码",L"保留原音频",L"移除音频"};
+            for(int index=0;index<3;++index) {
+                drawButton(dc,l.audioMode[index],audioModes[index],c,smallFont,
+                    static_cast<int>(settings_.audioMode)==index);
+            }
+            const std::wstring parallelLabel = settings_.maxParallelJobs == 0
+                ? L"并行：自动"
+                : L"并行：" + std::to_wstring(settings_.maxParallelJobs);
+            drawButton(dc, l.parallel, parallelLabel, c, smallFont);
+            drawButton(dc,l.recursive,settings_.recursive?L"递归扫描✓":L"递归扫描",c,smallFont,settings_.recursive);
+            drawButton(
+                dc, l.skip,
+                settings_.skipAlreadyProcessed ? L"跳过重复✓" : L"跳过重复",
+                c, smallFont, settings_.skipAlreadyProcessed);
+            drawButton(
+                dc, l.preserve,
+                settings_.preserveDirectoryStructure ? L"保留目录✓" : L"保留目录",
+                c, smallFont, settings_.preserveDirectoryStructure);
+            drawButton(dc,l.overwrite,settings_.overwrite?L"覆盖文件✓":L"保留文件",c,smallFont,settings_.overwrite);
         }
-        drawText(dc,{labelColumn.x,top+s(427),labelColumn.width,s(30)},L"音频处理",c.muted,smallFont);
-        const std::array<std::wstring,3> audioModes{L"自动编码",L"保留原音频",L"移除音频"};
-        for(int index=0;index<3;++index) {
-            drawButton(dc,l.audioMode[index],audioModes[index],c,smallFont,
-                static_cast<int>(settings_.audioMode)==index);
-        }
-        const std::wstring parallelLabel = settings_.maxParallelJobs == 0
-            ? L"并行：自动"
-            : L"并行：" + std::to_wstring(settings_.maxParallelJobs);
-        drawButton(dc, l.parallel, parallelLabel, c, smallFont);
-        drawButton(dc,l.recursive,settings_.recursive?L"递归扫描✓":L"递归扫描",c,smallFont,settings_.recursive);
-        drawButton(
-            dc, l.skip,
-            settings_.skipAlreadyProcessed ? L"跳过重复✓" : L"跳过重复",
-            c, smallFont, settings_.skipAlreadyProcessed);
-        drawButton(
-            dc, l.preserve,
-            settings_.preserveDirectoryStructure ? L"保留目录✓" : L"保留目录",
-            c, smallFont, settings_.preserveDirectoryStructure);
-        drawButton(dc,l.overwrite,settings_.overwrite?L"覆盖文件✓":L"保留文件",c,smallFont,settings_.overwrite);
 
         drawCard(dc,l.queue,c);
-        drawText(dc,{l.queue.x+s(20),l.queue.y+s(14),s(280),s(26)},L"处理队列",c.text,heading);
+        drawText(dc,{l.queue.x+s(20),l.queue.y+s(10),s(230),s(26)},L"处理队列",c.text,heading);
         const std::wstring queueSummary =
             L"总计 " + std::to_wstring(snap.totalTasks) +
             L"  ·  运行 " + std::to_wstring(snap.runningTasks) +
@@ -1064,17 +1083,21 @@ private:
             L"  ·  失败 " + std::to_wstring(snap.failedTasks);
         drawText(
             dc,
-            {l.queue.x + l.queue.width - s(340), l.queue.y + s(16), s(320), s(22)},
+            {l.queue.x + l.queue.width - s(320), l.queue.y + s(13), s(300), s(22)},
             queueSummary, c.muted, smallFont,
             DT_RIGHT | DT_VCENTER | DT_SINGLELINE);
         const auto rows = visibleRows(snap);
-        const int rowHeight = s(68);
-        const int listTop = l.queue.y + s(54);
+        const int rowHeight = s(60);
+        const int listTop = l.queue.y + s(48);
         const int visibleRowsCount =
-            std::max(1, (l.queue.height - s(68)) / rowHeight);
+            std::max(0, (l.queue.height - s(62)) / rowHeight);
         const int maxScroll = std::max(
             0, static_cast<int>(rows.size()) - visibleRowsCount);
         scrollOffset_ = std::clamp(scrollOffset_, 0, maxScroll);
+        const int queueClip = SaveDC(dc);
+        IntersectClipRect(dc, l.queue.x + s(10), listTop,
+                          l.queue.x + l.queue.width - s(10),
+                          l.queue.y + l.queue.height - s(12));
         if(rows.empty()) {
             drawText(dc,{l.queue.x+s(30),listTop+s(36),l.queue.width-s(60),s(100)},
                 L"将视频、ZIP 或 PPTX 文件拖到窗口中，或使用上方按钮添加文件和文件夹。",c.muted,normal,DT_CENTER|DT_VCENTER|DT_WORDBREAK);
@@ -1088,26 +1111,26 @@ private:
                 const bool child =
                     task.kind != TaskKind::Video &&
                     item.name != basename(task.inputPath);
-                if (child) {
-                    drawText(
-                        dc,
-                        {l.queue.x + s(38), y + s(4), l.queue.width - s(58), s(20)},
-                        L"↳ " + wide(item.name), c.muted, smallFont);
-                } else {
-                    drawText(
-                        dc,
-                        {l.queue.x + s(20), y + s(5), l.queue.width - s(40), s(22)},
-                        wide(item.name) + L"   ·   " + wide(taskKindName(task.kind)),
-                        c.text, normal);
-                }
-                const TaskState state = child ? item.state : task.state;
-                const double progress = child ? item.progress : task.progress;
                 if (selectedTask_ == task.id)
                     fillRound(
                         dc,
                         {l.queue.x + s(10), y + s(2),
                          l.queue.width - s(20), rowHeight - s(4)},
                         c.accentSoft, c.accentSoft, 7);
+                if (child) {
+                    drawText(
+                        dc,
+                        {l.queue.x + s(38), y + s(4), l.queue.width - s(190), s(20)},
+                        L"↳ " + wide(item.name), c.text, smallFont);
+                } else {
+                    drawText(
+                        dc,
+                        {l.queue.x + s(20), y + s(5), l.queue.width - s(200), s(22)},
+                        wide(item.name) + L"   ·   " + wide(taskKindName(task.kind)),
+                        c.text, normal);
+                }
+                const TaskState state = child ? item.state : task.state;
+                const double progress = child ? item.progress : task.progress;
                 const std::wstring stateText=wide(taskStateName(state));
                 const COLORREF stateColor =
                     state == TaskState::Failed
@@ -1120,7 +1143,7 @@ private:
                     {l.queue.x + l.queue.width - s(160), y + s(5), s(140), s(20)},
                     stateText, stateColor, smallFont,
                     DT_RIGHT | DT_VCENTER | DT_SINGLELINE);
-                drawProgress(dc,{l.queue.x+s(20),y+s(36),l.queue.width-s(180),s(7)},progress,c);
+                drawProgress(dc,{l.queue.x+s(20),y+s(32),l.queue.width-s(180),s(7)},progress,c);
                 std::wstring detail;
                 if (child) {
                     detail = formatProgressLine(item.progressInfo, item.detail);
@@ -1139,7 +1162,7 @@ private:
                 }
                 drawText(
                     dc,
-                    {l.queue.x + l.queue.width - s(148), y + s(27), s(128), s(22)},
+                    {l.queue.x + l.queue.width - s(148), y + s(25), s(128), s(22)},
                     detail, c.muted, smallFont,
                     DT_RIGHT | DT_VCENTER | DT_SINGLELINE);
                 HPEN separatorPen = CreatePen(PS_SOLID, 1, c.border);
@@ -1150,12 +1173,13 @@ private:
                 DeleteObject(separatorPen);
             }
         }
+        RestoreDC(dc, queueClip);
         if (rows.size() > static_cast<std::size_t>(visibleRowsCount)) {
             drawText(
                 dc,
                 {l.queue.x + l.queue.width - s(130),
                  l.queue.y + l.queue.height - s(24), s(110), s(18)},
-                L"滚动查看其余任务", c.muted, smallFont,
+                L"滚动查看更多", c.muted, smallFont,
                 DT_RIGHT | DT_VCENTER | DT_SINGLELINE);
         }
 
@@ -1172,18 +1196,18 @@ private:
             wide(snap.status), c.text, normal);
         drawText(
             dc,
-            {l.overallCard.x + s(22), l.overallCard.y + s(82),
+            {l.overallCard.x + s(22), l.overallCard.y + s(78),
              l.overallCard.width - s(44), s(22)},
             wide(snap.detail), c.muted, smallFont);
         drawProgress(dc,l.overallTrack,snap.overallProgress,c);
         wchar_t percent[24]{}; swprintf_s(percent,L"%.1f%%",snap.overallProgress*100.0);
-        drawText(dc,{l.overallCard.x+s(22),l.overallCard.y+s(144),s(100),s(26)},percent,c.accent,heading);
+        drawText(dc,{l.overallCard.x+s(22),l.overallCard.y+s(125),s(100),s(26)},percent,c.accent,heading);
         const std::wstring completedLabel =
             L"完成 " + std::to_wstring(snap.completedTasks + snap.skippedTasks) +
             L" / " + std::to_wstring(snap.totalTasks);
         drawText(
             dc,
-            {l.overallCard.x + s(130), l.overallCard.y + s(145),
+            {l.overallCard.x + s(130), l.overallCard.y + s(125),
              l.overallCard.width - s(152), s(24)},
             completedLabel, c.muted, smallFont);
         if (!snap.running) {
@@ -1194,58 +1218,51 @@ private:
             drawButton(dc,l.cancel,L"取消任务",c,normal,false);
         }
 
-        const int infoY=l.overallCard.y+l.overallCard.height+s(18);
+        const int infoY=l.overallCard.y+l.overallCard.height+s(12);
         const Rect info{l.overallCard.x,infoY,l.overallCard.width,height-infoY-s(28)};
         drawCard(dc,info,c);
-        drawText(dc,{info.x+s(22),info.y+s(18),info.width-s(44),s(26)},L"设备与编码摘要",c.text,heading);
-        drawText(
-            dc, {info.x + s(22), info.y + s(58), info.width - s(44), s(22)},
-            L"格式  " + wide(codecName(settings_.codec)) +
-                L" · " + wide(outputContainerName(settings_.outputContainer)),
-            c.text, normal);
-        drawText(
-            dc, {info.x + s(22), info.y + s(88), info.width - s(44), s(22)},
-            L"编码器  " + wide(backendName(settings_.backend)), c.text, normal);
-        drawText(
-            dc, {info.x + s(22), info.y + s(118), info.width - s(44), s(22)},
-            L"CRF  " + std::to_wstring(settings_.crf) +
-                L"  ·  " + wide(compressionName(settings_.compression)),
-            c.text, normal);
-        drawText(
-            dc, {info.x + s(22), info.y + s(148), info.width - s(44), s(22)},
-            L"音频  " + wide(audioModeName(settings_.audioMode)) +
-                (settings_.audioMode == AudioMode::Encode
-                    ? L" · " + std::to_wstring(settings_.audioBitrateKbps) + L" kbps"
-                    : L""),
-            c.text, normal);
-        drawText(
-            dc, {info.x + s(22), info.y + s(178), info.width - s(44), s(22)},
-            L"分辨率  " + wide(outputResolutionName(settings_.outputResolution)),
-            c.text, normal);
+        drawText(dc,{info.x+s(20),info.y+s(12),info.width-s(40),s(27)},
+                 L"设备与编码摘要",c.text,heading);
+        drawText(dc,{info.x+s(20),info.y+s(46),info.width-s(40),s(22)},
+                 L"格式  " + wide(codecName(settings_.codec)) +
+                 L" · " + wide(outputContainerName(settings_.outputContainer)),c.text,normal);
+        drawText(dc,{info.x+s(20),info.y+s(73),info.width-s(40),s(22)},
+                 L"编码器  " + wide(backendName(settings_.backend)),c.text,normal);
+        drawText(dc,{info.x+s(20),info.y+s(100),info.width-s(40),s(22)},
+                 L"质量  " + std::to_wstring(settings_.crf) +
+                 L" · " + wide(compressionName(settings_.compression)),c.text,normal);
+        drawText(dc,{info.x+s(20),info.y+s(127),info.width-s(40),s(22)},
+                 L"音频  " + wide(audioModeName(settings_.audioMode)) +
+                 (settings_.audioMode == AudioMode::Encode
+                     ? L" · " + std::to_wstring(settings_.audioBitrateKbps) + L" kbps"
+                     : L""),c.text,normal);
+        drawText(dc,{info.x+s(20),info.y+s(154),info.width-s(40),s(22)},
+                 L"分辨率  " + wide(outputResolutionName(settings_.outputResolution)),
+                 c.text,normal);
         const std::wstring computeTarget = settings_.remoteHost.empty()
-            ? L"计算设备  本机"
-            : L"计算设备  远程 · " + wide(settings_.remoteHost);
-        drawText(
-            dc, {info.x + s(22), info.y + s(208), info.width - s(44), s(22)},
-            computeTarget, c.text, normal);
-        drawText(
-            dc,
-            {info.x + s(22), info.y + s(238), info.width - s(44), s(44)},
-            wide(snap.resourcePlan.explanation), c.muted, smallFont,
-            DT_LEFT | DT_TOP | DT_WORDBREAK);
-        drawText(
-            dc,
-            {info.x + s(22), info.y + s(300), info.width - s(44), s(70)},
-            L"支持 H.264、H.265 和 AV1。ZIP 与 PPTX 会保留其他文件并更新视频引用。\n"
-            L"音频可自动编码、保留原音频或移除；输出分辨率可限制最大尺寸。",
-            c.muted, smallFont, DT_LEFT | DT_TOP | DT_WORDBREAK);
-        if (!snap.error.empty()) {
-            drawText(
-                dc,
-                {info.x + s(22), info.y + info.height - s(74),
-                 info.width - s(44), s(58)},
-                wide(snap.error), c.red, smallFont,
-                DT_LEFT | DT_TOP | DT_WORDBREAK);
+            ? L"计算设备  本机" : L"计算设备  远程 · " + wide(settings_.remoteHost);
+        drawText(dc,{info.x+s(20),info.y+s(181),info.width-s(40),s(22)},
+                 computeTarget,c.text,normal);
+        const bool nvencReady = snap.capabilities.supports(
+            settings_.codec, EncoderBackend::NVENC);
+        drawText(dc,{info.x+s(20),info.y+s(207),info.width-s(40),s(19)},
+                 nvencReady ? L"NVIDIA NVENC 已检测到" : L"NVENC 未通过检测，可查看原因",
+                 nvencReady ? c.green : c.muted,smallFont);
+        if (info.height >= s(278)) {
+            drawButton(dc,l.rescan,L"重新检测",c,smallFont,false,snap.running);
+            drawButton(dc,l.diagnostic,L"检测详情",c,smallFont);
+        }
+        const int detailY = info.y + s(277);
+        const int availableDetail = info.height - s(289);
+        if (availableDetail > s(26)) {
+            if (!snap.error.empty()) {
+                drawText(dc,{info.x+s(20),detailY,info.width-s(40),availableDetail},
+                         wide(snap.error),c.red,smallFont,DT_LEFT|DT_TOP|DT_WORDBREAK);
+            } else {
+                drawText(dc,{info.x+s(20),detailY,info.width-s(40),availableDetail},
+                         wide(snap.resourcePlan.explanation),c.muted,smallFont,
+                         DT_LEFT|DT_TOP|DT_WORDBREAK);
+            }
         }
 
         DeleteObject(title); DeleteObject(normal); DeleteObject(smallFont); DeleteObject(heading);
@@ -1263,7 +1280,7 @@ private:
         const auto backends = availableBackends(snapshot.capabilities, settings_.codec);
         const Layout layout = makeLayout(
             clientRectangle.right, clientRectangle.bottom,
-            scale(), static_cast<int>(backends.size()));
+            scale(), static_cast<int>(backends.size()), advancedExpanded_);
 
         if (editingCrf_ && !contains(layout.crfValue, x, y)) {
             commitCrfText();
@@ -1301,13 +1318,47 @@ private:
             return;
         }
         if (contains(layout.removeSelected, x, y)) {
-            if (selectedTask_ != 0) {
+            if (!snapshot.running && selectedTask_ != 0) {
                 controller_.removeTask(selectedTask_);
+                selectedTask_ = 0;
             }
             return;
         }
         if (contains(layout.clearDone, x, y)) {
-            controller_.clearCompleted();
+            if (!snapshot.running) {
+                controller_.clearCompleted();
+                selectedTask_ = 0;
+            }
+            return;
+        }
+        if (contains(layout.clearAll, x, y)) {
+            if (!snapshot.running && !snapshot.tasks.empty() &&
+                MessageBoxW(window_, L"清空当前任务列表？源文件和已经生成的输出文件将保留。",
+                            L"确认清空队列", MB_YESNO | MB_ICONQUESTION) == IDYES) {
+                controller_.clearAll();
+                selectedTask_ = 0;
+                scrollOffset_ = 0;
+            }
+            return;
+        }
+        if (contains(layout.advancedToggle, x, y)) {
+            advancedExpanded_ = !advancedExpanded_;
+            scrollOffset_ = 0;
+            return;
+        }
+        if (contains(layout.rescan, x, y) && !snapshot.running &&
+            clientRectangle.bottom >= layout.rescan.y + layout.rescan.height + s(16)) {
+            controller_.initialize();
+            settings_ = controller_.snapshot().settings;
+            return;
+        }
+        if (contains(layout.diagnostic, x, y) &&
+            clientRectangle.bottom >= layout.diagnostic.y + layout.diagnostic.height + s(16)) {
+            std::wstring detail = wide(snapshot.capabilities.nvencProbeDetails);
+            if (detail.empty()) detail = L"尚未获得 NVENC 检测信息。";
+            detail += L"\n请确认 NVIDIA 显卡驱动正常，并在 Windows 图形设置中"
+                      L"为安装目录下 bin\\ffmpeg.exe 选择高性能 GPU。";
+            MessageBoxW(window_, detail.c_str(), L"NVENC 编码器检测", MB_OK | MB_ICONINFORMATION);
             return;
         }
         if (contains(layout.outputBrowse, x, y)) {
@@ -1388,6 +1439,7 @@ private:
             }
         }
 
+        if (advancedExpanded_) {
         const std::array<int, 6> audioRates{96, 128, 160, 192, 256, 320};
         if (settings_.audioMode == AudioMode::Encode) {
             for (std::size_t index = 0; index < audioRates.size(); ++index) {
@@ -1447,6 +1499,7 @@ private:
             updateSettings();
             return;
         }
+        }
 
         const int crfTop = layout.crfTrack.y - s(10);
         const int crfBottom = layout.crfTrack.y + s(18);
@@ -1459,18 +1512,16 @@ private:
             return;
         }
 
-        const int queueTop = layout.queue.y + s(54);
-        if (y >= queueTop &&
-            x >= layout.queue.x &&
-            x <= layout.queue.x + layout.queue.width) {
-            const int rowHeight = s(68);
+        const int queueTop = layout.queue.y + s(48);
+        const int rowHeight = s(60);
+        const int visibleCount = std::max(0, (layout.queue.height - s(62)) / rowHeight);
+        if (x >= layout.queue.x && x < layout.queue.x + layout.queue.width &&
+            y >= queueTop && y < queueTop + visibleCount * rowHeight) {
             const int visibleIndex = (y - queueTop) / rowHeight + scrollOffset_;
             const auto visibleItems = visibleRows(controller_.snapshot());
-
             if (visibleIndex >= 0 &&
                 visibleIndex < static_cast<int>(visibleItems.size())) {
-                selectedTask_ =
-                    visibleItems[static_cast<std::size_t>(visibleIndex)].first.id;
+                selectedTask_ = visibleItems[static_cast<std::size_t>(visibleIndex)].first.id;
             }
         }
     }
@@ -1487,8 +1538,8 @@ private:
             return 0;
         case WM_GETMINMAXINFO: {
             auto* information = reinterpret_cast<MINMAXINFO*>(lParam);
-            information->ptMinTrackSize.x = s(1180);
-            information->ptMinTrackSize.y = s(820);
+            information->ptMinTrackSize.x = std::min(s(1100), GetSystemMetrics(SM_CXSCREEN) - s(40));
+            information->ptMinTrackSize.y = std::min(s(610), GetSystemMetrics(SM_CYSCREEN) - s(50));
             return 0;
         }
         case WM_DPICHANGED: {
@@ -1513,7 +1564,8 @@ private:
                 RECT clientRectangle{};
                 GetClientRect(window_, &clientRectangle);
                 const Layout layout = makeLayout(
-                    clientRectangle.right, clientRectangle.bottom, scale());
+                    clientRectangle.right, clientRectangle.bottom, scale(), 4,
+                    advancedExpanded_);
                 commitCrf(GET_X_LPARAM(lParam), layout);
                 InvalidateRect(window_, nullptr, FALSE);
             }
@@ -1542,6 +1594,18 @@ private:
             }
             break;
         case WM_KEYDOWN:
+            if (wParam == VK_DELETE && selectedTask_ != 0 && !controller_.snapshot().running &&
+                !editingCrf_) {
+                controller_.removeTask(selectedTask_);
+                selectedTask_ = 0;
+                InvalidateRect(window_, nullptr, FALSE);
+                return 0;
+            }
+            if (wParam == VK_ESCAPE && !editingCrf_) {
+                selectedTask_ = 0;
+                InvalidateRect(window_, nullptr, FALSE);
+                return 0;
+            }
             if (editingCrf_ && wParam == VK_ESCAPE) {
                 editingCrf_ = false;
                 crfEditText_.clear();
@@ -1600,6 +1664,7 @@ private:
     bool editingCrf_{false};
     std::wstring crfEditText_;
     int scrollOffset_{0};
+    bool advancedExpanded_{false};
     std::uint64_t selectedTask_{0};
 };
 

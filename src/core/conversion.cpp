@@ -914,16 +914,28 @@ RemoteProbeResult FfmpegService::probeRemote(const std::string& alias,
     for (const auto& [encoderName, available] : hardwareEncoders) {
         *available = hasEncoder(encoderName);
         if (!*available || !testHardware) {
+            if (std::string_view(encoderName).ends_with("_nvenc")) {
+                result.capabilities.nvencProbeDetails += std::string(encoderName) + ": " +
+                    (*available ? "FFmpeg 已提供该编码器，尚未检测硬件" :
+                                  "当前 FFmpeg 构建未提供该编码器") + "\n";
+            }
             continue;
         }
 
         const std::string testCommand =
             "ffmpeg -hide_banner -loglevel error -nostdin "
-            "-f lavfi -i testsrc2=size=128x128:rate=1:duration=1 "
-            "-frames:v 1 -an -c:v " + std::string(encoderName) +
-            " -f null - >/dev/null 2>&1";
+            "-f lavfi -i testsrc2=size=640x360:rate=30:duration=1 "
+            "-frames:v 3 -an -pix_fmt yuv420p -c:v " + std::string(encoderName) +
+            " -f null - 2>&1";
 
-        *available = sshService_->runRemote(alias, testCommand).exitCode == 0;
+        const ProcessResult hardwareTest = sshService_->runRemote(alias, testCommand);
+        *available = hardwareTest.exitCode == 0;
+        if (std::string_view(encoderName).ends_with("_nvenc")) {
+            std::string status = *available ? "检测成功" : trim(hardwareTest.output);
+            if (status.size() > 260) status.resize(260);
+            result.capabilities.nvencProbeDetails +=
+                std::string(encoderName) + ": " + (status.empty() ? "检测失败" : status) + "\n";
+        }
     }
 
     if (result.capabilities.ffmpegVersion.empty() ||
@@ -959,17 +971,42 @@ EncoderCapabilities FfmpegService::probeCapabilities(bool testHardware) const {
             {"h264_amf", &capabilities.h264Amf}, {"hevc_amf", &capabilities.hevcAmf},
             {"av1_amf", &capabilities.av1Amf}};
         for (const auto& [name, flag] : hardware) {
-            *flag = available(name) && (!testHardware || probeHardwareEncoder(name));
+            const bool encoderListed = available(name);
+            std::string detail;
+            *flag = encoderListed && (!testHardware || probeHardwareEncoder(name, &detail));
+            if (name.ends_with("_nvenc")) {
+                const std::string status = !encoderListed
+                    ? "当前 FFmpeg 构建未提供该编码器"
+                    : !testHardware ? "FFmpeg 已提供该编码器，尚未检测硬件"
+                    : (*flag ? "检测成功" : detail);
+                capabilities.nvencProbeDetails += name + ": " + status + "\n";
+            }
         }
     }
     capabilities.ffprobeAvailable = runProcess({ffprobePath_, "-version"}).exitCode == 0;
     return capabilities;
 }
 
-bool FfmpegService::probeHardwareEncoder(const std::string& encoder) const {
+bool FfmpegService::probeHardwareEncoder(const std::string& encoder, std::string* detail) const {
+    // Probe a practical 640x360 input. Some hardware encoders reject very small frames.
     const ProcessResult result = runProcess({ffmpegPath_, "-hide_banner", "-loglevel", "error",
-        "-nostdin", "-f", "lavfi", "-i", "testsrc2=size=128x128:rate=1:duration=1",
-        "-frames:v", "1", "-an", "-c:v", encoder, "-f", "null", "-"});
+        "-nostdin", "-f", "lavfi", "-i", "testsrc2=size=640x360:rate=30:duration=1",
+        "-frames:v", "3", "-an", "-pix_fmt", "yuv420p",
+        "-c:v", encoder, "-f", "null", "-"});
+    if (detail != nullptr) {
+        if (result.exitCode == 0) {
+            *detail = "检测成功";
+        } else {
+            *detail = trim(result.output);
+            for (char& character : *detail) {
+                if (character == '\r' || character == '\n' || character == '\t')
+                    character = ' ';
+            }
+            if (detail->size() > 260) detail->resize(260);
+            if (detail->empty()) *detail = "设备初始化失败，FFmpeg 退出码：" +
+                std::to_string(result.exitCode);
+        }
+    }
     return result.exitCode == 0;
 }
 

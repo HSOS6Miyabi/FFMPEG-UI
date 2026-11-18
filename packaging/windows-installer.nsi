@@ -17,8 +17,25 @@ Unicode true
   !error "Pass /DPRODUCT_ICON=absolute-path"
 !endif
 
+!ifndef PRODUCT_WELCOME_BMP
+  !error "Pass /DPRODUCT_WELCOME_BMP=absolute-path"
+!endif
+!ifndef PRODUCT_HEADER_BMP
+  !error "Pass /DPRODUCT_HEADER_BMP=absolute-path"
+!endif
+
 !define MUI_ICON "${PRODUCT_ICON}"
 !define MUI_UNICON "${PRODUCT_ICON}"
+!define MUI_WELCOMEFINISHPAGE_BITMAP "${PRODUCT_WELCOME_BMP}"
+!define MUI_UNWELCOMEFINISHPAGE_BITMAP "${PRODUCT_WELCOME_BMP}"
+!define MUI_HEADERIMAGE
+!define MUI_HEADERIMAGE_RIGHT
+!define MUI_HEADERIMAGE_BITMAP "${PRODUCT_HEADER_BMP}"
+!define MUI_HEADERIMAGE_UNBITMAP "${PRODUCT_HEADER_BMP}"
+!define MUI_HEADERIMAGE_BITMAP_STRETCH "AspectFitHeight"
+!define MUI_HEADERIMAGE_UNBITMAP_STRETCH "AspectFitHeight"
+!define MUI_BGCOLOR "F7F9FF"
+
 
 !define PRODUCT_NAME "视频压缩工作台"
 !define PRODUCT_EXE "video-compression-workbench.exe"
