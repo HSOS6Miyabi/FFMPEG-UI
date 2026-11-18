@@ -11,6 +11,7 @@
 #include <array>
 #include <atomic>
 #include <chrono>
+#include <cmath>
 #include <clocale>
 #include <cstdlib>
 #include <cstdio>
@@ -251,6 +252,40 @@ int runSelfTest(bool keepFiles) {
     };
     const std::array<ffmpegui::VideoCodec, 3> codecs{
         ffmpegui::VideoCodec::H264, ffmpegui::VideoCodec::H265, ffmpegui::VideoCodec::AV1};
+    const auto preview = service.previewFrame(pathToUtf8(source), 0.5, 320, 180);
+    check("seekable preview reads decoded RGB frames",
+          preview && preview->width == 320 && preview->height == 180 &&
+          preview->rgb.size() == 320U * 180U * 3U);
+    check("reject invalid preview time and dimensions",
+          !service.previewFrame(pathToUtf8(source), -1.0, 320, 180) &&
+          !service.previewFrame(pathToUtf8(source), 0.1, 9000, 180));
+    if (capabilities.supports(ffmpegui::VideoCodec::H264,
+                              ffmpegui::EncoderBackend::CPU)) {
+        ffmpegui::ConversionSettings clipped;
+        clipped.inputPath = pathToUtf8(source);
+        clipped.outputPath = pathToUtf8(work / "trimmed-segment.mp4");
+        clipped.codec = ffmpegui::VideoCodec::H264;
+        clipped.backend = ffmpegui::EncoderBackend::CPU;
+        clipped.crf = 25;
+        clipped.compression = ffmpegui::CompressionLevel::Fastest;
+        clipped.audioMode = ffmpegui::AudioMode::Remove;
+        clipped.trimStartSeconds = 0.250;
+        clipped.trimEndSeconds = 1.125;
+        double lastProgressDuration = 0.0;
+        const auto clippedResult = service.convert(clipped, capabilities,
+            [&](const ffmpegui::ConversionProgress& progress) {
+                if (progress.durationSeconds)
+                    lastProgressDuration = *progress.durationSeconds;
+            }, nullptr);
+        const auto clippedDuration = clippedResult.success
+            ? service.probeDuration(clippedResult.outputPath) : std::nullopt;
+        if (!clippedResult.success)
+            std::cout << "Trimmed conversion: " << clippedResult.message << '\n';
+        check("precise trim conversion and bounded progress duration",
+              clippedResult.success && clippedDuration &&
+              std::abs(*clippedDuration - 0.875) < 0.20 &&
+              std::abs(lastProgressDuration - 0.875) < 0.01);
+    }
     if (capabilities.supports(ffmpegui::VideoCodec::VP9, ffmpegui::EncoderBackend::CPU)) {
         ffmpegui::ConversionSettings vp9Settings;
         vp9Settings.inputPath = pathToUtf8(source);
@@ -855,6 +890,16 @@ int runSelfTest(bool keepFiles) {
         const auto zipSkip = archives.process(pathToUtf8(zipInput), pathToUtf8(zipOutput), false,
             settings, capabilities, 2, 2, {}, nullptr);
         check("ZIP same-parameter repeat skip", zipSkip.success && zipSkip.skipped);
+        auto trimmedArchiveSettings = settings;
+        trimmedArchiveSettings.trimStartSeconds = 0.250;
+        trimmedArchiveSettings.trimEndSeconds = 0.875;
+        const fs::path trimmedArchiveOutput = work / "sample-trimmed.zip";
+        const auto trimmedArchive = archives.process(
+            pathToUtf8(zipInput), pathToUtf8(trimmedArchiveOutput), false,
+            trimmedArchiveSettings, capabilities, 2, 2, {}, nullptr);
+        check("ZIP nested media uses the selected trim interval",
+              trimmedArchive.success &&
+              readZipEntry(trimmedArchiveOutput, "media/clip.mp4").has_value());
 
         auto mkvArchiveSettings = settings;
         mkvArchiveSettings.outputContainer = ffmpegui::OutputContainer::MKV;
