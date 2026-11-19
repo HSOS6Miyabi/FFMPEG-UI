@@ -1511,6 +1511,16 @@ private:
     }
     void draw() {
         const auto snap = controller_.snapshot();
+        if (!firstVideoSelected_) {
+            for (const auto& task : snap.tasks) {
+                if (task.items.empty()) continue;
+                selectedTask_ = task.id;
+                selectedItemName_ = task.kind == TaskKind::Video ?
+                    "" : task.items.front().name;
+                firstVideoSelected_ = true;
+                break;
+            }
+        }
         RECT client{}; GetClientRect(window_, &client); const int width = client.right, height = client.bottom;
         HDC target = GetDC(window_);
         HDC dc = CreateCompatibleDC(target);
@@ -2703,6 +2713,7 @@ private:
     bool failedOnly_{false};
     std::uint64_t selectedTask_{0};
     std::string selectedItemName_;
+    bool firstVideoSelected_{false};
 };
 
 } // namespace

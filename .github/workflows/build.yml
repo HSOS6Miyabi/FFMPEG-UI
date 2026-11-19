@@ -150,13 +150,18 @@ jobs:
             import -window "$window" artifacts/ui/video-compression-workbench-linux-expanded.png
 
             # Select the first queue video before editing its individual trim.
-            xdotool mousemove --window "$window" 180 742 click 1
+            xdotool mousemove --window "$window" 180 723 click 1
             sleep 1
+            import -window "$window" artifacts/ui/video-compression-workbench-linux-selected-video.png
             xdotool mousemove --window "$window" 130 608 click 1
             xdotool type --window "$window" --clearmodifiers "00:00:00.500"
             xdotool key --window "$window" Return
             sleep 1
-            grep -Eq "^I \"\" 0\\.5 -1$" "$FFMPEG_STUDIO_CONFIG_DIR/queue.ffq"
+            cat "$FFMPEG_STUDIO_CONFIG_DIR/queue.ffq"
+            if ! grep -Eq "^I \"\" 0\\.5 -1$" "$FFMPEG_STUDIO_CONFIG_DIR/queue.ffq"; then
+              import -window "$window" artifacts/ui/video-compression-workbench-linux-after-time-edit.png
+              exit 1
+            fi
 
             # Preview a real video and mark a two-second interval in the native trimmer.
             xdotool mousemove --window "$window" 910 608 click 1
@@ -296,6 +301,8 @@ jobs:
           path: |
             artifacts/ui/video-compression-workbench-linux.png
             artifacts/ui/video-compression-workbench-linux-expanded.png
+            artifacts/ui/video-compression-workbench-linux-selected-video.png
+            artifacts/ui/video-compression-workbench-linux-after-time-edit.png
             artifacts/ui/video-compression-workbench-linux-trimmer.png
             artifacts/ui/video-compression-workbench-linux-hidpi-selection.png
             artifacts/ui/video-compression-workbench-linux-queue-focus.png

@@ -163,9 +163,10 @@ try {
     $openX = $gridX + 2 * ($trimWidth + $trimGap) + [int]($openWidth / 2)
     $openY = $settingsY + (& $S 232) + (& $S 15)
     $queueRowX = $pad + (& $S 100)
-    $queueRowY = $settingsY + (& $S 294) + (& $S 65)
+    $queueRowY = $settingsY + (& $S 294) + (& $S 112)
     Write-Host "Selecting a queued video before opening its trimmer."
     Click-Window $handle $queueRowX $queueRowY
+    Save-WindowScreenshot $handle (Join-Path $output 'video-compression-workbench-windows-selected-video.png')
     Write-Host "Clicking visual trimmer at client location ($openX, $openY)."
     Click-Window $handle $openX $openY
 

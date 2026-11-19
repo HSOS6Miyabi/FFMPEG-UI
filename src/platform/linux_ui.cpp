@@ -1706,6 +1706,16 @@ private:
 
     void draw() {
         const auto snapshot = controller_.snapshot();
+        if (!firstVideoSelected_) {
+            for (const auto& task : snapshot.tasks) {
+                if (task.items.empty()) continue;
+                selectedTask_ = task.id;
+                selectedItemName_ = task.kind == TaskKind::Video ?
+                    "" : task.items.front().name;
+                firstVideoSelected_ = true;
+                break;
+            }
+        }
         const auto backends = availableBackends(snapshot.capabilities, settings_.codec);
         const auto original = makeLayout(
             width_, height_, scale_, static_cast<int>(backends.size()),
@@ -2861,6 +2871,7 @@ private:
     int scrollOffset_{0};
     std::uint64_t selectedTask_{0};
     std::string selectedItemName_;
+    bool firstVideoSelected_{false};
     Atom wmDelete_{};
     Atom xdndEnter_{};
     Atom xdndPosition_{};
