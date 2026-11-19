@@ -905,7 +905,7 @@ int runSelfTest(bool keepFiles) {
         const auto archiveBeforeTrim = indexedArchive.snapshot();
         check("edit exactly one archived video",
               indexedArchive.setVideoTrim(archiveBeforeTrim.tasks.front().id,
-                                         "media/clip.mov", {0.250, 0.875}));
+                                         "media/clip.avi", {0.250, 0.875}));
         const auto archiveAfterTrim = indexedArchive.snapshot();
         check("other archived videos retain full duration",
               std::count_if(archiveAfterTrim.tasks.front().items.begin(),
@@ -913,6 +913,7 @@ int runSelfTest(bool keepFiles) {
                   [](const auto& item) {
                       return item.trim.startSeconds > 0.0 || item.trim.endSeconds >= 0.0;
                   }) == 1);
+        indexedArchive.clearAll();
         indexedArchive.shutdown();
         const auto zipSkip = archives.process(pathToUtf8(zipInput), pathToUtf8(zipOutput), false,
             settings, capabilities, 2, 2, {}, nullptr);
@@ -924,7 +925,7 @@ int runSelfTest(bool keepFiles) {
         trimmedArchiveSettings.trimStartSeconds = 0.0;
         trimmedArchiveSettings.trimEndSeconds = -1.0;
         const ffmpegui::VideoTrimRanges archiveTrims{
-            {"media/clip.mov", {0.250, 0.875}}
+            {"media/clip.avi", {0.250, 0.875}}
         };
         const auto trimmedArchive = archives.process(
             pathToUtf8(zipInput), pathToUtf8(trimmedArchiveOutput), false,
@@ -1227,6 +1228,7 @@ int runSelfTest(bool keepFiles) {
         std::string queueError;
         check("export batch task list", batch.exportQueue(pathToUtf8(queueFile), queueError));
         ffmpegui::AppController imported(service);
+        check("restore existing queue before importing", waitUntilPrepared(imported));
         const auto existingTasks = imported.snapshot().tasks;
         const auto importedCount = imported.importQueue(pathToUtf8(queueFile), queueError);
         check("import queue asynchronously", waitUntilPrepared(imported, existingTasks.size() + importedCount));
