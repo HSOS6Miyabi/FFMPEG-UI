@@ -1,11 +1,11 @@
 # 开发者接管指南
 
-本文用于帮助接手项目的开发者快速了解代码结构、构建方法、重要设计约束和发布流程。开始修改前，请先阅读本文、[程序结构](architecture.md)、[项目决策记录](decision-log.md)、[编码参数说明](encoding.md)和[产品功能评估](product-review.md)。
+本文帮助接手项目的开发者了解代码结构、构建方法、设计要求和发布流程。首次接管请按[接管与维护手册](handover.md)的顺序操作；重要修改及验证结果见[维护台账](maintenance-ledger.md)，详细测试与发布操作见[构建、测试与发布手册](ci-release.md)。
 
 ## 当前项目状态
 
 - 项目名称：视频压缩工作台。
-- 当前开发版本：1.2.7。
+- CMake 项目版本：1.2.7。当前 `main` 已包含正式发布 v1.2.7 之后增加的功能；最新 Release 的源提交与当前 `main` 不同，发布新版需要更新 CMake 版本。
 - 主要分支：`main`。
 - 目标平台：Windows x64、Linux x86_64。
 - 主要语言：C++20。
@@ -16,7 +16,7 @@
 - ZIP/PPTX：通过 libarchive 读取和生成。
 - 项目不使用 Qt、GTK、MFC 或 Electron 等桌面界面框架。
 
-当前版本包含独立视频、文件夹、ZIP 和 PPTX 批量处理；MP4、MKV、WebM 和原格式四种输出模式；H.264、H.265、VP9、AV1 及条件支持的 H.266；CPU、NVIDIA NVENC、Intel Quick Sync 和 AMD AMF 编码器探测；八档压缩级别；六档输出分辨率；自动编码、保留原音频和移除音频三种音频处理方式；SSH 远程编码；任务进度、暂停、继续和取消；自适应并行调度；重复处理检查；任务列表自动恢复和手动导入导出；Windows 命令行文件参数和文件拖放。
+主分支包含独立视频、文件夹、ZIP 和 PPTX 批量处理及后台扫描；MP4、MKV、WebM 和原格式四种输出模式；H.264、H.265、VP9、AV1 及条件支持的 H.266；CPU、NVIDIA NVENC、Intel Quick Sync 和 AMD AMF 编码器探测；八档压缩级别；六档输出分辨率；自动编码、保留原音频和移除音频三种音频处理方式；逐视频独立裁剪和跨平台可拖动时间轴；后台预览；SSH 远程编码；任务进度、暂停、继续和取消；自适应并行调度；重复处理检查；任务清单恢复与导入导出；Windows 和 Linux 文件拖放。
 
 ## 目录说明
 
@@ -26,10 +26,10 @@
 | `src/core/process.*` | Windows/Linux 子进程启动、输出读取、环境变量和暂停、继续、取消 |
 | `src/core/ssh.*` | SSH 配置读取与同步、认证凭据、远程命令和文件传输 |
 | `src/core/archive.*` | ZIP/PPTX 解包、视频替换、引用更新、重新打包和完整性检查 |
-| `src/core/app_controller.*` | 输入扫描、任务队列自动恢复、并行调度、设置保存和任务状态 |
-| `src/platform/windows_ui.cpp` | Windows 原生界面 |
-| `src/core/archive.cpp` | ZIP/PPTX 文件的读取与生成、视频替换及媒体引用更新；Windows 使用宽字符路径访问压缩包 |
-| `src/platform/linux_ui.cpp` | Linux X11/Xft 界面 |
+| `src/core/app_controller.*` | 后台目录和压缩包扫描、任务队列自动恢复、逐视频裁剪保存、并行调度和状态 |
+| `src/core/preview.*` | 后台读取视频时长、提取 ZIP/PPTX 内部视频和预览画面 |
+| `src/platform/windows_ui.cpp` | Windows Win32/GDI 原生界面及视频裁剪窗口 |
+| `src/platform/linux_ui.cpp` | Linux X11/Xft 原生界面及视频裁剪窗口 |
 | `src/main.cpp` | 应用入口、命令行参数、自检和演示模式 |
 | `tests/core_tests.cpp` | 核心逻辑单元测试 |
 | `.github/workflows/build.yml` | Windows/Linux CI、桌面截图、NSIS 安装包测试及经测试的版本发布 |
@@ -39,6 +39,10 @@
 | `scripts/test-windows-installer.ps1` | Windows EXE 版本资源、静默安装、内置 FFmpeg、媒体测试和卸载验证 |
 | `src/platform/windows_version.rc.in` | Windows 应用版本信息和 Kenvix 作者版权字段 |
 | `docs/architecture.md` | 组件结构和处理流程 |
+| `docs/queue-format.md` | `.ffq` 版本 1/2 格式、裁剪范围保存与恢复 |
+| `docs/handover.md` | 新开发者接管顺序和最小验证步骤 |
+| `docs/maintenance-ledger.md` | 已完成的重要工作和验证记录 |
+| `docs/ci-release.md` | Windows/Linux 构建、CI、打包及发布步骤 |
 | `docs/decision-log.md` | 重要设计决策和维护约束 |
 | `docs/encoding.md` | 编码质量、预设、音频处理、分辨率和进度参数 |
 | `docs/ssh-remote-processing.md` | SSH 远程处理、认证、安全和测试要求 |
@@ -83,13 +87,13 @@ ctest --preset windows-release
 
 vcpkg 依赖由 `vcpkg.json` 声明。Windows NSIS 安装程序和便携 ZIP 已包含固定版本的 FFmpeg 和 ffprobe，源码直接运行时可以使用系统 FFmpeg。打包规范、第三方许可证及测试方式记录在 [Windows 安装与第三方组件](windows-distribution.md)。
 
-## 裁剪功能开发要求
+## 裁剪、后台扫描与任务保存
 
-- 视频裁剪范围保存于各自的 `BatchItemSnapshot::trim`，通过 `AppController::setVideoTrim` 修改。独立视频传空的内部文件名，ZIP/PPTX 内视频传对应的相对路径。任务队列恢复、导入和导出须保留每个视频的裁剪范围。
-- 文件夹扫描、压缩包内部视频列表读取、FFmpeg 编码器检测、视频时长读取和预览解码均在后台执行。Windows 与 Linux 界面均需要在等待时显示状态，并持续响应窗口事件。
+- 视频裁剪范围保存于各自的 `BatchItemSnapshot::trim`，通过 `AppController::setVideoTrim` 修改。独立视频传空的内部文件名，ZIP/PPTX 内视频传对应的相对路径。任务队列恢复、导入和导出须保留每个视频的裁剪范围。保存格式见[任务清单格式](queue-format.md)。
+- `AppController::scanLoop` 负责文件夹扫描和压缩包内部视频列表读取；`initializeNow` 在后台检测 FFmpeg 编码器；`AsyncVideoPreview` 在后台读取时长、提取单个内部视频并生成预览。Windows 和 Linux 界面要在等待时显示进展并继续响应窗口事件，扫描未完成前不能启动批处理。
 - 可视化裁剪器显示三种游标：起点、终点和画面预览位置。调整起点和终点时须保证结束时间晚于起始时间。选中另一个视频后，应独立展示其裁剪范围。
 - FFmpeg 的 `-ss` 必须出现在 `-i` 之前，指定结束时间时，输出侧使用 `-t` 表示持续时间。ZIP/PPTX 应针对内部各视频使用各自的参数，重复处理检查须包含这些参数。
-- 运行 `ctest` 和 `--self-test`，检查单视频裁剪、ZIP/PPTX 子视频独立裁剪、任务队列恢复、后台扫描、两个系统的界面截图，以及 Windows 安装包卸载后的快捷方式处理。
+- 运行 `ctest` 和 `--self-test`，检查单视频裁剪、ZIP/PPTX 内视频独立裁剪、任务队列恢复、后台扫描、两个系统的界面截图，以及 Windows 安装包卸载后的快捷方式处理。最近一次已确认成功的完整验证见[CI 运行 44469229573](https://github.com/HSOS6Miyabi/FFMPEG-UI/actions/runs/44469229573)。
 
 
 ## 运行与调试
@@ -152,10 +156,11 @@ scripts/lint-cpp.sh build/linux-release
 
 ## CI 与发布
 
-- 推送到 `main` 或创建针对 `main` 的 Pull Request 时，工作流会构建 Windows 和 Linux 版本，并执行单元测试及媒体自检。
+- Linux CI 运行在 Ubuntu 24.04，依赖安装包含超时与重试；Windows CI 运行在 `windows-latest`。具体工具、日志检查方法和打包步骤见[构建、测试与发布手册](ci-release.md)。
+- 推送到 `main` 或创建针对 `main` 的 Pull Request 时，工作流会构建 Windows 和 Linux 版本，并执行单元测试、媒体自检和真实桌面界面测试。
 - `workflow_dispatch` 可手动运行工作流。
 - `main` 分支的 Linux 和 Windows 测试全部成功后，发布任务读取 `CMakeLists.txt` 中的版本号，从通过验证的提交创建版本标签和 GitHub Release，并上传 Windows NSIS 安装程序、Windows 便携 ZIP 和 Linux tar.gz。
-- 已发布的版本不会被自动覆盖。需要发布新版本时，先更新 CMake 项目的版本号，再提交到 `main`。
+- 已发布的版本不会被自动覆盖。当前已发布的 v1.2.7 源提交为 `8ccf49d915a3723052e338a1fef63d7e264ac1c5`，后续主分支功能尚需通过提高 CMake 版本号才能正式发布。
 - 手动推送与 CMake 项目版本一致的 `v*` 标签时，也会执行完整验证；发布前必须确保两个平台的检查通过。
 
 ## 界面检查

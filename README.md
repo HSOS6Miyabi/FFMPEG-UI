@@ -10,6 +10,8 @@
 
 图标资源：[SVG 矢量图](assets/icons/video-compression-workbench.svg) · [PNG 高清图](assets/icons/video-compression-workbench.png) · [Windows ICO 图标](assets/icons/video-compression-workbench.ico)。
 
+开发与交接资料：[完整文档目录](docs/README.md) · [接管与维护手册](docs/handover.md) · [维护台账](docs/maintenance-ledger.md) · [构建、测试与发布手册](docs/ci-release.md)。
+
 ## 功能概览
 
 - **多种输入方式：** 添加单个或多个视频、ZIP、PPTX，也可以添加整个文件夹。支持将文件直接拖入窗口。
@@ -224,7 +226,7 @@ choco install nsis -y --no-progress
 
 ## 任务清单
 
-任务清单使用 UTF-8 文本格式，扩展名为 `.ffq`。清单记录输入路径及每个视频的裁剪范围，仍可以导入以前仅包含路径的清单。界面上方提供“导入清单”和“导出清单”按钮。导入时会按当前文件夹扫描设置添加任务，并自动去除重复路径。
+任务清单使用 UTF-8 文本格式，扩展名为 `.ffq`。现行版本 2 记录输入路径及每个视频的裁剪范围，同时兼容以前仅包含路径的版本 1。界面上方提供“导入清单”和“导出清单”按钮。导入时会按当前文件夹扫描设置在后台添加任务，并自动去除重复路径。文件结构见[任务清单格式与恢复规则](docs/queue-format.md)。
 
 ## 命令行和 Windows“发送到”
 
@@ -299,22 +301,27 @@ video-compression-workbench --demo
 
 ## 自动构建和发布
 
-GitHub Actions 在提交到 `main`、创建 Pull Request 或手动触发时构建 Windows 和 Linux 版本，并执行单元测试及实际视频、ZIP、PPTX、SSH 测试。`main` 上两个平台的全部测试通过后，发布任务读取 `CMakeLists.txt` 中的版本号。如果该版本尚未发布，就从通过测试的提交创建版本标签和 GitHub Release，并上传包含 FFmpeg 的 Windows NSIS 安装程序、Windows 便携 ZIP 包和 Linux tar.gz 包。已经发布的版本不会被后续提交覆盖；发布下一版本时，需要先更新 CMake 项目版本号。手动推送与项目版本一致的 `v*` 标签，也可以触发相同的验证和发布流程。
+GitHub Actions 在提交到 `main`、创建 Pull Request 或手动触发时构建 Windows 和 Linux 版本，并执行单元测试、实际媒体测试和桌面界面检查。Linux 构建使用 Ubuntu 24.04。两个平台的全部检查通过后，发布任务读取 `CMakeLists.txt` 中的版本号。如果该版本尚未发布，就从通过测试的提交创建版本标签和 GitHub Release，并上传 Windows NSIS 安装程序、Windows 便携 ZIP 包和 Linux tar.gz 包。已经发布的版本不会被后续提交覆盖；发布下一版本时，需要先更新 CMake 项目版本号。详细步骤见[构建、测试与发布手册](docs/ci-release.md)。
+
+当前 `main` 已包含 `v1.2.7` 正式发布之后增加的逐视频裁剪和异步扫描功能。现有 [v1.2.7 Release](https://github.com/HSOS6Miyabi/FFMPEG-UI/releases/tag/v1.2.7) 对应较早的源提交；发布包含这些后续修改的安装包时，须先提高 CMake 项目版本号。
 
 ## 维护要求
 
 修改编码参数时，应同步检查 `src/core/conversion.cpp`、`tests/core_tests.cpp` 和 `docs/encoding.md`。修改 ZIP/PPTX 处理时，应同步检查 `src/core/archive.cpp` 和 `docs/architecture.md`。修改任务调度时，应检查 `src/core/app_controller.cpp` 和并行调度测试。修改界面时，应同时检查 Windows 和 Linux 两套实现。
 
-提交代码前至少执行：
+提交代码前至少执行（Linux 开发环境）：
 
 ```bash
-cmake --build build --parallel
-ctest --test-dir build --output-on-failure
-./build/video-compression-workbench --self-test
+cmake --preset linux-release
+cmake --build --preset linux-release --parallel
+ctest --preset linux-release
+./build/linux-release/video-compression-workbench --self-test
 ```
+
+Windows 使用对应的 `windows-release` 预设进行编译、单元测试和 `.exe --self-test`。提交后检查该提交对应的完整 GitHub Actions 结果。
 
 项目决策和后续维护要求记录在 [`docs/decision-log.md`](docs/decision-log.md)。
 
 产品功能评估和后续开发建议见 [`docs/product-review.md`](docs/product-review.md)。
 
-新开发者请先阅读[开发者接管指南](docs/developer-handoff.md)，其中包含构建环境、目录说明、实现约束、测试流程和发布方法。
+新开发者请从[项目文档目录](docs/README.md)和[接管与维护手册](docs/handover.md)开始，随后阅读[开发者接管指南](docs/developer-handoff.md)，其中包含构建环境、目录说明、实现要求、测试流程和发布方法。
