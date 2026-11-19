@@ -2593,7 +2593,7 @@ private:
         if (y >= listTop && y < listTop + visibleCount * rowHeight &&
             x >= layout.queue.x && x < layout.queue.x + layout.queue.width) {
             const int rowIndex = (y - listTop) / rowHeight + scrollOffset_;
-            const auto taskRows = rows(controller_.snapshot(), failedOnly_);
+            const auto taskRows = rows(snapshot, failedOnly_);
             if (rowIndex >= 0 && rowIndex < static_cast<int>(taskRows.size())) {
                 if (!commitTrimText()) return;
                 const auto& [taskPointer, item] = taskRows[static_cast<std::size_t>(rowIndex)];
