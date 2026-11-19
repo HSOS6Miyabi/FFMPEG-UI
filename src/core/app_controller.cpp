@@ -507,7 +507,7 @@ void AppController::scanInput(const std::string& rawPath) {
     namespace fs = std::filesystem;
     const fs::path path = pathFromUtf8(rawPath);
     std::error_code error;
-    auto addFile = [this](const fs::path& file, const fs::path& root) {
+    auto addFile = [this, &rawPath](const fs::path& file, const fs::path& root) {
         if (stopScanning_.load()) return;
         const std::string fileUtf8 = pathToUtf8(file);
         if (!isSupportedInputFile(fileUtf8)) return;
