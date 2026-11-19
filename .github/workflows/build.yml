@@ -18,22 +18,36 @@ concurrency:
 jobs:
   linux:
     name: Linux build and media tests
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - name: Check out source
         uses: actions/checkout@v4
 
       - name: Install build and media dependencies
-        timeout-minutes: 12
+        timeout-minutes: 20
         run: |
           set -euxo pipefail
           sudo systemctl stop apt-daily.service apt-daily-upgrade.service 2>/dev/null || true
-          timeout 240s sudo apt-get -o Acquire::Retries=3 update
-          timeout 420s sudo env DEBIAN_FRONTEND=noninteractive apt-get install -y \
-            -o Acquire::Retries=3 -o DPkg::Lock::Timeout=60 \
-            build-essential cmake ninja-build libx11-dev libxft-dev \
-            libfontconfig1 libarchive-dev ffmpeg fonts-noto-cjk \
+          sudo apt-get -o Acquire::Retries=3 \
+            -o Acquire::http::Timeout=45 -o Acquire::https::Timeout=45 update
+          packages=(
+            build-essential cmake ninja-build libx11-dev libxft-dev
+            libfontconfig1 libarchive-dev ffmpeg fonts-noto-cjk
             openssh-server xvfb xdotool imagemagick x11-xserver-utils
+          )
+          installed=false
+          for attempt in 1 2 3; do
+            if timeout 540s sudo env DEBIAN_FRONTEND=noninteractive apt-get install -y \
+              -o Acquire::Retries=2 -o Acquire::http::Timeout=45 \
+              -o Acquire::https::Timeout=45 -o DPkg::Lock::Timeout=60 \
+              "${packages[@]}"; then
+              installed=true
+              break
+            fi
+            echo "Package installation attempt $attempt failed; retrying."
+            sleep 5
+          done
+          "$installed"
 
       - name: Start disposable SSH test server
         shell: bash
