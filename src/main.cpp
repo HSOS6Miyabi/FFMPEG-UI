@@ -218,6 +218,17 @@ std::optional<std::string> readZipEntry(const fs::path& archivePath, const std::
     return result;
 }
 
+bool waitUntilPrepared(ffmpegui::AppController& controller, std::size_t minimumTasks = 0) {
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(45);
+    do {
+        const auto snapshot = controller.snapshot();
+        if (!snapshot.initializing && !snapshot.scanningInputs &&
+            snapshot.totalTasks >= minimumTasks) return true;
+        std::this_thread::sleep_for(std::chrono::milliseconds(25));
+    } while (std::chrono::steady_clock::now() < deadline);
+    return false;
+}
+
 int runSelfTest(bool keepFiles) {
     auto service = makeService();
     const auto capabilities = service.probeCapabilities(true);
@@ -887,6 +898,22 @@ int runSelfTest(bool keepFiles) {
             (updatedHtml->find("media/clip.mp4") != std::string::npos ||
              updatedHtml->find("media/clip_compressed.mp4") != std::string::npos));
         check("ZIP non-media file preserved", readZipEntry(zipOutput, "notes/readme.txt").has_value());
+        ffmpegui::AppController indexedArchive(service);
+        indexedArchive.addInputs({pathToUtf8(zipInput)});
+        check("ZIP videos appear before processing", waitUntilPrepared(indexedArchive, 1) &&
+              indexedArchive.snapshot().tasks.front().items.size() == 3);
+        const auto archiveBeforeTrim = indexedArchive.snapshot();
+        check("edit exactly one archived video",
+              indexedArchive.setVideoTrim(archiveBeforeTrim.tasks.front().id,
+                                         "media/clip.mov", {0.250, 0.875}));
+        const auto archiveAfterTrim = indexedArchive.snapshot();
+        check("other archived videos retain full duration",
+              std::count_if(archiveAfterTrim.tasks.front().items.begin(),
+                  archiveAfterTrim.tasks.front().items.end(),
+                  [](const auto& item) {
+                      return item.trim.startSeconds > 0.0 || item.trim.endSeconds >= 0.0;
+                  }) == 1);
+        indexedArchive.shutdown();
         const auto zipSkip = archives.process(pathToUtf8(zipInput), pathToUtf8(zipOutput), false,
             settings, capabilities, 2, 2, {}, nullptr);
         check("ZIP same-parameter repeat skip", zipSkip.success && zipSkip.skipped);
@@ -894,12 +921,31 @@ int runSelfTest(bool keepFiles) {
         trimmedArchiveSettings.trimStartSeconds = 0.250;
         trimmedArchiveSettings.trimEndSeconds = 0.875;
         const fs::path trimmedArchiveOutput = work / "sample-trimmed.zip";
+        trimmedArchiveSettings.trimStartSeconds = 0.0;
+        trimmedArchiveSettings.trimEndSeconds = -1.0;
+        const ffmpegui::VideoTrimRanges archiveTrims{
+            {"media/clip.mov", {0.250, 0.875}}
+        };
         const auto trimmedArchive = archives.process(
             pathToUtf8(zipInput), pathToUtf8(trimmedArchiveOutput), false,
-            trimmedArchiveSettings, capabilities, 2, 2, {}, nullptr);
+            trimmedArchiveSettings, capabilities, 2, 2, {}, nullptr, nullptr,
+            archiveTrims);
         check("ZIP nested media uses the selected trim interval",
               trimmedArchive.success &&
               readZipEntry(trimmedArchiveOutput, "media/clip.mp4").has_value());
+        const auto firstClip = readZipEntry(trimmedArchiveOutput, "media/clip.mp4");
+        const auto secondClip = readZipEntry(trimmedArchiveOutput, "media/clip2.mp4");
+        if (firstClip && secondClip) {
+            const fs::path firstVideo = work / "individually-trimmed.mp4";
+            const fs::path secondVideo = work / "untrimmed-archive-video.mp4";
+            { std::ofstream file(firstVideo, std::ios::binary); file.write(firstClip->data(), firstClip->size()); }
+            { std::ofstream file(secondVideo, std::ios::binary); file.write(secondClip->data(), secondClip->size()); }
+            const auto firstDuration = service.probeDuration(pathToUtf8(firstVideo));
+            const auto secondDuration = service.probeDuration(pathToUtf8(secondVideo));
+            check("ZIP applies clipping only to its selected video",
+                  firstDuration && secondDuration && *firstDuration < *secondDuration &&
+                  *firstDuration > 0.2 && *firstDuration < 1.5);
+        } else check("ZIP retains both media entries after per-video clipping", false);
 
         auto mkvArchiveSettings = settings;
         mkvArchiveSettings.outputContainer = ffmpegui::OutputContainer::MKV;
@@ -1087,6 +1133,8 @@ int runSelfTest(bool keepFiles) {
         fs::copy_file(batchSource, batchInput / "nested" / "three.mp4", fs::copy_options::overwrite_existing);
         ffmpegui::AppController batch(service);
         batch.initialize();
+        check("initialize encoder environment without blocking UI",
+              waitUntilPrepared(batch));
         auto batchSettings = batch.snapshot().settings;
         batchSettings.codec = ffmpegui::VideoCodec::H264;
         batchSettings.backend = ffmpegui::EncoderBackend::CPU;
@@ -1099,7 +1147,8 @@ int runSelfTest(bool keepFiles) {
         batchSettings.preserveDirectoryStructure = true;
         batch.updateSettings(batchSettings);
         batch.addInputs({pathToUtf8(batchInput)});
-        check("recursive folder discovery", batch.snapshot().totalTasks == 3);
+        check("recursive folder discovery", waitUntilPrepared(batch, 3) &&
+              batch.snapshot().totalTasks == 3);
         const bool started = batch.startBatch();
         std::size_t maxRunning = 0;
         const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(90);
@@ -1133,8 +1182,10 @@ int runSelfTest(bool keepFiles) {
 
         ffmpegui::AppController repeatBatch(service);
         repeatBatch.initialize();
+        check("initialize repeated batch", waitUntilPrepared(repeatBatch));
         repeatBatch.updateSettings(batchSettings);
         repeatBatch.addInputs({pathToUtf8(batchInput)});
+        check("scan repeated batch inputs", waitUntilPrepared(repeatBatch, 3));
         const bool repeatStarted = repeatBatch.startBatch();
         const auto repeatDeadline = std::chrono::steady_clock::now() + std::chrono::seconds(60);
         while (repeatStarted && repeatBatch.snapshot().running && std::chrono::steady_clock::now() < repeatDeadline)
@@ -1153,12 +1204,14 @@ int runSelfTest(bool keepFiles) {
         fs::copy_file(batchSource, sameNameB, fs::copy_options::overwrite_existing);
         ffmpegui::AppController collisionBatch(service);
         collisionBatch.initialize();
+        check("initialize collision batch", waitUntilPrepared(collisionBatch));
         auto collisionSettings = collisionBatch.snapshot().settings;
         collisionSettings.codec = ffmpegui::VideoCodec::H264;
         collisionSettings.backend = ffmpegui::EncoderBackend::CPU;
         collisionSettings.outputDirectory = pathToUtf8(work / "collision-output");
         collisionBatch.updateSettings(collisionSettings);
         collisionBatch.addInputs({pathToUtf8(sameNameA), pathToUtf8(sameNameB)});
+        check("scan same-name inputs", waitUntilPrepared(collisionBatch, 2));
         const auto collisionSnapshot = collisionBatch.snapshot();
         check("same-name inputs receive distinct output paths", collisionSnapshot.tasks.size() == 2 &&
             collisionSnapshot.tasks[0].outputPath != collisionSnapshot.tasks[1].outputPath);
@@ -1176,6 +1229,7 @@ int runSelfTest(bool keepFiles) {
         ffmpegui::AppController imported(service);
         const auto existingTasks = imported.snapshot().tasks;
         const auto importedCount = imported.importQueue(pathToUtf8(queueFile), queueError);
+        check("import queue asynchronously", waitUntilPrepared(imported, existingTasks.size() + importedCount));
         const auto importedSnapshot = imported.snapshot();
         const bool existingTasksPreserved = std::all_of(
             existingTasks.begin(), existingTasks.end(), [&](const auto& task) {

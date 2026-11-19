@@ -24,6 +24,16 @@ void require(bool condition, const std::string& message) {
     }
 }
 
+void waitForScan(ffmpegui::AppController& controller, std::size_t expected) {
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(20);
+    do {
+        const auto snapshot = controller.snapshot();
+        if (!snapshot.scanningInputs && snapshot.totalTasks == expected) return;
+        std::this_thread::sleep_for(std::chrono::milliseconds(25));
+    } while (std::chrono::steady_clock::now() < deadline);
+    throw std::runtime_error("Input scanner did not finish within the deadline.");
+}
+
 bool containsPair(const std::vector<std::string>& command,
                   const std::string& option, const std::string& value) {
     for (std::size_t index = 0; index + 1 < command.size(); ++index) {
@@ -653,11 +663,18 @@ int main() {
                 settings.trimEndSeconds = 1.500;
                 firstRun.updateSettings(settings);
                 firstRun.addInputs({pathToUtf8(inputFile)});
-                require(firstRun.snapshot().totalTasks == 1,
-                        "Adding an input must save the current task queue.");
+                waitForScan(firstRun, 1);
+                const auto added = firstRun.snapshot();
+                require(firstRun.setVideoTrim(added.tasks.front().id, "", {0.125, 1.5}),
+                        "Individual video trim must be editable.");
+                require(added.tasks.front().items.front().trim.startSeconds == 0.0,
+                        "Unedited videos must keep their original full duration.");
+                require(firstRun.snapshot().tasks.front().items.front().trim.startSeconds == 0.125,
+                        "Editing one video must update the selected queue item.");
             }
             {
                 AppController restoredRun;
+                waitForScan(restoredRun, 1);
                 const auto restored = restoredRun.snapshot();
                 require(restored.totalTasks == 1,
                         "The pending task queue must be restored after restarting the application.");
@@ -666,12 +683,16 @@ int main() {
                         restored.settings.trimStartSeconds == 0.125 &&
                         restored.settings.trimEndSeconds == 1.5,
                         "Audio, resolution and trim settings must persist across restarts.");
+                require(restored.tasks.front().items.front().trim.startSeconds == 0.125 &&
+                        restored.tasks.front().items.front().trim.endSeconds == 1.5,
+                        "Per-video trim intervals must persist across application restarts.");
                 restoredRun.clearAll();
                 require(restoredRun.snapshot().totalTasks == 0,
                         "Clearing the task list must update the persisted queue.");
             }
             {
                 AppController cleanRun;
+                waitForScan(cleanRun, 0);
                 require(cleanRun.snapshot().totalTasks == 0,
                         "A cleared task queue must remain empty after restart.");
             }

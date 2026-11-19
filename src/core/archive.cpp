@@ -362,7 +362,8 @@ bool readManifest(const fs::path& archivePath, const std::string& manifestName,
     return found;
 }
 
-std::string manifestContent(const fs::path& input, const ConversionSettings& settings) {
+std::string manifestContent(const fs::path& input, const ConversionSettings& settings,
+                            const VideoTrimRanges& perVideoTrims) {
     std::error_code error;
     const auto size = fs::file_size(input, error);
     const auto modified = fs::last_write_time(input, error).time_since_epoch().count();
@@ -371,14 +372,18 @@ std::string manifestContent(const fs::path& input, const ConversionSettings& set
           << "fingerprint=" << settingsFingerprint(settings) << "\n"
           << "input_size=" << size << "\n"
           << "input_mtime=" << modified << "\n";
+    for (const auto& [name, trim] : perVideoTrims)
+        value << "video=" << name << "\t" << std::llround(trim.startSeconds * 1000.0)
+              << "\t" << std::llround(trim.endSeconds * 1000.0) << "\n";
     return value.str();
 }
 
 bool manifestMatches(const fs::path& archivePath, const std::string& manifestName,
-                     const fs::path& input, const ConversionSettings& settings) {
+                     const fs::path& input, const ConversionSettings& settings,
+                     const VideoTrimRanges& perVideoTrims) {
     std::string current;
     if (!readManifest(archivePath, manifestName, current)) return false;
-    return current == manifestContent(input, settings);
+    return current == manifestContent(input, settings, perVideoTrims);
 }
 
 std::string manifestPath(bool powerPoint) {
@@ -532,6 +537,53 @@ bool replaceOutput(const fs::path& temporary, const fs::path& output, bool overw
 
 } // namespace
 
+bool inspectArchiveVideos(const std::string& inputPath,
+                          const ArchiveVideoCallback& onVideo,
+                          std::string& error,
+                          const std::atomic_bool* cancelRequested) {
+    archive* reader = archive_read_new();
+    if (!reader) { error = "无法创建 ZIP 读取器。"; return false; }
+    archive_read_support_filter_all(reader);
+    archive_read_support_format_zip(reader);
+    if (openArchiveReader(reader, pathFromUtf8(inputPath)) != ARCHIVE_OK) {
+        error = "无法读取 ZIP/PPTX 文件：" + archiveError(reader, "未知错误");
+        archive_read_free(reader);
+        return false;
+    }
+    std::size_t entries = 0;
+    archive_entry* entry = nullptr;
+    int result = ARCHIVE_OK;
+    while ((result = archive_read_next_header(reader, &entry)) == ARCHIVE_OK) {
+        if (cancelRequested && cancelRequested->load()) break;
+        if (++entries > 100000) {
+            error = "压缩包包含过多文件，已停止扫描。";
+            break;
+        }
+        fs::path relative;
+        const std::string raw = archiveEntryPath(entry);
+        if (!safeArchivePath(raw, relative)) {
+            error = "压缩包包含不安全的文件路径。";
+            break;
+        }
+        const auto type = archive_entry_filetype(entry);
+        if (type == AE_IFLNK || archive_entry_symlink(entry) ||
+            archive_entry_hardlink(entry)) {
+            error = "压缩包包含不安全的文件链接。";
+            break;
+        }
+        if ((type == AE_IFREG || type == 0) && isVideoFile(pathToUtf8(relative))) {
+            if (onVideo) onVideo(genericPathToUtf8(relative));
+        }
+        archive_read_data_skip(reader);
+    }
+    if (result != ARCHIVE_EOF && error.empty() &&
+        !(cancelRequested && cancelRequested->load()))
+        error = "读取压缩包目录失败：" + archiveError(reader, "未知错误");
+    archive_read_close(reader);
+    archive_read_free(reader);
+    return error.empty() && !(cancelRequested && cancelRequested->load());
+}
+
 ArchiveService::ArchiveService(const FfmpegService& ffmpeg) : ffmpeg_(ffmpeg) {}
 
 ArchiveResult ArchiveService::process(const std::string& inputPath,
@@ -543,7 +595,8 @@ ArchiveResult ArchiveService::process(const std::string& inputPath,
                                        unsigned int threadsPerJob,
                                        const ArchiveProgressCallback& onProgress,
                                        const std::atomic_bool* cancelRequested,
-                                       const std::atomic_bool* pauseRequested) const {
+                                       const std::atomic_bool* pauseRequested,
+                                       const VideoTrimRanges& perVideoTrims) const {
     ArchiveResult result;
     result.outputPath = outputPath;
     const fs::path input = pathFromUtf8(inputPath);
@@ -562,7 +615,7 @@ ArchiveResult ArchiveService::process(const std::string& inputPath,
         result.message = "PowerPoint 内嵌视频请使用 MP4 输出或选择原格式。";
         return result;
     }
-    if (manifestMatches(output, marker, input, settings)) {
+    if (manifestMatches(output, marker, input, settings, perVideoTrims)) {
         std::string validationError;
         if (validateArchive(output, isPowerPoint, validationError)) {
             result.success = true;
@@ -693,6 +746,13 @@ ArchiveResult ArchiveService::process(const std::string& inputPath,
             const std::string encodedExtension = outputVideoExtension(settings.outputContainer, oldRelative);
             const fs::path encodedPath = outputDirectory / pathFromUtf8(std::to_string(index) + encodedExtension);
             ConversionSettings perVideo = settings;
+            if (const auto range = perVideoTrims.find(oldRelative); range != perVideoTrims.end()) {
+                perVideo.trimStartSeconds = range->second.startSeconds;
+                perVideo.trimEndSeconds = range->second.endSeconds;
+            } else {
+                perVideo.trimStartSeconds = 0.0;
+                perVideo.trimEndSeconds = -1.0;
+            }
             perVideo.inputPath = pathToUtf8(source);
             perVideo.outputPath = pathToUtf8(encodedPath);
             perVideo.overwrite = false;
@@ -789,7 +849,7 @@ ArchiveResult ArchiveService::process(const std::string& inputPath,
     fs::create_directories(manifestFile.parent_path(), fsError);
     {
         std::ofstream manifest(manifestFile, std::ios::binary | std::ios::trunc);
-        const std::string content = manifestContent(input, settings);
+        const std::string content = manifestContent(input, settings, perVideoTrims);
         manifest.write(content.data(), static_cast<std::streamsize>(content.size()));
         if (!manifest) {
             result.message = "无法写入压缩包处理记录。";

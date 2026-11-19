@@ -17,6 +17,7 @@ add_library(ffmpegui_core
     src/core/ssh.cpp
     src/core/conversion.cpp
     src/core/archive.cpp
+    src/core/preview.cpp
     src/core/app_controller.cpp
 )
 target_include_directories(ffmpegui_core PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src)

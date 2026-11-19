@@ -6,6 +6,7 @@
 #include <cstdint>
 #include <functional>
 #include <memory>
+#include <map>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -22,6 +23,13 @@ enum class OutputResolution { Original, UHD4K, QHD1440, FullHD1080, HD720, SD480
 
 enum class TaskKind { Video, ZipArchive, PowerPoint };
 enum class TaskState { Pending, Running, Completed, Skipped, Failed, Cancelled };
+
+struct VideoTrimRange {
+    double startSeconds{0.0};
+    double endSeconds{-1.0};
+};
+
+using VideoTrimRanges = std::map<std::string, VideoTrimRange>;
 
 struct ConversionSettings {
     std::string inputPath;

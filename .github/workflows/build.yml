@@ -149,12 +149,14 @@ jobs:
             grep -qx "outputResolution=3" "$FFMPEG_STUDIO_CONFIG_DIR/settings.ini"
             import -window "$window" artifacts/ui/video-compression-workbench-linux-expanded.png
 
-            # Set the trim start directly in the main encoding panel.
+            # Select the first queue video before editing its individual trim.
+            xdotool mousemove --window "$window" 180 742 click 1
+            sleep 1
             xdotool mousemove --window "$window" 130 608 click 1
             xdotool type --window "$window" --clearmodifiers "00:00:00.500"
             xdotool key --window "$window" Return
             sleep 1
-            grep -qx "trimStartSeconds=0.500000" "$FFMPEG_STUDIO_CONFIG_DIR/settings.ini"
+            grep -Eq "^I \"\" 0\\.5 -1$" "$FFMPEG_STUDIO_CONFIG_DIR/queue.ffq"
 
             # Preview a real video and mark a two-second interval in the native trimmer.
             xdotool mousemove --window "$window" 910 608 click 1
@@ -173,8 +175,7 @@ jobs:
             xdotool mousemove --window "$dialog" 690 575 click 1
             xdotool mousemove --window "$dialog" 753 672 click 1
             sleep 1
-            grep -qx "trimStartSeconds=1.500000" "$FFMPEG_STUDIO_CONFIG_DIR/settings.ini"
-            grep -qx "trimEndSeconds=2.500000" "$FFMPEG_STUDIO_CONFIG_DIR/settings.ini"
+            grep -Eq "^I \"\" 1\\.5 2\\.5$" "$FFMPEG_STUDIO_CONFIG_DIR/queue.ffq"
             kill -0 "$app_pid"
 
             # Verify queue-first navigation and selected-task details without starting encoding.

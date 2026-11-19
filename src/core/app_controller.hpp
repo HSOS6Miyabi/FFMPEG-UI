@@ -3,6 +3,9 @@
 #include "archive.hpp"
 
 #include <atomic>
+#include <condition_variable>
+#include <deque>
+#include <map>
 #include <cstdint>
 #include <mutex>
 #include <thread>
@@ -16,6 +19,7 @@ struct BatchItemSnapshot {
     double progress{0.0};
     ConversionProgress progressInfo;
     std::string detail;
+    VideoTrimRange trim;
     std::uint64_t inputSizeBytes{0};
     std::uint64_t outputSizeBytes{0};
 };
@@ -42,6 +46,11 @@ struct AppSnapshot {
     std::vector<BatchTaskSnapshot> tasks;
     bool running{false};
     bool paused{false};
+    bool initializing{false};
+    bool scanningInputs{false};
+    std::size_t scannedEntries{0};
+    std::size_t discoveredVideos{0};
+    std::string scanningPath;
     double overallProgress{0.0};
     std::size_t totalTasks{0};
     std::size_t pendingTasks{0};
@@ -64,6 +73,7 @@ public:
 
     void initialize();
     AppSnapshot snapshot() const;
+    FfmpegService previewService() const { return service_; }
     std::optional<double> videoDuration(const std::string& inputPath) const;
     std::optional<PreviewFrame> videoPreview(const std::string& inputPath,
                                              double seconds, int width = 720,
@@ -76,6 +86,8 @@ public:
     void selectLocalEncoder();
     void updateSettings(const BatchSettings& settings);
     void addInputs(const std::vector<std::string>& paths);
+    bool setVideoTrim(std::uint64_t taskId, const std::string& videoName,
+                      const VideoTrimRange& trim);
     void removeTask(std::uint64_t id);
     void clearCompleted();
     void clearAll();
@@ -89,6 +101,9 @@ public:
 
 private:
     void refreshOutputPathsLocked();
+    void initializeNow();
+    void scanLoop();
+    void scanInput(const std::string& path);
     std::string makeOutputPathLocked(const BatchTaskSnapshot& task) const;
     std::string makeUniqueOutputPathLocked(const BatchTaskSnapshot& task,
                                            const std::vector<std::string>& reserved) const;
@@ -112,6 +127,17 @@ private:
     std::atomic_bool cancelRequested_{false};
     std::atomic_bool pauseRequested_{false};
     std::thread worker_;
+    std::thread scanner_;
+    std::thread initializeWorker_;
+    std::condition_variable scannerCv_;
+    std::deque<std::string> scanQueue_;
+    std::map<std::string, VideoTrimRanges> restoredTrims_;
+    std::atomic_bool stopScanning_{false};
+    bool scanningActive_{false};
+    bool initializing_{false};
+    std::size_t scannedEntries_{0};
+    std::size_t discoveredVideos_{0};
+    std::string scanningPath_;
     std::uint64_t nextTaskId_{1};
 };
 

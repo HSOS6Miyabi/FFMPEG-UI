@@ -3,6 +3,7 @@
 
 #include "../core/app_controller.hpp"
 #include "../core/process.hpp"
+#include "../core/preview.hpp"
 
 #define _WIN32_WINNT 0x0A00
 #define WINVER 0x0A00
@@ -792,25 +793,19 @@ private:
 class VideoTrimmerDialog {
 public:
     bool run(HINSTANCE instance, HWND owner, AppController& controller,
-             const std::string& inputPath, BatchSettings& settings, bool dark) {
+             const std::string& inputPath, const std::string& member,
+             VideoTrimRange& trim, bool dark) {
         instance_ = instance;
         controller_ = &controller;
         path_ = inputPath;
-        start_ = settings.trimStartSeconds;
-        end_ = settings.trimEndSeconds;
+        displayName_ = member.empty() ? basename(inputPath) : member;
+        start_ = trim.startSeconds;
+        end_ = trim.endSeconds;
+        cursor_ = std::max(0.0, start_);
         dark_ = dark;
-        const auto duration = controller.videoDuration(inputPath);
-        if (!duration || *duration <= 0.0) {
-            showTaskDialog(owner, L"无法打开视频裁剪器",
-                           L"无法读取所选视频的时长。请检查输入文件和 ffprobe。",
-                           TDCBF_OK_BUTTON, TD_WARNING_ICON);
-            return false;
-        }
-        duration_ = *duration;
-        cursor_ = std::clamp(start_, 0.0, std::max(0.0, duration_ - 0.05));
-        if (start_ >= duration_) start_ = 0.0;
-        if (end_ > duration_) end_ = duration_;
-        if (!validTrimRange(start_, end_)) end_ = -1.0;
+        preview_ = std::make_unique<AsyncVideoPreview>(
+            controller.previewService(), inputPath, member);
+        preview_->seek(cursor_);
         MONITORINFO monitor{};
         monitor.cbSize = sizeof(monitor);
         if (!GetMonitorInfoW(MonitorFromWindow(owner, MONITOR_DEFAULTTONEAREST), &monitor)) {
@@ -860,7 +855,7 @@ public:
         heading_ = CreateFontW(-s(21), 0, 0, 0, FW_SEMIBOLD, FALSE, FALSE, FALSE,
                                DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS,
                                CLEARTYPE_QUALITY, DEFAULT_PITCH, L"Segoe UI");
-        refreshPreview();
+        SetTimer(hwnd_, 2, 90, nullptr);
         EnableWindow(owner, FALSE);
         ShowWindow(hwnd_, SW_SHOW);
         UpdateWindow(hwnd_);
@@ -873,9 +868,10 @@ public:
         SetForegroundWindow(owner);
         if (font_) DeleteObject(font_);
         if (heading_) DeleteObject(heading_);
+        preview_.reset();
         if (accepted_) {
-            settings.trimStartSeconds = start_;
-            settings.trimEndSeconds = end_;
+            trim.startSeconds = start_;
+            trim.endSeconds = end_;
         }
         return accepted_;
     }
@@ -896,26 +892,83 @@ private:
     Rect applyRect() const { return {s(689), s(636), s(92), s(38)}; }
     Rect cancelRect() const { return {s(789), s(636), s(92), s(38)}; }
 
+
     void refreshPreview() {
-        const auto frame = controller_->videoPreview(path_, cursor_, 800, 374);
-        pixels_.clear();
-        if (!frame || frame->width <= 0 || frame->height <= 0) {
-            frameWidth_ = frameHeight_ = 0;
-            status_ = L"当前时间位置无法提取画面。可以尝试向前跳转。";
-        } else {
-            frameWidth_ = frame->width;
-            frameHeight_ = frame->height;
+        if (!durationReady_) return;
+        preview_->seek(cursor_);
+        if (hwnd_) InvalidateRect(hwnd_, nullptr, FALSE);
+    }
+    void refreshFromWorker() {
+        if (!preview_) return;
+        const auto snapshot = preview_->snapshot();
+        if (snapshot.duration && !durationReady_) {
+            duration_ = *snapshot.duration;
+            durationReady_ = true;
+            if (start_ >= duration_) start_ = 0.0;
+            if (end_ > duration_) end_ = duration_;
+            if (!validTrimRange(start_, end_)) end_ = -1.0;
+            cursor_ = std::clamp(start_, 0.0, std::max(0.0, duration_ - 0.05));
+            preview_->seek(cursor_);
+        }
+        if (snapshot.frame && snapshot.frame != lastFrame_) {
+            lastFrame_ = snapshot.frame;
+            frameWidth_ = snapshot.frame->width;
+            frameHeight_ = snapshot.frame->height;
             pixels_.resize(static_cast<std::size_t>(frameWidth_ * frameHeight_));
             for (std::size_t i = 0; i < pixels_.size(); ++i) {
-                const auto* rgb = frame->rgb.data() + i * 3;
+                const auto* rgb = snapshot.frame->rgb.data() + i * 3;
                 pixels_[i] = (static_cast<std::uint32_t>(rgb[0]) << 16) |
                              (static_cast<std::uint32_t>(rgb[1]) << 8) | rgb[2];
             }
-            status_.clear();
+        }
+        status_ = !snapshot.error.empty() ? wide(snapshot.error) :
+            !durationReady_ ? L"正在后台读取视频信息…" :
+            snapshot.busy ? L"正在提取预览画面，可继续调整裁剪范围…" : L"";
+        if (hwnd_) InvalidateRect(hwnd_, nullptr, FALSE);
+    }
+    int timelineX(double seconds) const {
+        const auto rect = seekRect();
+        return rect.x + static_cast<int>(std::lround(
+            rect.width * std::clamp(seconds / duration_, 0.0, 1.0)));
+    }
+    void moveMarker(int x) {
+        if (!durationReady_) return;
+        const auto track = seekRect();
+        const double time = std::clamp(duration_ * static_cast<double>(x - track.x) /
+            std::max(1, track.width), 0.0, duration_);
+        if (dragging_ == 1) {
+            start_ = std::clamp(time, 0.0,
+                std::max(0.0, (end_ < 0.0 ? duration_ : end_) - 0.05));
+        } else if (dragging_ == 2) {
+            end_ = std::clamp(time, std::min(duration_, start_ + 0.05), duration_);
+        } else if (dragging_ == 3) {
+            const double target = std::clamp(time, 0.0, std::max(0.0, duration_ - 0.05));
+            if (std::abs(cursor_ - target) >= 0.04) {
+                cursor_ = target;
+                refreshPreview();
+            }
         }
         if (hwnd_) InvalidateRect(hwnd_, nullptr, FALSE);
     }
+    bool beginTimelineDrag(int x, int y) {
+        if (!durationReady_) return false;
+        const auto track = seekRect();
+        const Rect hit{track.x - s(12), track.y - s(18),
+                       track.width + s(24), track.height + s(36)};
+        if (!contains(hit, x, y)) return false;
+        const int startX = timelineX(start_);
+        const int endX = timelineX(end_ < 0.0 ? duration_ : end_);
+        const int distanceStart = std::abs(x - startX);
+        const int distanceEnd = std::abs(x - endX);
+        if (distanceStart <= s(17) && distanceStart <= distanceEnd) dragging_ = 1;
+        else if (distanceEnd <= s(17)) dragging_ = 2;
+        else dragging_ = 3;
+        SetCapture(hwnd_);
+        moveMarker(x);
+        return true;
+    }
     void jump(double delta) {
+        if (!durationReady_) return;
         const double target = std::clamp(cursor_ + delta, 0.0,
                                           std::max(0.0, duration_ - 0.05));
         if (std::abs(target - cursor_) > 0.001) {
@@ -925,6 +978,7 @@ private:
     }
     bool commitField() {
         if (editing_ == -1) return true;
+        if (!durationReady_) return false;
         const std::string raw = utf8FromWide(editText_.c_str());
         if (raw.empty() && editing_ == 0) {
             editing_ = -1;
@@ -958,13 +1012,9 @@ private:
             editText_.clear();
             return;
         }
-        if (!commitField()) return;
-        if (contains(seekRect(), x, y)) {
-            cursor_ = std::clamp(duration_ * (x - seekRect().x) /
-                                 std::max(1, seekRect().width), 0.0,
-                                 std::max(0.0, duration_ - 0.05));
-            refreshPreview();
-        } else if (contains(backRect(), x, y)) jump(-1.0);
+        if (!durationReady_ || !commitField()) return;
+        if (beginTimelineDrag(x, y)) return;
+        if (contains(backRect(), x, y)) jump(-1.0);
         else if (contains(nextRect(), x, y)) jump(1.0);
         else if (contains(inRect(), x, y)) {
             if (end_ >= 0 && cursor_ >= end_) {
@@ -1001,7 +1051,8 @@ private:
         drawText(dc, {s(30), s(20), s(844), s(32)}, L"可视化视频裁剪",
                  c.text, heading_);
         drawText(dc, {s(30), s(52), s(844), s(22)},
-                 wide(basename(path_)) + L"  ·  总时长 " + wide(formatTrimTime(duration_)),
+                 wide(displayName_) + (durationReady_ ? L"  ·  总时长 " +
+                 wide(formatTrimTime(duration_)) : L"  ·  正在读取视频信息"),
                  c.muted, font_);
         const Rect preview = previewRect();
         fillRound(dc, preview, RGB(12, 17, 28), c.border, 12);
@@ -1024,17 +1075,24 @@ private:
         }
         const Rect track = seekRect();
         fillRound(dc, track, c.track, c.track, 5);
-        const int position = static_cast<int>(std::lround(
-            track.width * (cursor_ / duration_)));
-        fillRound(dc, {track.x, track.y, std::max(1, position), track.height},
-                  c.accent, c.accent, 5);
-        fillRound(dc, {track.x + position - s(7), track.y - s(5),
-                       s(14), s(20)}, c.accent, c.accent, 7);
+        if (durationReady_) {
+            const int beginning = timelineX(start_);
+            const int ending = timelineX(end_ < 0.0 ? duration_ : end_);
+            fillRound(dc, {beginning, track.y, std::max(1, ending - beginning),
+                           track.height}, c.accentSoft, c.accentSoft, 5);
+            const int cursorX = timelineX(cursor_);
+            fillRound(dc, {cursorX - s(5), track.y - s(5), s(10), s(20)},
+                      c.accent, c.accent, 5);
+            fillRound(dc, {beginning - s(7), track.y - s(8), s(14), s(26)},
+                      c.green, c.green, 6);
+            fillRound(dc, {ending - s(7), track.y - s(8), s(14), s(26)},
+                      c.red, c.red, 6);
+        }
         drawText(dc, {s(42), s(520), s(440), s(22)},
                  L"当前位置：" + wide(formatTrimTime(cursor_)),
                  c.text, font_);
         drawText(dc, {s(510), s(520), s(352), s(22)},
-                 L"方向键跳转 1 秒，Shift 加方向键跳转 10 秒",
+                 L"绿色起点、红色终点可拖动；方向键跳转画面",
                  c.muted, font_, DT_RIGHT | DT_VCENTER | DT_SINGLELINE);
         drawButton(dc, backRect(), L"<  前退 1 秒", c, font_);
         drawButton(dc, nextRect(), L"前进 1 秒  >", c, font_);
@@ -1053,7 +1111,7 @@ private:
         drawButton(dc, applyRect(), L"应用裁剪", c, font_, true);
         drawButton(dc, cancelRect(), L"取消", c, font_);
         drawText(dc, {s(42), s(689), s(830), s(25)},
-                 status_.empty() ? L"点击时间可以直接编辑；结束时间留空表示保留到片尾。" : status_,
+                 status_.empty() ? L"拖动绿色起点和红色终点，也可直接编辑时间；结束留空表示片尾。" : status_,
                  status_.empty() ? c.muted : c.red, font_);
     }
     static LRESULT CALLBACK windowProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
@@ -1071,6 +1129,20 @@ private:
         case WM_LBUTTONDOWN:
             self->click(GET_X_LPARAM(lp), GET_Y_LPARAM(lp));
             if (IsWindow(hwnd)) InvalidateRect(hwnd, nullptr, FALSE);
+            return 0;
+        case WM_MOUSEMOVE:
+            if (self->dragging_ != 0 && (wp & MK_LBUTTON))
+                self->moveMarker(GET_X_LPARAM(lp));
+            return 0;
+        case WM_LBUTTONUP:
+            if (self->dragging_ != 0) {
+                self->moveMarker(GET_X_LPARAM(lp));
+                self->dragging_ = 0;
+                ReleaseCapture();
+            }
+            return 0;
+        case WM_TIMER:
+            if (wp == 2) self->refreshFromWorker();
             return 0;
         case WM_KEYDOWN:
             if (self->editing_ == -1) {
@@ -1110,6 +1182,7 @@ private:
             return 0;
         }
         case WM_CLOSE: DestroyWindow(hwnd); return 0;
+        case WM_DESTROY: KillTimer(hwnd, 2); return 0;
         }
         return DefWindowProcW(hwnd, msg, wp, lp);
     }
@@ -1117,6 +1190,7 @@ private:
     HWND hwnd_{};
     AppController* controller_{};
     std::string path_;
+    std::string displayName_;
     double duration_{1.0};
     double start_{0.0};
     double end_{-1.0};
@@ -1124,6 +1198,10 @@ private:
     double scale_{1.0};
     bool dark_{false};
     bool accepted_{false};
+    bool durationReady_{false};
+    int dragging_{0}; // 1 = start, 2 = end, 3 = preview cursor
+    std::unique_ptr<AsyncVideoPreview> preview_;
+    std::shared_ptr<const PreviewFrame> lastFrame_;
     int editing_{-1};
     std::wstring editText_;
     std::wstring status_;
@@ -1313,11 +1391,40 @@ private:
         editingCrf_ = false;
         crfEditText_.clear();
     }
+
+    struct SelectedVideo {
+        BatchTaskSnapshot task;
+        BatchItemSnapshot item;
+        std::string member;
+    };
+    std::optional<SelectedVideo> selectedVideo(const AppSnapshot& snap) const {
+        const auto task = std::find_if(snap.tasks.begin(), snap.tasks.end(),
+            [this](const BatchTaskSnapshot& value) { return value.id == selectedTask_; });
+        if (task == snap.tasks.end()) return std::nullopt;
+        if (task->kind == TaskKind::Video) {
+            if (task->items.empty()) return std::nullopt;
+            return SelectedVideo{*task, task->items.front(), ""};
+        }
+        if (selectedItemName_.empty()) return std::nullopt;
+        const auto item = std::find_if(task->items.begin(), task->items.end(),
+            [this](const BatchItemSnapshot& value) {
+                return value.name == selectedItemName_;
+            });
+        if (item == task->items.end()) return std::nullopt;
+        return SelectedVideo{*task, *item, selectedItemName_};
+    }
     bool commitTrimText() {
         if (editingTrim_ == -1) return true;
+        const auto selected = selectedVideo(controller_.snapshot());
+        if (!selected) {
+            editingTrim_ = -1;
+            trimEditText_.clear();
+            return false;
+        }
         const std::string raw = utf8FromWide(trimEditText_.c_str());
         if (raw.empty() && editingTrim_ == 0) {
             editingTrim_ = -1;
+            trimEditText_.clear();
             return true;
         }
         const auto parsed = raw.empty() && editingTrim_ == 1
@@ -1328,43 +1435,37 @@ private:
                            TDCBF_OK_BUTTON, TD_WARNING_ICON);
             return false;
         }
-        const double start = editingTrim_ == 0 ? *parsed : settings_.trimStartSeconds;
-        const double end = editingTrim_ == 1 ? *parsed : settings_.trimEndSeconds;
-        if (!validTrimRange(start, end)) {
+        VideoTrimRange trim = selected->item.trim;
+        if (editingTrim_ == 0) trim.startSeconds = *parsed;
+        else trim.endSeconds = *parsed;
+        if (!validTrimRange(trim.startSeconds, trim.endSeconds)) {
             showTaskDialog(window_, L"裁剪时间无效",
                            L"裁剪结束时间必须晚于起始时间。",
                            TDCBF_OK_BUTTON, TD_WARNING_ICON);
             return false;
         }
-        settings_.trimStartSeconds = start;
-        settings_.trimEndSeconds = end;
+        if (!controller_.setVideoTrim(selected->task.id, selected->member, trim))
+            return false;
         editingTrim_ = -1;
         trimEditText_.clear();
-        updateSettings();
         return true;
     }
 
     void openVideoTrimmer() {
-        const auto snapshot = controller_.snapshot();
-        if (snapshot.running) return;
-        const auto candidate = std::find_if(snapshot.tasks.begin(), snapshot.tasks.end(),
-            [this](const BatchTaskSnapshot& task) {
-                return task.kind == TaskKind::Video && task.id == selectedTask_;
-            });
-        auto first = candidate == snapshot.tasks.end()
-            ? std::find_if(snapshot.tasks.begin(), snapshot.tasks.end(),
-                [](const BatchTaskSnapshot& task) {
-                    return task.kind == TaskKind::Video;
-                }) : candidate;
-        if (first == snapshot.tasks.end()) {
+        const auto snap = controller_.snapshot();
+        if (snap.running) return;
+        const auto selected = selectedVideo(snap);
+        if (!selected) {
             showTaskDialog(window_, L"请选择视频",
-                           L"先添加独立视频，再选择可视化裁剪。ZIP 和 PPTX 任务可以直接填写裁剪时间。",
+                           L"请在队列中选中一个视频。压缩包内的视频也可以单独设置裁剪范围。",
                            TDCBF_OK_BUTTON, TD_INFORMATION_ICON);
             return;
         }
+        VideoTrimRange trim = selected->item.trim;
         VideoTrimmerDialog dialog;
-        if (dialog.run(instance_, window_, controller_, first->inputPath, settings_, dark_))
-            updateSettings();
+        if (dialog.run(instance_, window_, controller_, selected->task.inputPath,
+                       selected->member, trim, dark_))
+            controller_.setVideoTrim(selected->task.id, selected->member, trim);
     }
 
     void startOrCancel() {
@@ -1379,8 +1480,9 @@ private:
         } else if (snap.paused) controller_.resumeBatch();
         else controller_.pauseBatch();
     }
-    std::vector<std::pair<BatchTaskSnapshot, BatchItemSnapshot>> visibleRows(const AppSnapshot& snap, bool failedOnly = false) const {
-        std::vector<std::pair<BatchTaskSnapshot, BatchItemSnapshot>> rows;
+    std::vector<std::pair<const BatchTaskSnapshot*, BatchItemSnapshot>> visibleRows(
+        const AppSnapshot& snap, bool failedOnly = false) const {
+        std::vector<std::pair<const BatchTaskSnapshot*, BatchItemSnapshot>> rows;
         for (const auto& task : snap.tasks) {
             if (failedOnly && task.state != TaskState::Failed) continue;
             if (task.kind == TaskKind::Video) {
@@ -1392,12 +1494,12 @@ private:
                     item.progress = task.progress;
                     item.detail = task.detail;
                 }
-                rows.emplace_back(task, item);
+                rows.emplace_back(&task, item);
             } else {
                 BatchItemSnapshot parent; parent.name = basename(task.inputPath); parent.state = task.state;
                 parent.progress = task.progress; parent.detail = task.detail;
-                rows.emplace_back(task, parent);
-                for (const auto& item : task.items) rows.emplace_back(task, item);
+                rows.emplace_back(&task, parent);
+                for (const auto& item : task.items) rows.emplace_back(&task, item);
             }
         }
         return rows;
@@ -1616,26 +1718,36 @@ private:
                        settings_.overwrite ? L"覆盖文件✓" : L"保留文件",
                        c, smallFont, settings_.overwrite);
         }
+        const auto clip = selectedVideo(snap);
         if (!compactAdvanced) {
             drawText(dc, {l.trimStart.x, l.trimStart.y - s(20),
-                          l.trimStart.width, s(18)}, L"裁剪起始时间", c.muted, smallFont);
+                          l.trimStart.width, s(18)}, L"所选视频起始时间", c.muted, smallFont);
             drawText(dc, {l.trimEnd.x, l.trimEnd.y - s(20),
-                          l.trimEnd.width, s(18)}, L"裁剪结束时间", c.muted, smallFont);
+                          l.trimEnd.width, s(18)}, L"所选视频结束时间", c.muted, smallFont);
         }
-        const std::wstring trimStartLabel = (compactAdvanced ? L"起点 " : L"") +
-            (editingTrim_ == 0 ? trimEditText_ + L"|"
-                               : wide(formatTrimTime(settings_.trimStartSeconds)));
-        const std::wstring trimEndLabel = (compactAdvanced ? L"终点 " : L"") +
-            (editingTrim_ == 1 ? trimEditText_ + L"|"
-                               : settings_.trimEndSeconds < 0.0
-                                   ? L"直到片尾"
-                                   : wide(formatTrimTime(settings_.trimEndSeconds)));
+        const std::wstring trimStartLabel = !clip ? L"请先选择视频" :
+            (compactAdvanced ? L"起点 " : L"") +
+            (editingTrim_ == 0 ? trimEditText_ + L"|" :
+                wide(formatTrimTime(clip->item.trim.startSeconds)));
+        const std::wstring trimEndLabel = !clip ? L"未选中" :
+            (compactAdvanced ? L"终点 " : L"") +
+            (editingTrim_ == 1 ? trimEditText_ + L"|" :
+                clip->item.trim.endSeconds < 0.0 ? L"直到片尾" :
+                wide(formatTrimTime(clip->item.trim.endSeconds)));
         drawButton(dc, l.trimStart, trimStartLabel, c, smallFont,
-                   editingTrim_ == 0, snap.running);
+                   editingTrim_ == 0, snap.running || !clip);
         drawButton(dc, l.trimEnd, trimEndLabel, c, smallFont,
-                   editingTrim_ == 1, snap.running);
-        drawButton(dc, l.trimOpen, L"可视化裁剪", c, smallFont, false, snap.running);
-        drawButton(dc, l.trimReset, L"重置", c, smallFont, false, snap.running);
+                   editingTrim_ == 1, snap.running || !clip);
+        drawButton(dc, l.trimOpen, L"可视化裁剪", c, smallFont, false,
+                   snap.running || !clip);
+        drawButton(dc, l.trimReset, L"重置", c, smallFont, false,
+                   snap.running || !clip);
+        drawText(dc, {l.trimStart.x, l.trimStart.y + s(34),
+                      l.trimReset.x + l.trimReset.width - l.trimStart.x, s(20)},
+                 clip ? L"当前视频：" + wide(clip->member.empty()
+                     ? basename(clip->task.inputPath) : clip->member)
+                      : L"在处理队列中点击视频，分别设置裁剪范围。",
+                 c.muted, smallFont);
         }
 
         if (l.queue.height >= s(90)) {
@@ -1684,12 +1796,15 @@ private:
                  i < visibleRowsCount &&
                  i + scrollOffset_ < static_cast<int>(rows.size());
                  ++i) {
-                const auto& [task,item]=rows[static_cast<std::size_t>(i+scrollOffset_)];
+                const auto& [taskPointer,item]=rows[static_cast<std::size_t>(i+scrollOffset_)];
+                const auto& task = *taskPointer;
                 const int y = listTop + i * rowHeight;
                 const bool child =
                     task.kind != TaskKind::Video &&
                     item.name != basename(task.inputPath);
-                if (selectedTask_ == task.id)
+                if (selectedTask_ == task.id &&
+                    (task.kind == TaskKind::Video ||
+                     (child ? selectedItemName_ == item.name : selectedItemName_.empty())))
                     fillRound(
                         dc,
                         {l.queue.x + s(10), y + s(2),
@@ -1738,6 +1853,12 @@ private:
                 if (!sizeLine.empty() &&
                     (state == TaskState::Completed || state == TaskState::Skipped)) {
                     detail = sizeLine;
+                }
+                if ((child || task.kind == TaskKind::Video) &&
+                    (item.trim.startSeconds > 0.0 || item.trim.endSeconds >= 0.0)) {
+                    detail += L"  ·  裁剪 " + wide(formatTrimTime(item.trim.startSeconds)) +
+                        L" 至 " + (item.trim.endSeconds < 0.0 ? L"片尾" :
+                            wide(formatTrimTime(item.trim.endSeconds)));
                 }
                 if (state == TaskState::Failed) {
                     const std::wstring errorText = child && !item.detail.empty()
@@ -1800,7 +1921,8 @@ private:
                  completedLabel,c.muted,smallFont);
         if (!snap.running) {
             drawButton(dc,l.start,L"开始批量处理",c,normal,true,
-                snap.tasks.empty() || !snap.capabilities.supports(settings_.codec,settings_.backend));
+                snap.tasks.empty() || snap.initializing || snap.scanningInputs ||
+                !snap.capabilities.supports(settings_.codec,settings_.backend));
         } else {
             drawButton(dc,l.pause,snap.paused?L"继续处理":L"暂停处理",c,normal,true);
             drawButton(dc,l.cancel,L"取消任务",c,normal,false);
@@ -1982,8 +2104,11 @@ private:
         const auto rows = visibleRows(snapshot, failedOnly_);
         const int rowIndex = (y - listTop) / rowHeight + scrollOffset_;
         if (rowIndex < 0 || rowIndex >= static_cast<int>(rows.size())) return false;
-        const auto& [task, item] = rows[static_cast<std::size_t>(rowIndex)];
+        const auto& [taskPointer, item] = rows[static_cast<std::size_t>(rowIndex)];
+        const auto& task = *taskPointer;
         selectedTask_ = task.id;
+        selectedItemName_ = task.kind == TaskKind::Video ||
+            item.name == basename(task.inputPath) ? "" : item.name;
         std::wstring detail;
         if (item.state == TaskState::Failed && !item.detail.empty()) {
             detail = wide(item.detail);
@@ -2050,14 +2175,14 @@ private:
         if (contains(layout.removeSelected, x, y)) {
             if (!snapshot.running && selectedTask_ != 0) {
                 controller_.removeTask(selectedTask_);
-                selectedTask_ = 0;
+                selectedTask_ = 0; selectedItemName_.clear();
             }
             return;
         }
         if (contains(layout.clearDone, x, y)) {
             if (!snapshot.running) {
                 controller_.clearCompleted();
-                selectedTask_ = 0;
+                selectedTask_ = 0; selectedItemName_.clear();
             }
             return;
         }
@@ -2067,7 +2192,7 @@ private:
                                L"清空当前任务列表？源文件和已经生成的输出文件将保留。",
                                TDCBF_YES_BUTTON | TDCBF_NO_BUTTON, TD_WARNING_ICON, IDNO) == IDYES) {
                 controller_.clearAll();
-                selectedTask_ = 0;
+                selectedTask_ = 0; selectedItemName_.clear();
                 scrollOffset_ = 0;
             }
             return;
@@ -2081,7 +2206,7 @@ private:
         }
         if (contains(layout.failedOnly, x, y)) {
             failedOnly_ = !failedOnly_;
-            selectedTask_ = 0;
+            selectedTask_ = 0; selectedItemName_.clear();
             scrollOffset_ = 0;
             return;
         }
@@ -2123,7 +2248,7 @@ private:
             return;
         }
         if (!queueFocused_) {
-        if (!snapshot.running &&
+        if (!snapshot.running && selectedVideo(snapshot) &&
             (contains(layout.trimStart, x, y) || contains(layout.trimEnd, x, y))) {
             if (!commitTrimText()) return;
             editingTrim_ = contains(layout.trimStart, x, y) ? 0 : 1;
@@ -2137,9 +2262,8 @@ private:
             return;
         }
         if (!snapshot.running && contains(layout.trimReset, x, y)) {
-            settings_.trimStartSeconds = 0.0;
-            settings_.trimEndSeconds = -1.0;
-            updateSettings();
+            if (const auto clip = selectedVideo(snapshot))
+                controller_.setVideoTrim(clip->task.id, clip->member, {});
             return;
         }
         if (contains(layout.outputBrowse, x, y)) {
@@ -2329,10 +2453,15 @@ private:
         if (x >= layout.queue.x && x < layout.queue.x + layout.queue.width &&
             y >= queueTop && y < queueTop + visibleCount * rowHeight) {
             const int visibleIndex = (y - queueTop) / rowHeight + scrollOffset_;
-            const auto visibleItems = visibleRows(controller_.snapshot(), failedOnly_);
+            const auto visibleItems = visibleRows(snapshot, failedOnly_);
             if (visibleIndex >= 0 &&
                 visibleIndex < static_cast<int>(visibleItems.size())) {
-                selectedTask_ = visibleItems[static_cast<std::size_t>(visibleIndex)].first.id;
+                if (!commitTrimText()) return;
+                const auto& [taskPointer, item] = visibleItems[static_cast<std::size_t>(visibleIndex)];
+                const auto& task = *taskPointer;
+                selectedTask_ = task.id;
+                selectedItemName_ = task.kind == TaskKind::Video ||
+                    item.name == basename(task.inputPath) ? "" : item.name;
             }
         }
     }
@@ -2454,7 +2583,7 @@ private:
                 }
                 if (wParam == 'D' && !controller_.snapshot().running) {
                     controller_.clearCompleted();
-                    selectedTask_ = 0;
+                    selectedTask_ = 0; selectedItemName_.clear();
                     scrollOffset_ = 0;
                     InvalidateRect(window_, nullptr, FALSE);
                     return 0;
@@ -2485,12 +2614,12 @@ private:
             if (wParam == VK_DELETE && selectedTask_ != 0 && !controller_.snapshot().running &&
                 !editingCrf_) {
                 controller_.removeTask(selectedTask_);
-                selectedTask_ = 0;
+                selectedTask_ = 0; selectedItemName_.clear();
                 InvalidateRect(window_, nullptr, FALSE);
                 return 0;
             }
             if (wParam == VK_ESCAPE && !editingCrf_) {
-                selectedTask_ = 0;
+                selectedTask_ = 0; selectedItemName_.clear();
                 InvalidateRect(window_, nullptr, FALSE);
                 return 0;
             }
@@ -2573,6 +2702,7 @@ private:
     bool autoFocusUsed_{false};
     bool failedOnly_{false};
     std::uint64_t selectedTask_{0};
+    std::string selectedItemName_;
 };
 
 } // namespace

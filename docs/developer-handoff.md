@@ -85,11 +85,12 @@ vcpkg 依赖由 `vcpkg.json` 声明。Windows NSIS 安装程序和便携 ZIP 已
 
 ## 裁剪功能开发要求
 
-- 共享核心定义 `BatchSettings::trimStartSeconds`、`BatchSettings::trimEndSeconds` 与对应的 `ConversionSettings` 字段。结束时间为 `-1` 表示保留到片尾。直接在主界面修改时间和在可视化裁剪器选择时间，最后都由 `AppController::updateSettings` 保存。
-- 预览入口位于 `windows_ui.cpp` 的 `VideoTrimmerDialog` 和 `linux_ui.cpp` 的 `LinuxWindow::openVideoTrimmer`。通过 `FfmpegService::previewFrame` 读取预览帧；添加新交互时须维护两个平台。
-- `-ss` 必须出现在 `-i` 之前，结束时间转换为输出侧 `-t` 的持续时间。检查长视频后部裁剪时的读取性能，确保新参数不使 FFmpeg 从视频起点重新处理整个前段。
-- 任意裁剪参数变化都必须改变输出文件名和处理参数指纹。媒体转换、ZIP/PPTX、SSH 与任务队列的参数传递都需要保持一致。
-- 运行 `tests/core_tests.cpp` 中的时间解析、裁剪范围校验和参数顺序测试；运行 `--self-test` 检查真实裁剪片段、预览帧与归档内视频。Windows 安装包测试还需检查卸载后的桌面快捷方式。
+- 视频裁剪范围保存于各自的 `BatchItemSnapshot::trim`，通过 `AppController::setVideoTrim` 修改。独立视频传空的内部文件名，ZIP/PPTX 内视频传对应的相对路径。任务队列恢复、导入和导出须保留每个视频的裁剪范围。
+- 文件夹扫描、压缩包内部视频列表读取、FFmpeg 编码器检测、视频时长读取和预览解码均在后台执行。Windows 与 Linux 界面均需要在等待时显示状态，并持续响应窗口事件。
+- 可视化裁剪器显示三种游标：起点、终点和画面预览位置。调整起点和终点时须保证结束时间晚于起始时间。选中另一个视频后，应独立展示其裁剪范围。
+- FFmpeg 的 `-ss` 必须出现在 `-i` 之前，指定结束时间时，输出侧使用 `-t` 表示持续时间。ZIP/PPTX 应针对内部各视频使用各自的参数，重复处理检查须包含这些参数。
+- 运行 `ctest` 和 `--self-test`，检查单视频裁剪、ZIP/PPTX 子视频独立裁剪、任务队列恢复、后台扫描、两个系统的界面截图，以及 Windows 安装包卸载后的快捷方式处理。
+
 
 ## 运行与调试
 

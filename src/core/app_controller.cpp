@@ -6,6 +6,8 @@
 #include <chrono>
 #include <filesystem>
 #include <fstream>
+#include <iomanip>
+#include <cmath>
 #include <cstdlib>
 #include <sstream>
 #ifdef _WIN32
@@ -140,12 +142,22 @@ bool selectAvailableEncoder(BatchSettings& settings,
 AppController::AppController(FfmpegService service) : service_(std::move(service)) {
     settings_.crf = defaultCrf(settings_.codec);
     loadSettings();
+    scanner_ = std::thread([this] { scanLoop(); });
     loadQueue();
 }
 
 AppController::~AppController() { shutdown(); }
 
 void AppController::initialize() {
+    std::lock_guard lock(mutex_);
+    if (initializing_ || initializeWorker_.joinable()) return;
+    initializing_ = true;
+    status_ = "正在检测编码环境";
+    detail_ = "正在后台检查 FFmpeg、编码器和可用设备，窗口可以正常操作。";
+    initializeWorker_ = std::thread([this] { initializeNow(); });
+}
+
+void AppController::initializeNow() {
     EncoderCapabilities capabilities = service_.probeCapabilities(true);
     RemoteResources remoteResources;
     std::string remoteError;
@@ -170,6 +182,7 @@ void AppController::initialize() {
     std::lock_guard lock(mutex_);
     capabilities_ = capabilities;
     remoteResources_ = remoteResources;
+    initializing_ = false;
     settings_.remoteHost = selectedRemote;
 
     (void)selectAvailableEncoder(settings_, capabilities_);
@@ -379,6 +392,11 @@ AppSnapshot AppController::snapshot() const {
     result.tasks = tasks_;
     result.running = running_;
     result.paused = pauseRequested_.load();
+    result.initializing = initializing_;
+    result.scanningInputs = scanningActive_ || !scanQueue_.empty();
+    result.scannedEntries = scannedEntries_;
+    result.discoveredVideos = discoveredVideos_;
+    result.scanningPath = scanningPath_;
     result.status = status_;
     result.detail = detail_;
     result.error = error_;
@@ -431,81 +449,216 @@ void AppController::updateSettings(const BatchSettings& settings) {
     saveSettingsLocked();
 }
 
+
 void AppController::addInputs(const std::vector<std::string>& paths) {
-    std::lock_guard lock(mutex_);
-    if (running_) return;
-    std::set<std::string> known;
-    for (const auto& task : tasks_) known.insert(normalizedPath(pathFromUtf8(task.inputPath)));
-    std::size_t added = 0;
-    std::error_code error;
-
-    auto addFile = [&](const std::filesystem::path& file, const std::filesystem::path& root) {
-        const std::string fileUtf8 = pathToUtf8(file);
-        if (!isSupportedInputFile(fileUtf8) || !std::filesystem::is_regular_file(file, error)) return;
-        const std::string normalized = normalizedPath(file);
-        if (!known.insert(normalized).second) return;
-        BatchTaskSnapshot task;
-        task.id = nextTaskId_++;
-        task.inputPath = normalized;
-        task.kind = kindForPath(fileUtf8);
-        if (!root.empty()) {
-            const auto relativeParent = std::filesystem::relative(file.parent_path(), root, error);
-            if (!error && relativeParent != ".") task.relativeDirectory = pathToUtf8(relativeParent);
-            error.clear();
+    if (paths.empty()) return;
+    {
+        std::lock_guard lock(mutex_);
+        if (running_ || stopScanning_.load()) return;
+        for (const auto& path : paths) {
+            if (!path.empty()) scanQueue_.push_back(path);
         }
-        task.detail = "等待处理";
-        std::vector<std::string> reserved;
-        reserved.reserve(tasks_.size());
-        for (const auto& existing : tasks_)
-            reserved.push_back(normalizedPath(pathFromUtf8(existing.outputPath)));
-        task.outputPath = makeUniqueOutputPathLocked(task, reserved);
-        if (task.kind == TaskKind::Video) {
-            BatchItemSnapshot item;
-            item.name = pathToUtf8(file.filename());
-            item.detail = "等待处理";
-            task.items.push_back(std::move(item));
-        }
-        tasks_.push_back(std::move(task));
-        ++added;
-    };
-
-    for (const auto& rawPath : paths) {
-        if (rawPath.empty()) continue;
-        const std::filesystem::path path = pathFromUtf8(rawPath);
-        error.clear();
-        if (std::filesystem::is_directory(path, error)) {
-            const auto root = std::filesystem::weakly_canonical(path, error);
-            if (settings_.recursive) {
-                for (std::filesystem::recursive_directory_iterator it(root,
-                         std::filesystem::directory_options::skip_permission_denied, error), end;
-                     it != end && !error; it.increment(error)) {
-                    if (it->is_symlink(error)) {
-                        if (it->is_directory(error)) it.disable_recursion_pending();
-                        continue;
-                    }
-                    if (it->is_regular_file(error)) addFile(it->path(), root);
-                }
-            } else {
-                for (std::filesystem::directory_iterator it(root,
-                         std::filesystem::directory_options::skip_permission_denied, error), end;
-                     it != end && !error; it.increment(error)) {
-                    if (it->is_regular_file(error)) addFile(it->path(), root);
-                }
-            }
-        } else if (std::filesystem::is_regular_file(path, error)) {
-            addFile(path, {});
-        }
-    }
-
-    if (added > 0) {
-        status_ = "已添加 " + std::to_string(added) + " 个任务";
-        detail_ = "可继续添加文件或文件夹，确认编码参数后开始批量处理。";
+        if (scanQueue_.empty()) return;
+        status_ = "正在导入文件";
+        detail_ = "正在后台读取视频与压缩包目录，发现的文件会逐步显示在队列中。";
         error_.clear();
-    } else if (!paths.empty()) {
-        status_ = "没有新增任务";
-        detail_ = "请添加视频、ZIP 压缩包或 PPTX 演示文稿。";
     }
-    if (added > 0) saveQueueLocked();
+    scannerCv_.notify_one();
+}
+
+void AppController::scanLoop() {
+    for (;;) {
+        std::string path;
+        {
+            std::unique_lock lock(mutex_);
+            scannerCv_.wait(lock, [this] {
+                return stopScanning_.load() || !scanQueue_.empty();
+            });
+            if (stopScanning_.load()) return;
+            path = std::move(scanQueue_.front());
+            scanQueue_.pop_front();
+            scanningPath_ = path;
+            scanningActive_ = true;
+            status_ = "正在扫描输入文件";
+            detail_ = "正在检查：" + path;
+        }
+        try {
+            scanInput(path);
+        } catch (const std::exception& exception) {
+            std::lock_guard lock(mutex_);
+            error_ = "扫描失败：" + std::string(exception.what());
+        }
+        {
+            std::lock_guard lock(mutex_);
+            scanningActive_ = !scanQueue_.empty();
+            if (!scanningActive_) {
+                scanningPath_.clear();
+                status_ = "文件导入完成";
+                detail_ = "队列中有 " + std::to_string(tasks_.size()) +
+                    " 个处理任务，已列出 " + std::to_string(discoveredVideos_) + " 个视频。";
+            }
+            saveQueueLocked();
+        }
+    }
+}
+
+void AppController::scanInput(const std::string& rawPath) {
+    if (stopScanning_.load()) return;
+    namespace fs = std::filesystem;
+    const fs::path path = pathFromUtf8(rawPath);
+    std::error_code error;
+    auto addFile = [this](const fs::path& file, const fs::path& root) {
+        if (stopScanning_.load()) return;
+        const std::string fileUtf8 = pathToUtf8(file);
+        if (!isSupportedInputFile(fileUtf8)) return;
+        std::error_code fileError;
+        if (!fs::is_regular_file(file, fileError) || fileError) return;
+        const std::string normalized = normalizedPath(file);
+        std::string relativeDirectory;
+        if (!root.empty()) {
+            const auto relative = fs::relative(file.parent_path(), root, fileError);
+            if (!fileError && relative != ".") relativeDirectory = pathToUtf8(relative);
+        }
+        std::uint64_t id = 0;
+        const TaskKind kind = kindForPath(fileUtf8);
+        {
+            std::lock_guard lock(mutex_);
+            if (stopScanning_.load() || running_) return;
+            const bool alreadyAdded = std::any_of(tasks_.begin(), tasks_.end(),
+                [&](const BatchTaskSnapshot& current) {
+                    return normalizedPath(pathFromUtf8(current.inputPath)) == normalized;
+                });
+            if (alreadyAdded) return;
+            BatchTaskSnapshot task;
+            task.id = nextTaskId_++;
+            id = task.id;
+            task.inputPath = normalized;
+            task.relativeDirectory = relativeDirectory;
+            task.kind = kind;
+            task.detail = kind == TaskKind::Video ? "等待处理" : "正在读取内部视频列表…";
+            std::vector<std::string> reserved;
+            reserved.reserve(tasks_.size());
+            for (const auto& current : tasks_)
+                reserved.push_back(normalizedPath(pathFromUtf8(current.outputPath)));
+            if (kind == TaskKind::Video) {
+                BatchItemSnapshot item;
+                item.name = pathToUtf8(file.filename());
+                item.detail = "等待处理";
+                if (const auto saved = restoredTrims_.find(normalized);
+                    saved != restoredTrims_.end()) {
+                    if (const auto range = saved->second.find("");
+                        range != saved->second.end()) item.trim = range->second;
+                }
+                task.items.push_back(std::move(item));
+                ++discoveredVideos_;
+            }
+            task.outputPath = makeUniqueOutputPathLocked(task, reserved);
+            tasks_.push_back(std::move(task));
+            ++scannedEntries_;
+            detail_ = "已发现 " + std::to_string(discoveredVideos_) + " 个视频，正在读取：" + rawPath;
+        }
+        if (kind == TaskKind::Video) return;
+        std::string inspectError;
+        const bool inspected = inspectArchiveVideos(normalized,
+            [this, id, &normalized](const std::string& name) {
+                std::lock_guard lock(mutex_);
+                if (stopScanning_.load()) return;
+                const auto task = std::find_if(tasks_.begin(), tasks_.end(),
+                    [id](const BatchTaskSnapshot& value) { return value.id == id; });
+                if (task == tasks_.end()) return;
+                if (std::any_of(task->items.begin(), task->items.end(),
+                    [&name](const BatchItemSnapshot& value) { return value.name == name; }))
+                    return;
+                BatchItemSnapshot item;
+                item.name = name;
+                item.detail = "等待处理";
+                if (const auto saved = restoredTrims_.find(normalized);
+                    saved != restoredTrims_.end()) {
+                    if (const auto range = saved->second.find(name);
+                        range != saved->second.end()) item.trim = range->second;
+                }
+                task->items.push_back(std::move(item));
+                ++discoveredVideos_;
+                task->detail = "已发现 " + std::to_string(task->items.size()) + " 个视频，正在扫描…";
+                detail_ = "已发现 " + std::to_string(discoveredVideos_) + " 个视频，正在读取：" + scanningPath_;
+            }, inspectError, &stopScanning_);
+        {
+            std::lock_guard lock(mutex_);
+            const auto task = std::find_if(tasks_.begin(), tasks_.end(),
+                [id](const BatchTaskSnapshot& value) { return value.id == id; });
+            if (task == tasks_.end()) return;
+            if (!inspected && !stopScanning_.load()) {
+                task->detail = inspectError;
+                task->error = inspectError;
+                task->state = TaskState::Failed;
+            } else {
+                task->detail = task->items.empty()
+                    ? "未找到可处理的视频"
+                    : "已列出 " + std::to_string(task->items.size()) + " 个视频，等待处理";
+            }
+            refreshOutputPathsLocked();
+        }
+    };
+    if (fs::is_directory(path, error)) {
+        const fs::path root = fs::weakly_canonical(path, error);
+        if (error) return;
+        bool recursive = true;
+        {
+            std::lock_guard lock(mutex_);
+            recursive = settings_.recursive;
+        }
+        if (recursive) {
+            for (fs::recursive_directory_iterator it(root,
+                     fs::directory_options::skip_permission_denied, error), end;
+                 it != end && !stopScanning_.load();) {
+                std::error_code entryError;
+                if (it->is_symlink(entryError)) {
+                    if (it->is_directory(entryError)) it.disable_recursion_pending();
+                } else if (it->is_regular_file(entryError)) addFile(it->path(), root);
+                it.increment(error);
+                if (error) error.clear();
+            }
+        } else {
+            for (fs::directory_iterator it(root,
+                     fs::directory_options::skip_permission_denied, error), end;
+                 it != end && !stopScanning_.load();) {
+                std::error_code entryError;
+                if (it->is_regular_file(entryError)) addFile(it->path(), root);
+                it.increment(error);
+                if (error) error.clear();
+            }
+        }
+    } else if (fs::is_regular_file(path, error)) {
+        addFile(path, {});
+    }
+}
+
+bool AppController::setVideoTrim(std::uint64_t taskId, const std::string& videoName,
+                                 const VideoTrimRange& trim) {
+    if (!validTrimRange(trim.startSeconds, trim.endSeconds)) return false;
+    std::lock_guard lock(mutex_);
+    if (running_) return false;
+    const auto task = std::find_if(tasks_.begin(), tasks_.end(),
+        [taskId](const BatchTaskSnapshot& value) { return value.id == taskId; });
+    if (task == tasks_.end()) return false;
+    if (task->kind == TaskKind::Video && !videoName.empty()) return false;
+    if (task->kind != TaskKind::Video && videoName.empty()) return false;
+    auto item = std::find_if(task->items.begin(), task->items.end(),
+        [&](const BatchItemSnapshot& value) {
+            return task->kind == TaskKind::Video || value.name == videoName;
+        });
+    if (item == task->items.end()) return false;
+    item->trim = trim;
+    item->state = TaskState::Pending;
+    item->progress = 0.0;
+    item->detail = "等待处理";
+    task->state = TaskState::Pending;
+    task->progress = 0.0;
+    task->detail = "等待处理";
+    task->error.clear();
+    refreshOutputPathsLocked();
+    saveQueueLocked();
+    return true;
 }
 
 void AppController::removeTask(std::uint64_t id) {
@@ -611,22 +764,32 @@ void AppController::loadQueue() {
     if (!input) return;
     std::vector<std::string> paths;
     std::string line;
-    bool first = true;
+    bool version2 = false;
+    std::string currentPath;
     while (std::getline(input, line)) {
-        if (first && line == "FFmpegStudioQueue/1") {
-            first = false;
-            continue;
-        }
-        first = false;
         if (!line.empty() && line.back() == '\r') line.pop_back();
-        if (!line.empty()) paths.push_back(line);
+        if (line == "FFmpegStudioQueue/2") { version2 = true; continue; }
+        if (line == "FFmpegStudioQueue/1" || line.empty()) continue;
+        if (version2) {
+            std::istringstream record(line);
+            char kind = 0;
+            record >> kind;
+            if (kind == 'T') {
+                std::string name;
+                if (record >> std::quoted(name)) {
+                    currentPath = name;
+                    paths.push_back(name);
+                }
+            } else if (kind == 'I' && !currentPath.empty()) {
+                std::string name;
+                VideoTrimRange trim;
+                if ((record >> std::quoted(name) >> trim.startSeconds >> trim.endSeconds) &&
+                    validTrimRange(trim.startSeconds, trim.endSeconds))
+                    restoredTrims_[normalizedPath(pathFromUtf8(currentPath))][name] = trim;
+            }
+        } else paths.push_back(line);
     }
-    input.close();
-    if (!paths.empty()) {
-        addInputs(paths);
-        std::lock_guard lock(mutex_);
-        saveQueueLocked();
-    }
+    if (!paths.empty()) addInputs(paths);
 }
 
 void AppController::saveQueueLocked() const {
@@ -639,12 +802,18 @@ void AppController::saveQueueLocked() const {
     {
         std::ofstream output(temporaryPath, std::ios::binary | std::ios::trunc);
         if (!output) return;
-        output << "FFmpegStudioQueue/1\n";
+        output << "FFmpegStudioQueue/2\n";
         for (const auto& task : tasks_) {
-            if (task.state == TaskState::Completed || task.state == TaskState::Skipped) {
+            if (task.state == TaskState::Completed || task.state == TaskState::Skipped)
                 continue;
+            output << "T " << std::quoted(task.inputPath) << '\n';
+            for (const auto& item : task.items) {
+                const auto& trim = item.trim;
+                if (trim.startSeconds == 0.0 && trim.endSeconds < 0.0) continue;
+                const std::string name = task.kind == TaskKind::Video ? "" : item.name;
+                output << "I " << std::quoted(name) << ' '
+                       << trim.startSeconds << ' ' << trim.endSeconds << '\n';
             }
-            output << task.inputPath << '\n';
         }
         output.flush();
         if (!output) {
@@ -691,31 +860,63 @@ void AppController::saveSettingsLocked() const {
            << "remoteHost=" << settings_.remoteHost << '\n';
 }
 
+
 std::size_t AppController::importQueue(const std::string& path, std::string& error) {
     std::ifstream input(pathFromUtf8(path), std::ios::binary);
     if (!input) { error = "无法读取任务清单。"; return 0; }
     std::vector<std::string> paths;
-    std::string line;
-    bool first = true;
+    std::map<std::string, VideoTrimRanges> loadedTrims;
+    std::string line, current;
+    bool version2 = false;
     while (std::getline(input, line)) {
-        if (first && line == "FFmpegStudioQueue/1") { first = false; continue; }
-        first = false;
         if (!line.empty() && line.back() == '\r') line.pop_back();
-        if (!line.empty()) paths.push_back(line);
+        if (line == "FFmpegStudioQueue/2") { version2 = true; continue; }
+        if (line == "FFmpegStudioQueue/1" || line.empty()) continue;
+        if (version2) {
+            std::istringstream record(line);
+            char type = 0;
+            record >> type;
+            if (type == 'T') {
+                std::string name;
+                if (record >> std::quoted(name)) {
+                    current = name;
+                    paths.push_back(name);
+                }
+            } else if (type == 'I' && !current.empty()) {
+                std::string name;
+                VideoTrimRange trim;
+                if ((record >> std::quoted(name) >> trim.startSeconds >> trim.endSeconds) &&
+                    validTrimRange(trim.startSeconds, trim.endSeconds))
+                    loadedTrims[normalizedPath(pathFromUtf8(current))][name] = trim;
+            }
+        } else paths.push_back(line);
     }
-    const auto before = snapshot().totalTasks;
+    {
+        std::lock_guard lock(mutex_);
+        for (auto& [name, ranges] : loadedTrims) {
+            for (const auto& [video, trim] : ranges) restoredTrims_[name][video] = trim;
+        }
+    }
     addInputs(paths);
-    const auto after = snapshot().totalTasks;
     error.clear();
-    return after >= before ? after - before : 0;
+    return paths.size();
 }
 
 bool AppController::exportQueue(const std::string& path, std::string& error) const {
     std::ofstream output(pathFromUtf8(path), std::ios::binary | std::ios::trunc);
     if (!output) { error = "无法保存任务清单。"; return false; }
     std::lock_guard lock(mutex_);
-    output << "FFmpegStudioQueue/1\n";
-    for (const auto& task : tasks_) output << task.inputPath << '\n';
+    output << "FFmpegStudioQueue/2\n";
+    for (const auto& task : tasks_) {
+        output << "T " << std::quoted(task.inputPath) << '\n';
+        for (const auto& item : task.items) {
+            const auto& trim = item.trim;
+            if (trim.startSeconds == 0.0 && trim.endSeconds < 0.0) continue;
+            const std::string name = task.kind == TaskKind::Video ? "" : item.name;
+            output << "I " << std::quoted(name) << ' '
+                   << trim.startSeconds << ' ' << trim.endSeconds << '\n';
+        }
+    }
     if (!output) { error = "写入任务清单时发生错误。"; return false; }
     error.clear();
     return true;
@@ -731,9 +932,31 @@ std::string AppController::makeOutputPathLocked(const BatchTaskSnapshot& task) c
     encoding.audioBitrateKbps = settings_.audioBitrateKbps;
     encoding.audioMode = settings_.audioMode;
     encoding.outputResolution = settings_.outputResolution;
-    encoding.trimStartSeconds = settings_.trimStartSeconds;
-    encoding.trimEndSeconds = settings_.trimEndSeconds;
-    const std::string suffix = outputSuffix(encoding);
+    if (task.kind == TaskKind::Video && !task.items.empty()) {
+        encoding.trimStartSeconds = task.items.front().trim.startSeconds;
+        encoding.trimEndSeconds = task.items.front().trim.endSeconds;
+    }
+    std::string suffix = outputSuffix(encoding);
+    if (task.kind != TaskKind::Video) {
+        std::uint64_t fingerprint = 14695981039346656037ULL;
+        bool hasTrim = false;
+        for (const auto& item : task.items) {
+            if (item.trim.startSeconds == 0.0 && item.trim.endSeconds < 0.0) continue;
+            hasTrim = true;
+            const std::string key = item.name + ":" +
+                std::to_string(std::llround(item.trim.startSeconds * 1000.0)) + ":" +
+                std::to_string(std::llround(item.trim.endSeconds * 1000.0));
+            for (const unsigned char c : key) {
+                fingerprint ^= c;
+                fingerprint *= 1099511628211ULL;
+            }
+        }
+        if (hasTrim) {
+            std::ostringstream hex;
+            hex << std::hex << fingerprint;
+            suffix += "_T" + hex.str();
+        }
+    }
     const std::filesystem::path input = pathFromUtf8(task.inputPath);
     std::filesystem::path directory = input.parent_path();
     if (!settings_.outputDirectory.empty()) {
@@ -779,6 +1002,14 @@ void AppController::refreshOutputPathsLocked() {
 }
 
 bool AppController::startBatch() {
+    {
+        std::lock_guard lock(mutex_);
+        if (initializing_ || scanningActive_ || !scanQueue_.empty()) {
+            status_ = "正在准备任务";
+            detail_ = "请在后台检测和视频列表读取完成后开始批量处理。";
+            return false;
+        }
+    }
     if (worker_.joinable()) worker_.join();
     std::vector<std::size_t> pending;
     ResourcePlan plan;
@@ -899,8 +1130,12 @@ void AppController::runTask(std::size_t index, const ResourcePlan& plan, std::si
     settings.audioBitrateKbps = batchSettings.audioBitrateKbps;
     settings.audioMode = batchSettings.audioMode;
     settings.outputResolution = batchSettings.outputResolution;
-    settings.trimStartSeconds = batchSettings.trimStartSeconds;
-    settings.trimEndSeconds = batchSettings.trimEndSeconds;
+    settings.trimStartSeconds = 0.0;
+    settings.trimEndSeconds = -1.0;
+    if (task.kind == TaskKind::Video && !task.items.empty()) {
+        settings.trimStartSeconds = task.items.front().trim.startSeconds;
+        settings.trimEndSeconds = task.items.front().trim.endSeconds;
+    }
     settings.threadsPerJob = static_cast<int>(plan.threadsPerJob);
     settings.overwrite = batchSettings.overwrite;
     settings.skipAlreadyProcessed = batchSettings.skipAlreadyProcessed;
@@ -952,6 +1187,9 @@ void AppController::runTask(std::size_t index, const ResourcePlan& plan, std::si
         return;
     }
 
+    VideoTrimRanges perVideoTrims;
+    for (const auto& item : task.items)
+        perVideoTrims[item.name] = item.trim;
     ArchiveService archive(service_);
     const unsigned int archiveParallel = batchTaskCount == 1 ? plan.parallelJobs : 1U;
     const auto result = archive.process(task.inputPath, task.outputPath,
@@ -963,11 +1201,15 @@ void AppController::runTask(std::size_t index, const ResourcePlan& plan, std::si
             auto& task = tasks_[index];
             task.progress = progress.fraction;
             task.detail = progress.detail;
+            const auto previousItems = std::move(task.items);
             task.items.clear();
             task.items.reserve(progress.items.size());
             for (const auto& item : progress.items) {
                 BatchItemSnapshot snapshot;
                 snapshot.name = item.name;
+                if (const auto previous = std::find_if(previousItems.begin(), previousItems.end(),
+                    [&](const BatchItemSnapshot& value) { return value.name == item.name; });
+                    previous != previousItems.end()) snapshot.trim = previous->trim;
                 snapshot.state = item.state;
                 snapshot.progress = item.progress.fraction;
                 snapshot.progressInfo = item.progress;
@@ -976,7 +1218,7 @@ void AppController::runTask(std::size_t index, const ResourcePlan& plan, std::si
                 snapshot.outputSizeBytes = item.outputSizeBytes;
                 task.items.push_back(std::move(snapshot));
             }
-        }, &cancelRequested_, &pauseRequested_);
+        }, &cancelRequested_, &pauseRequested_, perVideoTrims);
 
     std::lock_guard lock(mutex_);
     auto& current = tasks_[index];
@@ -1023,7 +1265,11 @@ void AppController::cancelBatch() {
 
 void AppController::shutdown() {
     cancelRequested_.store(true);
+    stopScanning_.store(true);
+    scannerCv_.notify_all();
     if (worker_.joinable()) worker_.join();
+    if (scanner_.joinable()) scanner_.join();
+    if (initializeWorker_.joinable()) initializeWorker_.join();
 }
 
 } // namespace ffmpegui

@@ -39,6 +39,13 @@ struct ArchiveResult {
 };
 
 using ArchiveProgressCallback = std::function<void(const ArchiveProgressSnapshot&)>;
+using ArchiveVideoCallback = std::function<void(const std::string&)>;
+
+// Inspect archive headers without extracting media; safe for use on a background thread.
+bool inspectArchiveVideos(const std::string& inputPath,
+                          const ArchiveVideoCallback& onVideo,
+                          std::string& error,
+                          const std::atomic_bool* cancelRequested = nullptr);
 
 class ArchiveService {
 public:
@@ -53,7 +60,8 @@ public:
                           unsigned int threadsPerJob,
                           const ArchiveProgressCallback& onProgress,
                           const std::atomic_bool* cancelRequested,
-                          const std::atomic_bool* pauseRequested = nullptr) const;
+                          const std::atomic_bool* pauseRequested = nullptr,
+                          const VideoTrimRanges& perVideoTrims = {}) const;
 
 private:
     const FfmpegService& ffmpeg_;
